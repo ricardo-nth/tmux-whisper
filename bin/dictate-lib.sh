@@ -1,0 +1,428 @@
+#!/usr/bin/env bash
+
+# Shared helpers used by Dictate CLI + integrations.
+
+# Expand leading ~ to $HOME.
+dictate_lib_expand_path() {
+  local p="${1:-}"
+  if [[ "$p" == "~"* ]]; then
+    p="$HOME${p:1}"
+  fi
+  printf "%s" "$p"
+}
+
+# Expand $SOUNDS_DIR placeholders in configured paths.
+dictate_lib_expand_sound_path() {
+  local p="${1:-}"
+  [[ -n "$p" ]] || return 0
+  p="$(dictate_lib_expand_path "$p")"
+  if [[ -n "${SOUNDS_DIR:-}" ]]; then
+    p="${p//\$\{SOUNDS_DIR\}/$SOUNDS_DIR}"
+    p="${p//\$SOUNDS_DIR/$SOUNDS_DIR}"
+  fi
+  printf "%s" "$p"
+}
+
+# Clean filler words from text (uses perl for case-insensitive matching).
+dictate_lib_clean_fillers() {
+  perl -pe '
+    s/\b(um|uh|uhh|umm|er|err|ah|ahh|hmm|hm|mhm|erm|huh)\b[,.]?\s*//gi;
+    s/\b(you know|I mean|kind of|sort of|basically|actually|literally|obviously|honestly|frankly|clearly),?\s*//gi;
+    s/\b(I guess|I think|I suppose|I believe|in my opinion|to be honest|to be fair),?\s*//gi;
+    s/\b(so yeah|and yeah|but yeah|yeah so|ok so|okay so|alright so|right so),?\s*//gi;
+    s/\b(anyway|anyways|anyhow),?\s*//gi;
+    s/\b(like),?\s+(like),?/like/gi;
+    s/\s+/ /g;
+    s/^ //; s/ $//;
+    s/ ,/,/g; s/ \././g; s/,,/,/g;
+  '
+}
+
+# Clean stutters/repeats.
+# Level 0: off
+# Level 1: repeated words
+# Level 2: repeated 2-3 word adjacent phrases + repeated words
+dictate_lib_clean_repeats() {
+  local level="${1:-1}"
+  DICTATE_REPEATS_LEVEL="$level" perl -pe '
+    my $level = $ENV{DICTATE_REPEATS_LEVEL} // 1;
+    $level = int($level);
+    my $w = qr/[A-Za-z]+(?:\x27[A-Za-z]+)*/;
+
+    if ($level >= 2) {
+      1 while s/\b($w)\s+($w)\s+($w)\b\s+\1\s+\2\s+\3\b/$1 $2 $3/gi;
+      1 while s/\b($w)\s+($w)\b\s+\1\s+\2\b/$1 $2/gi;
+    }
+    if ($level >= 1) {
+      1 while s/\b($w)\b\s+\1\b/$1/gi;
+    }
+    s/\s+/ /g; s/^ //; s/ $//;
+  '
+}
+
+# Remove known whisper placeholder artefacts (e.g. [blank audio]).
+dictate_lib_sanitize_transcript_artifacts() {
+  perl -pe '
+    s/\[\s*blank(?:\s*[_-]\s*|\s+)audio\s*\]//ig;
+    s/\(\s*blank(?:\s*[_-]\s*|\s+)audio\s*\)//ig;
+    s/\{\s*blank(?:\s*[_-]\s*|\s+)audio\s*\}//ig;
+    s/\s+([,.;:!?])/$1/g;
+    s/([(\[{])\s+/$1/g;
+    s/\s+([)\]}])/$1/g;
+    s/[ \t]{2,}/ /g;
+    s/^ +//; s/ +$//;
+  '
+}
+
+# Normalize common US spellings to UK spellings.
+# Set DICTATE_BRITISH_SPELLING=0 to disable.
+dictate_lib_normalize_british_spelling() {
+  local enabled="${1:-1}"
+  enabled="$(printf "%s" "$enabled" | tr '[:upper:]' '[:lower:]')"
+  case "$enabled" in
+    0|off|false|no) cat; return 0 ;;
+  esac
+
+  perl -pe '
+    sub _case_match {
+      my ($orig, $rep) = @_;
+      return uc($rep) if $orig eq uc($orig);
+      return ucfirst($rep) if $orig =~ /^[A-Z][a-z]+$/;
+      return $rep;
+    }
+
+    BEGIN {
+      %map = (
+        "color" => "colour", "colors" => "colours", "colored" => "coloured", "coloring" => "colouring",
+        "favorite" => "favourite", "favorites" => "favourites", "favorited" => "favourited", "favoriting" => "favouriting",
+        "organize" => "organise", "organizes" => "organises", "organized" => "organised", "organizing" => "organising",
+        "organization" => "organisation", "organizations" => "organisations",
+        "optimize" => "optimise", "optimizes" => "optimises", "optimized" => "optimised", "optimizing" => "optimising",
+        "optimization" => "optimisation", "optimizations" => "optimisations",
+        "optimizer" => "optimiser", "optimizers" => "optimisers",
+        "prioritize" => "prioritise", "prioritizes" => "prioritises", "prioritized" => "prioritised", "prioritizing" => "prioritising",
+        "prioritization" => "prioritisation", "prioritizations" => "prioritisations",
+        "behavior" => "behaviour", "behaviors" => "behaviours", "behavioral" => "behavioural",
+        "center" => "centre", "centers" => "centres", "centered" => "centred", "centering" => "centring",
+        "centralize" => "centralise", "centralizes" => "centralises", "centralized" => "centralised", "centralizing" => "centralising",
+        "centralization" => "centralisation", "centralizations" => "centralisations",
+        "analyze" => "analyse", "analyzes" => "analyses", "analyzed" => "analysed", "analyzing" => "analysing",
+        "analyzer" => "analyser", "analyzers" => "analysers",
+        "realize" => "realise", "realizes" => "realises", "realized" => "realised", "realizing" => "realising"
+      );
+      $re = join("|", map { quotemeta($_) } sort { length($b) <=> length($a) } keys %map);
+    }
+
+    s/\b($re)\b/_case_match($1, $map{lc($1)})/gei;
+  '
+}
+
+# Insert a single paragraph break for long short/long mode outputs when the LLM
+# returns one dense block. This only adds structure; it does not rewrite wording.
+# Usage: printf "%s" "$text" | dictate_lib_auto_paragraphs <mode> [min_words]
+dictate_lib_auto_paragraphs() {
+  local mode="${1:-}"
+  local min_words="${2:-80}"
+  [[ "$min_words" =~ ^[0-9]+$ ]] || min_words="80"
+
+  DICTATE_PARAGRAPH_MODE="$mode" DICTATE_PARAGRAPH_MIN_WORDS="$min_words" perl -0777 -pe '
+    BEGIN {
+      $mode = lc($ENV{DICTATE_PARAGRAPH_MODE} // "");
+      $min = int($ENV{DICTATE_PARAGRAPH_MIN_WORDS} // 80);
+      $min = 80 if $min <= 0;
+    }
+
+    # Only apply to short/long cleanup modes.
+    if ($mode ne "short" && $mode ne "long") {
+      $_ = $_;
+      next;
+    }
+
+    # Keep existing structure intact.
+    if (/\n/) {
+      $_ = $_;
+      next;
+    }
+
+    my @words = /[A-Za-z0-9_'\''-]+/g;
+    if (scalar(@words) < $min) {
+      $_ = $_;
+      next;
+    }
+
+    my @sent = split(/(?<=[.!?])\s+/, $_);
+    if (scalar(@sent) < 3) {
+      $_ = $_;
+      next;
+    }
+
+    my $target = int(scalar(@words) / 2);
+    my $cum = 0;
+    my $best_idx = -1;
+    my $best_dist = 10**9;
+    for (my $i = 0; $i < scalar(@sent) - 1; $i++) {
+      my @sw = ($sent[$i] =~ /[A-Za-z0-9_'\''-]+/g);
+      $cum += scalar(@sw);
+      my $dist = abs($cum - $target);
+      if ($dist < $best_dist) {
+        $best_dist = $dist;
+        $best_idx = $i;
+      }
+    }
+
+    # Require at least one sentence on each side.
+    if ($best_idx < 1 || $best_idx >= scalar(@sent) - 1) {
+      $_ = $_;
+      next;
+    }
+
+    my $a = join(" ", @sent[0 .. $best_idx]);
+    my $b = join(" ", @sent[$best_idx + 1 .. $#sent]);
+    $a =~ s/\s+$//;
+    $b =~ s/^\s+//;
+    if (length($a) && length($b)) {
+      $_ = $a . "\n\n" . $b;
+    }
+  '
+}
+
+# Apply global + mode-specific vocab corrections as a deterministic text pass.
+# Usage: printf "%s" "$text" | dictate_lib_apply_vocab_corrections <mode> [config_dir]
+dictate_lib_apply_vocab_corrections() {
+  local mode="${1:-}"
+  local config_dir="${2:-${DICTATE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dictate}}"
+  local global_vocab="$config_dir/vocab"
+  local mode_vocab="$config_dir/modes/$mode/vocab"
+  local files=()
+
+  [[ -f "$global_vocab" ]] && files+=("$global_vocab")
+  [[ -n "$mode" && -f "$mode_vocab" ]] && files+=("$mode_vocab")
+
+  if [[ "${#files[@]}" -eq 0 ]]; then
+    cat
+    return 0
+  fi
+
+  local files_joined=""
+  local file_path
+  for file_path in "${files[@]}"; do
+    if [[ -z "$files_joined" ]]; then
+      files_joined="$file_path"
+    else
+      files_joined="${files_joined}"$'\n'"$file_path"
+    fi
+  done
+
+  DICTATE_VOCAB_FILES="$files_joined" perl -CS -pe '
+    BEGIN {
+      my @paths = grep { defined($_) && length($_) } split(/\n/, ($ENV{DICTATE_VOCAB_FILES} // ""));
+      @rules = ();
+
+      for my $path (@paths) {
+        next unless -f $path;
+        open(my $fh, "<:encoding(UTF-8)", $path) or next;
+        while (my $line = <$fh>) {
+          chomp($line);
+          $line =~ s/^\s+//;
+          $line =~ s/\s+$//;
+          next if $line eq "" || $line =~ /^#/;
+
+          my ($left, $right);
+          if ($line =~ /^(.*?)\s*::\s*(.*?)$/) {
+            ($left, $right) = ($1, $2);
+          } elsif ($line =~ /^(.*?)\s*(?:\x{2192}|->)\s*(.*?)$/) {
+            ($left, $right) = ($1, $2);
+          } else {
+            next;
+          }
+
+          $left =~ s/^\s+//;
+          $left =~ s/\s+$//;
+          $right =~ s/^\s+//;
+          $right =~ s/\s+$//;
+          next if $left eq "" || $right eq "";
+
+          my $pattern = quotemeta($left);
+          if ($left =~ /^[A-Za-z0-9_]/) {
+            $pattern = "\\b" . $pattern;
+          }
+          if ($left =~ /[A-Za-z0-9_]$/) {
+            $pattern .= "\\b";
+          }
+          push(@rules, [qr/$pattern/i, $right]);
+        }
+        close($fh);
+      }
+    }
+
+    for my $rule (@rules) {
+      my ($rx, $replacement) = @$rule;
+      s/$rx/$replacement/ge;
+    }
+  '
+}
+
+# Resolve whisper model id/path to local ggml model path.
+dictate_lib_resolve_model_path() {
+  local model_id="${1:-}"
+  local models_dir="${2:-${WHISPER_MODELS_DIR:-}}"
+  model_id="$(printf "%s" "$model_id" | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [[ -z "$model_id" ]] && model_id="base"
+
+  if [[ "$model_id" == */* ]]; then
+    local p dir base
+    p="$(dictate_lib_expand_path "$model_id")"
+    dir="$(dirname "$p")"
+    base="$(basename "$p")"
+    case "$base" in
+      ggml-large-v3-turbo-q8_0.bin|ggml-large-v3-turbo.bin) echo "$dir/ggml-large-v3-turbo-q5_0.bin" ;;
+      *) echo "$p" ;;
+    esac
+    return 0
+  fi
+
+  if [[ "$model_id" == *.bin ]]; then
+    case "$model_id" in
+      ggml-large-v3-turbo-q8_0.bin|ggml-large-v3-turbo.bin) printf "%s/%s" "$models_dir" "ggml-large-v3-turbo-q5_0.bin" ;;
+      *) printf "%s/%s" "$models_dir" "$model_id" ;;
+    esac
+    return 0
+  fi
+
+  case "$model_id" in
+    base)  printf "%s/%s" "$models_dir" "ggml-base.en.bin" ;;
+    small) printf "%s/%s" "$models_dir" "ggml-small.en.bin" ;;
+    turbo) printf "%s/%s" "$models_dir" "ggml-large-v3-turbo-q5_0.bin" ;;
+    *)     printf "%s/%s" "$models_dir" "ggml-base.en.bin" ;;
+  esac
+}
+
+# Detect AVFoundation audio index by source strategy.
+# Args:
+#   1: source mode: auto|name|external|mac|iphone
+#   2: preferred name substring (used by source=name and as fallback)
+#   3: mac name substring hint (optional)
+#   4: iphone name substring hint (optional)
+# Prints: <index>\t<device_name>\t<match_kind>
+dictate_lib_detect_audio_device() {
+  local source="${1:-auto}"
+  local preferred="${2:-}"
+  local mac_hint="${3:-}"
+  local iphone_hint="${4:-}"
+  command -v ffmpeg >/dev/null 2>&1 || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+
+  local out
+  out="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
+
+  python3 -c '
+import re, sys
+
+source = (sys.argv[1] if len(sys.argv) > 1 else "auto").strip().lower()
+preferred = (sys.argv[2] if len(sys.argv) > 2 else "").strip()
+mac_hint = (sys.argv[3] if len(sys.argv) > 3 else "").strip()
+iphone_hint = (sys.argv[4] if len(sys.argv) > 4 else "").strip()
+lines = sys.argv[5].splitlines() if len(sys.argv) > 5 else []
+
+if source not in {"auto", "name", "external", "mac", "iphone"}:
+    source = "auto"
+
+def has_sub(name, needle):
+    return bool(needle) and needle.lower() in name.lower()
+
+def is_mac(name):
+    lowered = name.lower()
+    if "macbook" in lowered:
+        return True
+    return "built-in" in lowered and "microphone" in lowered
+
+audio = []
+video = []
+section = ""
+for line in lines:
+    if "AVFoundation audio devices:" in line:
+        section = "audio"
+        continue
+    if "AVFoundation video devices:" in line:
+        section = "video"
+        continue
+    m = re.search(r"\[(\d+)\]\s+(.*)$", line)
+    if not m:
+        continue
+    if section == "audio":
+        audio.append((m.group(1), m.group(2)))
+    elif section == "video":
+        video.append((m.group(1), m.group(2)))
+
+video_names = [name.lower() for _, name in video]
+
+def looks_like_continuity(audio_name):
+    lowered = audio_name.lower().strip()
+    if lowered.endswith(" microphone"):
+        lowered = lowered[: -len(" microphone")].strip()
+    if not lowered:
+        return False
+    for vname in video_names:
+        if "desk view" in vname and lowered in vname:
+            return True
+        if vname == f"{lowered} camera":
+            return True
+    return False
+
+def is_iphone(name):
+    lowered = name.lower()
+    if "iphone" in lowered or "continuity" in lowered:
+        return True
+    return looks_like_continuity(name)
+
+def classify(name):
+    if has_sub(name, iphone_hint):
+        return "iphone"
+    if has_sub(name, mac_hint):
+        return "mac"
+    if is_iphone(name):
+        return "iphone"
+    if is_mac(name):
+        return "mac"
+    return "external"
+
+buckets = {"name": [], "external": [], "mac": [], "iphone": [], "any": []}
+for idx, name in audio:
+    kind = classify(name)
+    if preferred and preferred.lower() in name.lower():
+        buckets["name"].append((idx, name, "name"))
+    buckets[kind].append((idx, name, kind))
+    buckets["any"].append((idx, name, kind))
+
+priority = {
+    "auto": ["external", "mac", "iphone", "name", "any"],
+    "external": ["external", "mac", "iphone", "name", "any"],
+    "mac": ["mac", "external", "iphone", "name", "any"],
+    "iphone": ["iphone", "external", "mac", "name", "any"],
+    "name": ["name", "external", "mac", "iphone", "any"],
+}
+
+selected = None
+for key in priority.get(source, priority["auto"]):
+    if buckets.get(key):
+        selected = buckets[key][0]
+        break
+
+if selected:
+    idx, name, kind = selected
+    print(f"{idx}\t{name}\t{kind}")
+    sys.exit(0)
+
+sys.exit(1)
+' "$source" "$preferred" "$mac_hint" "$iphone_hint" "$out"
+}
+
+# Backward-compatible helper used by older call sites.
+# Detect AVFoundation audio index by preferred device name.
+dictate_lib_detect_audio_index() {
+  local preferred="${1:-}"
+  local out
+  out="$(dictate_lib_detect_audio_device "name" "$preferred" "" "" 2>/dev/null || true)"
+  [[ -n "$out" ]] || return 1
+  printf "%s\n" "$out" | awk -F'\t' 'NR==1{print $1}'
+}

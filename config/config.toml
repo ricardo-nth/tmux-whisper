@@ -1,0 +1,89 @@
+# Dictate default configuration (TOML)
+# Installed to ~/.config/dictate/config.toml
+
+[audio]
+source = "auto"
+silence_trim = false
+silence_trim_mode = "edges"
+silence_threshold_db = -60
+silence_min_ms = 250
+silence_keep_ms = 50
+
+[clean]
+repeats_level = 1
+
+[whisper]
+models_dir = "~/.local/share/whisper/models"
+model = "base"
+threads = 5
+beam_size = 1
+best_of = 1
+vad = false
+vad_threshold = 0.5
+vad_min_speech_ms = 250
+vad_min_silence_ms = 100
+vad_speech_pad_ms = 30
+
+[postprocess]
+enabled = false
+llm = "gpt-oss-120b"
+max_tokens = 3000
+chunk_words = 700
+
+[inline]
+autosend = true
+paste_target = "current"
+send_mode = "enter"
+
+[tmux]
+autosend = true
+paste_target = "origin"
+postprocess = false
+process_sound = true
+mode = "short"
+model = "base"
+send_mode = "auto"
+
+[debug]
+keep_logs = false
+
+[ui.keybinds]
+tmux = "F12"
+inline = "F11"
+
+[ui.icons]
+recording = "🔴"
+processing = "🔲"
+ready = "🔳"
+error = "⚠️"
+base = "🎯"
+short = "🌀"
+long = "📚"
+email = "📧"
+chat = "💬"
+linkedin = "in"
+twitter = "𝕏"
+cancel = "🚫"
+
+[audio.sounds]
+cancel = "$SOUNDS_DIR/dictate/cancel.wav"
+cancel_enabled = true
+enabled = true
+error = "$SOUNDS_DIR/dictate/error.wav"
+error_enabled = true
+process = "$SOUNDS_DIR/dictate/process.wav"
+process_enabled = true
+start = "$SOUNDS_DIR/dictate/start.wav"
+start_enabled = true
+stop = "$SOUNDS_DIR/dictate/stop.wav"
+stop_enabled = true
+
+[postprocess.mode_overrides.long]
+chunk_words = 1000
+llm = "gpt-oss-120b"
+max_tokens = 5200
+
+[postprocess.mode_overrides.short]
+chunk_words = 700
+llm = "gpt-oss-120b"
+max_tokens = 2000

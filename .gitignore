@@ -1,0 +1,14 @@
+.DS_Store
+*.swp
+*.swo
+*.tmp
+*.log
+
+# Runtime/transient data
+history/
+.cache/
+archive/
+
+# Editor/OS
+.vscode/
+.idea/

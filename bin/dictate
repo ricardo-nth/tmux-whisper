@@ -1,0 +1,4605 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# GUI launchers (SwiftBar/Raycast) often run with a minimal PATH.
+# Prefer Homebrew for python3 (tomllib), ffmpeg, and whisper-cli.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
+
+if [[ -f "$HOME/.zshenv" ]]; then
+  # Load XDG vars + SOUNDS_DIR for non-interactive invocations (tmux/Raycast/etc.)
+  source "$HOME/.zshenv"
+fi
+
+STATE_FILE="${DICTATE_STATE_FILE:-/tmp/whisper-dictate.state}"
+TMPDIR="${DICTATE_TMPDIR:-/tmp}"
+RECORD_LOG="${DICTATE_RECORD_LOG:-$TMPDIR/whisper-dictate.record.log}"
+TRANSCRIBE_LOG="${DICTATE_TRANSCRIBE_LOG:-$TMPDIR/whisper-dictate.transcribe.log}"
+TMUX_JOBS_DIR="${DICTATE_TMUX_JOBS_DIR:-/tmp/dictate-tmux-jobs}"
+
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+DEFAULT_WHISPER_MODELS_DIR="$XDG_DATA_HOME/whisper/models"
+mkdir -p "$DEFAULT_WHISPER_MODELS_DIR"
+
+usage() {
+  cat <<'EOF'
+dictate: local whisper.cpp dictation with LLM post-processing and mode-aware prompts.
+
+RECORDING:
+  dictate                    # toggle: start/stop recording (tmux mode)
+  dictate inline             # foreground recording (inline mode)
+  dictate status             # show runtime + effective settings snapshot
+  dictate stop               # force stop any recording
+  dictate cancel             # cancel recording (discard, no paste)
+
+AUDIO:
+  dictate devices            # list macOS audio devices
+  dictate device             # show current device + list available
+  dictate device source <auto|external|mac|iphone|name>  # set mic source strategy
+  dictate device external    # prefer plugged-in external mic, then fallback
+  dictate device mac         # prefer built-in Mac microphone
+  dictate device iphone      # prefer iPhone/Continuity microphone
+  dictate device <index>     # set preferred device by index (stores name; index used as fallback)
+  dictate device index <n>   # pin device index (not recommended; indices can change)
+  dictate device auto        # auto source: prefer external -> mac -> iphone
+  dictate device name "<X>"  # named source: prefer device name substring
+  dictate device mac-name "<X>"    # override built-in Mac source name hint
+  dictate device iphone-name "<X>" # override iPhone source name hint
+
+DIAGNOSTICS:
+  dictate debug              # show resolved device + relevant env/config
+  dictate doctor             # quick health summary (state files, markers, logs)
+  dictate logs               # show recent logs (record/transcribe)
+  dictate keep-logs          # show persistent log retention setting
+  dictate keep-logs on|off   # persist log retention in config
+  dictate bench [N]          # summarize recent stage timings (default: 30 runs)
+  dictate changelog          # show recent Dictate changes
+
+TEXT CLEANUP:
+  dictate silence-trim       # show silence-trim status
+  dictate silence-trim on|off|toggle  # control ffmpeg silence trimming
+  dictate repeats            # show repeat cleanup level
+  dictate repeats 0|1|2      # set repeat cleanup level
+
+SOUNDS:
+  dictate sound              # show sound settings
+  dictate sound on|off       # master mute toggle
+  dictate sound mute|unmute  # alias for off/on
+  dictate sound start on|off # toggle start sound
+  dictate sound stop on|off  # toggle stop sound
+  dictate sound process on|off # toggle process sound
+  dictate sound error on|off # toggle error sound
+
+WHISPER MODEL:
+  dictate model              # show current model + list all
+  dictate model base         # 141 MB - fast, good accuracy (default)
+  dictate model small        # 465 MB - slower, better accuracy
+  dictate model turbo        # 547 MB - large-v3-turbo-q5, fast+accurate
+
+LLM POST-PROCESSING (Cerebras API):
+  dictate postprocess        # show current setting
+  dictate postprocess on     # enable LLM cleanup
+  dictate postprocess off    # disable LLM cleanup
+  dictate llm                # show current Cerebras LLM + list all
+  dictate llm fast           # llama3.1-8b (~2200 t/s)
+  dictate llm smart          # llama-3.3-70b (~2100 t/s)
+  dictate llm qwen           # qwen-3-32b (~2600 t/s)
+  dictate llm gpt            # gpt-oss-120b (~3000 t/s, default)
+  dictate llm <mode> <llm>   # per-mode override (e.g., "dictate llm short smart")
+  dictate profile            # show short/long postprocess profiles (effective)
+  dictate profile <mode>     # show one profile (short or long)
+  dictate profile <mode> llm fast|smart|qwen|gpt|<id>
+  dictate profile <mode> max_tokens <n>
+  dictate profile <mode> chunk_words <n>
+  dictate profile <mode> clear # remove mode-specific overrides
+
+MODES (context-aware prompts):
+  dictate mode               # show current mode + list all
+  dictate mode short         # short cleanup mode (default)
+  dictate mode long          # long-form cleanup mode
+  dictate mode email         # email mode (formal, professional)
+  dictate mode chat          # chat mode (casual, minimal intervention)
+  dictate mode apps          # list apps that trigger current mode
+  dictate mode apps add X    # add app to current mode's trigger list
+  dictate mode create <name> # create new custom mode
+  dictate mode edit [name]   # edit mode's prompt in $EDITOR
+
+VOCABULARY:
+  dictate vocab              # show custom word corrections
+  dictate vocab add "X::Y" ["A::B"...] # add one or more corrections
+  dictate vocab import <file> # import corrections from file (one per line)
+  dictate vocab clipboard    # import corrections from clipboard lines
+  dictate vocab dedupe       # normalize + remove duplicate entries
+  dictate vocab edit         # open global vocab file in $EDITOR
+  dictate vocab rm "pattern" # remove entries matching pattern
+
+INLINE OPTIONS:
+  dictate autosend           # show auto-send setting
+  dictate autosend on        # paste + Enter (default)
+  dictate autosend off       # paste only, no Enter
+  dictate send-mode          # show inline autosend key strategy
+  dictate send-mode enter    # inline autosend uses Enter
+  dictate send-mode ctrl_j   # inline autosend uses Ctrl+J (Claude-friendly)
+  dictate send-mode cmd_enter # inline autosend uses Cmd+Enter
+  dictate target             # show paste target setting
+  dictate target origin      # paste to app from recording start (default; alias: restore)
+  dictate target current     # paste to whatever app is frontmost now
+
+TMUX OPTIONS:
+  dictate tmux               # show tmux defaults
+  dictate tmux autosend on   # tmux: paste + Enter (default)
+  dictate tmux autosend off  # tmux: paste only, no Enter
+  dictate tmux target origin # tmux: paste to pane where recording started (default)
+  dictate tmux target current# tmux: paste to current pane at stop
+  dictate tmux postprocess on|off # tmux: LLM cleanup toggle
+  dictate tmux process-sound on|off # tmux: play processing SFX before transcribe
+  dictate tmux send-mode auto|enter|codex # tmux autosend strategy
+  dictate tmux mode <name>   # tmux: force mode for postprocess (default: short)
+  dictate tmux model <name>  # tmux: whisper model (default: base)
+
+KEYBINDS (reference for display in SwiftBar):
+  dictate keybind            # show current keybinds
+  dictate keybind tmux F12   # set tmux mode keybind
+  dictate keybind inline F11 # set inline mode keybind
+
+REPLAY (re-process text with different mode):
+  dictate replay             # re-process clipboard with current mode
+  dictate replay <mode>      # re-process clipboard with specified mode
+  dictate replay <mode> "X"  # re-process provided text with specified mode
+
+HISTORY (saved transcripts, auto-cleanup after 7 days):
+  dictate history            # list recent dictations (last 20)
+  dictate history N          # show entry N (1 = most recent)
+  dictate history reprocess N [mode]  # re-run LLM on raw transcript
+  dictate history clear      # delete all history
+
+ENV OPTIONS:
+  DICTATE_CLEAN=1            # regex filler removal (fast, no LLM)
+  DICTATE_POSTPROCESS=1      # LLM cleanup via Cerebras (inline/global default)
+  DICTATE_VOCAB_CLEAN=1      # apply vocab-only corrections when postprocess is OFF
+  DICTATE_TRIM_WITH_POSTPROCESS=1 # keep silence-trim enabled even when postprocess is ON
+  DICTATE_REPEATS_WITH_POSTPROCESS=1 # keep repeat cleanup enabled even when postprocess is ON
+  DICTATE_TMUX_POSTPROCESS=1 # tmux-only postprocess override
+  DICTATE_TMUX_AUTOSEND=1    # tmux-only autosend override
+  DICTATE_TMUX_PASTE_TARGET=origin|current # tmux-only paste target override
+  DICTATE_TMUX_SEND_MODE=auto|enter|codex # tmux autosend strategy (default: auto)
+  DICTATE_TMUX_SEND_DELAY_MS=90 # delay after paste before autosend key
+  DICTATE_TMUX_CODEX_TAB_DELAY_MS=35 # delay between Tab and Enter in codex mode
+  DICTATE_INLINE_PASTE_TARGET=origin|current # inline paste target override
+  DICTATE_INLINE_ACTIVATE_DELAY_MS=90 # inline: focus settle delay before paste (restore/origin only)
+  DICTATE_INLINE_SEND_DELAY_MS=35 # inline: delay between Cmd+V and send key when autosend=on
+  DICTATE_INLINE_SEND_MODE=enter|ctrl_j|cmd_enter # inline autosend key strategy (default: enter)
+  DICTATE_TMUX_PROCESS_SOUND=1 # tmux-only processing sound toggle
+  DICTATE_TMUX_MODE=short    # tmux-only forced mode
+  DICTATE_TMUX_MODEL=base    # tmux-only whisper model
+  DICTATE_LLM_MODEL=...      # override Cerebras model id (one-off)
+  DICTATE_LLM_MAX_TOKENS=3000 # cap postprocess output tokens
+  DICTATE_LLM_CHUNK_WORDS=700 # chunk long postprocess input
+  DICTATE_BRITISH_SPELLING=1 # enforce UK spellings (default on; set 0 to disable)
+  DICTATE_PARAGRAPH_MIN_WORDS=80 # auto split long short/long outputs into paragraphs
+  DICTATE_MODEL=/path/...    # override whisper model path
+  DICTATE_AUDIO_SOURCE=auto|external|mac|iphone|name # source strategy override
+  DICTATE_AUDIO_INDEX=N      # audio device index
+  DICTATE_AUDIO_NAME="X"     # preferred device name substring (more stable than index)
+  DICTATE_GPU="-ng"          # disable GPU (CPU only)
+  DICTATE_THREADS=5          # whisper thread count
+  DICTATE_BEAM_SIZE=1        # whisper decode beam size
+  DICTATE_BEST_OF=1          # whisper decode candidates
+  DICTATE_VAD=1              # whisper-cli voice activity detection (skip silences)
+  DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
+  DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
+  CEREBRAS_API_KEY=...       # required for postprocess
+
+CONFIG FILES (~/.config/dictate/):
+  config.toml                # main settings (model, postprocess, autosend, keybind refs, icons)
+  vocab                      # global corrections (one per line: wrong → right)
+  current-mode               # mode selection (short/long/etc)
+  modes/<mode>/apps          # apps that trigger this mode (one per line)
+  modes/<mode>/prompt        # mode-specific LLM prompt
+  modes/<mode>/vocab         # mode-specific corrections
+  history/                   # saved transcripts (auto-cleaned after 7 days)
+EOF
+}
+
+die() {
+  local msg="dictate: $*"
+  echo "$msg" >&2
+  if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
+    tmux display-message -d 5000 "$msg" 2>/dev/null || true
+  fi
+  exit 2
+}
+need() { command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1"; }
+
+now_ms() {
+  perl -MTime::HiRes=time -e 'printf "%.0f\n", time()*1000'
+}
+
+DICTATE_LIB_PATH="${DICTATE_LIB_PATH:-$HOME/.local/bin/dictate-lib.sh}"
+[[ -r "$DICTATE_LIB_PATH" ]] || die "missing shared library: $DICTATE_LIB_PATH"
+# shellcheck disable=SC1090
+source "$DICTATE_LIB_PATH"
+
+cmd="${1:-toggle}"
+
+if [[ "$cmd" == "-h" || "$cmd" == "--help" || "$cmd" == "help" ]]; then
+  usage
+  exit 0
+fi
+
+# Clean filler words from text (uses perl for case-insensitive)
+clean_fillers() {
+  dictate_lib_clean_fillers
+}
+
+# Clean stutters/repeats (configurable; avoids code-ish tokens like iTerm2, foo_bar, gpt-4, paths)
+# Level 0: off
+# Level 1: repeated word ("the the" -> "the")
+# Level 2: repeated short phrase (2–3 words) ("go ahead and go ahead and" -> "go ahead and")
+clean_repeats() {
+  local level="${1:-1}"
+  dictate_lib_clean_repeats "$level"
+}
+
+# Remove known whisper placeholder artefacts (e.g. "[blank audio]") from transcript text.
+sanitize_transcript_artifacts() {
+  dictate_lib_sanitize_transcript_artifacts
+}
+
+auto_paragraphs() {
+  local mode="${1:-}"
+  local min_words="${2:-${DICTATE_PARAGRAPH_MIN_WORDS:-80}}"
+  dictate_lib_auto_paragraphs "$mode" "$min_words"
+}
+
+normalize_british_spelling() {
+  local enabled="${DICTATE_BRITISH_SPELLING:-1}"
+  dictate_lib_normalize_british_spelling "$enabled"
+}
+
+apply_vocab_corrections() {
+  local mode="${1:-}"
+  dictate_lib_apply_vocab_corrections "$mode" "$DICTATE_CONFIG_DIR"
+}
+
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+DICTATE_CONFIG_DIR="${DICTATE_CONFIG_DIR:-$XDG_CONFIG_HOME/dictate}"
+DICTATE_CONFIG_FILE="${DICTATE_CONFIG_FILE:-$DICTATE_CONFIG_DIR/config.toml}"
+MODE_FILE="$DICTATE_CONFIG_DIR/current-mode"
+
+mkdir -p "$DICTATE_CONFIG_DIR"
+
+# Cache resolved audio index by source selection key to avoid repeated
+# `ffmpeg -list_devices` scans on every invocation when source choice is stable.
+AUDIO_CACHE_DIR="$DICTATE_CONFIG_DIR/.cache"
+AUDIO_INDEX_CACHE="$AUDIO_CACHE_DIR/audio-index.sh"
+DICTATE_LAST_AUDIO_INDEX_SOURCE=""
+DICTATE_LAST_AUDIO_INDEX_MS="0"
+
+load_audio_index_cache() {
+  [[ -f "$AUDIO_INDEX_CACHE" ]] || return 1
+  # shellcheck disable=SC1090
+  source "$AUDIO_INDEX_CACHE" 2>/dev/null || return 1
+  if [[ -z "${CACHED_AUDIO_KEY:-}" && -n "${CACHED_AUDIO_NAME:-}" ]]; then
+    CACHED_AUDIO_KEY="$CACHED_AUDIO_NAME"
+  fi
+  [[ -n "${CACHED_AUDIO_KEY:-}" && -n "${CACHED_AUDIO_INDEX:-}" ]] || return 1
+  return 0
+}
+
+write_audio_index_cache() {
+  local key="${1:-}"
+  local idx="${2:-}"
+  local name="${3:-}"
+  local match="${4:-}"
+  [[ -n "$key" && -n "$idx" ]] || return 0
+
+  mkdir -p "$AUDIO_CACHE_DIR" 2>/dev/null || return 0
+  local tmp
+  tmp="$(mktemp "$AUDIO_CACHE_DIR/.audio-index.XXXXXX" 2>/dev/null || true)"
+  [[ -n "$tmp" ]] || return 0
+
+  umask 077
+  printf 'CACHED_AUDIO_KEY=%q\nCACHED_AUDIO_NAME=%q\nCACHED_AUDIO_MATCH=%q\nCACHED_AUDIO_INDEX=%q\nCACHED_AUDIO_AT=%q\n' \
+    "$key" "$name" "$match" "$idx" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >"$tmp" 2>/dev/null || {
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  }
+  mv -f "$tmp" "$AUDIO_INDEX_CACHE" 2>/dev/null || true
+}
+
+clear_audio_index_cache() {
+  rm -f "$AUDIO_INDEX_CACHE" 2>/dev/null || true
+}
+
+# --- Config (TOML) -----------------------------------------------------------
+
+expand_path() {
+  dictate_lib_expand_path "${1:-}"
+}
+
+config_ensure() {
+  need python3
+  [[ -f "$DICTATE_CONFIG_FILE" ]] && return 0
+  python3 - "$DICTATE_CONFIG_FILE" <<'PYEOF'
+import os, sys
+
+path = os.path.expanduser(sys.argv[1])
+os.makedirs(os.path.dirname(path), exist_ok=True)
+
+default = """# Dictate configuration (TOML)
+
+[audio]
+source = "auto"
+device_name = "MacBook Air Microphone"
+mac_name = "MacBook Air Microphone"
+iphone_name = ""
+silence_trim = false
+silence_trim_mode = "edges"
+silence_threshold_db = -60
+silence_min_ms = 250
+silence_keep_ms = 50
+
+[audio.sounds]
+# These support `$SOUNDS_DIR` (expanded by Dictate scripts).
+enabled = true
+start_enabled = true
+stop_enabled = true
+process_enabled = true
+error_enabled = true
+start = "$SOUNDS_DIR/dictate/start.wav"
+stop = "$SOUNDS_DIR/dictate/stop.wav"
+process = "$SOUNDS_DIR/dictate/process.wav"
+error = "$SOUNDS_DIR/dictate/error.wav"
+
+[whisper]
+models_dir = "~/.local/share/whisper/models"
+model = "base"
+threads = 5
+beam_size = 1
+best_of = 1
+vad = false
+vad_threshold = 0.5
+vad_min_speech_ms = 250
+vad_min_silence_ms = 100
+vad_speech_pad_ms = 30
+
+[postprocess]
+enabled = true
+llm = "gpt-oss-120b"
+max_tokens = 3000
+chunk_words = 700
+
+[postprocess.mode_overrides.short]
+llm = "gpt-oss-120b"
+max_tokens = 2000
+chunk_words = 700
+
+[postprocess.mode_overrides.long]
+llm = "gpt-oss-120b"
+max_tokens = 5200
+chunk_words = 1000
+
+[clean]
+repeats_level = 1
+
+[inline]
+autosend = true
+paste_target = "restore"
+send_mode = "enter"
+
+[tmux]
+autosend = true
+paste_target = "origin"
+postprocess = false
+process_sound = false
+mode = "short"
+model = "base"
+send_mode = "auto"
+
+[debug]
+keep_logs = false
+
+[ui.keybinds]
+tmux = "F12"
+inline = "F11"
+
+[ui.icons]
+recording = "🔴"
+processing = "⏳"
+ready = "🎙️"
+error = "⚠️"
+
+base = "⚪"
+short = "💻"
+long = "📝"
+email = "📧"
+chat = "💬"
+linkedin = "in"
+twitter = "𝕏"
+"""
+
+with open(path, "w", encoding="utf-8") as f:
+  f.write(default)
+PYEOF
+}
+
+config_load() {
+  need python3
+  config_ensure
+  eval "$(
+    python3 - "$DICTATE_CONFIG_FILE" <<'PYEOF'
+import os, shlex, sys, tomllib
+
+path = os.path.expanduser(sys.argv[1])
+with open(path, "rb") as f:
+  cfg = tomllib.load(f) or {}
+
+def get(path, default=None):
+  cur = cfg
+  for part in path.split("."):
+    if not isinstance(cur, dict) or part not in cur:
+      return default
+    cur = cur[part]
+  return cur
+
+def b(v, default=False):
+  if v is None:
+    return default
+  return bool(v)
+
+out = {
+  "CFG_AUDIO_SOURCE": str(get("audio.source", "auto")),
+  "CFG_AUDIO_DEVICE_NAME": str(get("audio.device_name", "")),
+  "CFG_AUDIO_MAC_NAME": str(get("audio.mac_name", "MacBook Air Microphone")),
+  "CFG_AUDIO_IPHONE_NAME": str(get("audio.iphone_name", "")),
+  "CFG_AUDIO_DEVICE_INDEX": str(get("audio.device_index", "")) if get("audio.device_index", None) is not None else "",
+  "CFG_AUDIO_SILENCE_TRIM": "1" if b(get("audio.silence_trim", False), False) else "0",
+  "CFG_AUDIO_SILENCE_TRIM_MODE": str(get("audio.silence_trim_mode", "edges")),
+  "CFG_AUDIO_SILENCE_THRESHOLD_DB": str(get("audio.silence_threshold_db", "-60")),
+  "CFG_AUDIO_SILENCE_MIN_MS": str(get("audio.silence_min_ms", "250")),
+  "CFG_AUDIO_SILENCE_KEEP_MS": str(get("audio.silence_keep_ms", "50")),
+  "CFG_AUDIO_SOUNDS_START": str(get("audio.sounds.start", "")),
+  "CFG_AUDIO_SOUNDS_STOP": str(get("audio.sounds.stop", "")),
+  "CFG_AUDIO_SOUNDS_PROCESS": str(get("audio.sounds.process", "")),
+  "CFG_AUDIO_SOUNDS_ERROR": str(get("audio.sounds.error", "")),
+  "CFG_AUDIO_SOUNDS_CANCEL": str(get("audio.sounds.cancel", "")),
+  "CFG_AUDIO_SOUNDS_ENABLED": "1" if b(get("audio.sounds.enabled", True), True) else "0",
+  "CFG_AUDIO_SOUNDS_START_ENABLED": "1" if b(get("audio.sounds.start_enabled", True), True) else "0",
+  "CFG_AUDIO_SOUNDS_STOP_ENABLED": "1" if b(get("audio.sounds.stop_enabled", True), True) else "0",
+  "CFG_AUDIO_SOUNDS_PROCESS_ENABLED": "1" if b(get("audio.sounds.process_enabled", True), True) else "0",
+  "CFG_AUDIO_SOUNDS_ERROR_ENABLED": "1" if b(get("audio.sounds.error_enabled", True), True) else "0",
+  "CFG_AUDIO_SOUNDS_CANCEL_ENABLED": "1" if b(get("audio.sounds.cancel_enabled", True), True) else "0",
+  "CFG_WHISPER_MODELS_DIR": str(get("whisper.models_dir", "")),
+  "CFG_WHISPER_MODEL": str(get("whisper.model", "base")),
+  "CFG_WHISPER_THREADS": str(get("whisper.threads", "5")),
+  "CFG_WHISPER_BEAM_SIZE": str(get("whisper.beam_size", "1")),
+  "CFG_WHISPER_BEST_OF": str(get("whisper.best_of", "1")),
+  "CFG_WHISPER_VAD_ENABLED": "1" if b(get("whisper.vad", False), False) else "0",
+  "CFG_WHISPER_VAD_MODEL": str(get("whisper.vad_model", "")),
+  "CFG_WHISPER_VAD_THRESHOLD": str(get("whisper.vad_threshold", "0.5")),
+  "CFG_WHISPER_VAD_MIN_SPEECH_MS": str(get("whisper.vad_min_speech_ms", "250")),
+  "CFG_WHISPER_VAD_MIN_SILENCE_MS": str(get("whisper.vad_min_silence_ms", "100")),
+  "CFG_WHISPER_VAD_SPEECH_PAD_MS": str(get("whisper.vad_speech_pad_ms", "30")),
+  "CFG_POSTPROCESS_ENABLED": "1" if b(get("postprocess.enabled", False), False) else "0",
+  "CFG_POSTPROCESS_LLM": str(get("postprocess.llm", "llama3.1-8b")),
+  "CFG_POSTPROCESS_MAX_TOKENS": str(get("postprocess.max_tokens", "")),
+  "CFG_POSTPROCESS_CHUNK_WORDS": str(get("postprocess.chunk_words", "")),
+  "CFG_POSTPROCESS_MODE_LLM_OVERRIDES": "",
+  "CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES": "",
+  "CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES": "",
+  "CFG_INLINE_AUTOSEND": "1" if b(get("inline.autosend", True), True) else "0",
+  "CFG_INLINE_PASTE_TARGET": str(get("inline.paste_target", "restore")),
+  "CFG_INLINE_SEND_MODE": str(get("inline.send_mode", "enter")),
+  "CFG_TMUX_AUTOSEND": "1" if b(get("tmux.autosend", True), True) else "0",
+  "CFG_TMUX_PASTE_TARGET": str(get("tmux.paste_target", "origin")),
+  "CFG_TMUX_POSTPROCESS": "1" if b(get("tmux.postprocess", False), False) else "0",
+  "CFG_TMUX_PROCESS_SOUND": "1" if b(get("tmux.process_sound", False), False) else "0",
+  "CFG_TMUX_MODE": str(get("tmux.mode", "short")),
+  "CFG_TMUX_MODEL": str(get("tmux.model", "base")),
+  "CFG_TMUX_SEND_MODE": str(get("tmux.send_mode", "auto")),
+  "CFG_DEBUG_KEEP_LOGS": "1" if b(get("debug.keep_logs", False), False) else "0",
+  "CFG_UI_KEYBIND_TMUX": str(get("ui.keybinds.tmux", "F12")),
+  "CFG_UI_KEYBIND_INLINE": str(get("ui.keybinds.inline", "F11")),
+  "CFG_CLEAN_REPEATS_LEVEL": str(get("clean.repeats_level", "1")),
+}
+
+mode_overrides = get("postprocess.mode_overrides", {}) or {}
+if isinstance(mode_overrides, dict):
+  llm_parts = []
+  max_parts = []
+  chunk_parts = []
+  for mode, d in mode_overrides.items():
+    if not isinstance(d, dict):
+      continue
+    llm = d.get("llm")
+    if isinstance(llm, str) and llm.strip():
+      llm_parts.append(f"{mode}={llm.strip()}")
+    mt = d.get("max_tokens")
+    if isinstance(mt, int):
+      max_parts.append(f"{mode}={mt}")
+    cw = d.get("chunk_words")
+    if isinstance(cw, int):
+      chunk_parts.append(f"{mode}={cw}")
+  out["CFG_POSTPROCESS_MODE_LLM_OVERRIDES"] = ";".join(sorted(llm_parts))
+  out["CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES"] = ";".join(sorted(max_parts))
+  out["CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES"] = ";".join(sorted(chunk_parts))
+
+for k, v in out.items():
+  print(f"{k}={shlex.quote(v)}")
+PYEOF
+  )"
+
+  if [[ -z "${WHISPER_MODELS_DIR:-}" && -n "${CFG_WHISPER_MODELS_DIR:-}" ]]; then
+    WHISPER_MODELS_DIR="$(expand_path "$CFG_WHISPER_MODELS_DIR")"
+  fi
+	  WHISPER_MODELS_DIR="${WHISPER_MODELS_DIR:-$DEFAULT_WHISPER_MODELS_DIR}"
+	  mkdir -p "$WHISPER_MODELS_DIR"
+	}
+
+expand_sound_path() {
+  dictate_lib_expand_sound_path "${1:-}"
+}
+
+		sound_enabled() {
+		  local event="${1:-}"
+
+		  [[ "${CFG_AUDIO_SOUNDS_ENABLED:-1}" == "1" ]] || return 1
+
+		  case "$event" in
+		    start) [[ "${CFG_AUDIO_SOUNDS_START_ENABLED:-1}" == "1" ]] || return 1 ;;
+		    stop) [[ "${CFG_AUDIO_SOUNDS_STOP_ENABLED:-1}" == "1" ]] || return 1 ;;
+		    process) [[ "${CFG_AUDIO_SOUNDS_PROCESS_ENABLED:-1}" == "1" ]] || return 1 ;;
+		    error) [[ "${CFG_AUDIO_SOUNDS_ERROR_ENABLED:-1}" == "1" ]] || return 1 ;;
+		    cancel) [[ "${CFG_AUDIO_SOUNDS_CANCEL_ENABLED:-1}" == "1" ]] || return 1 ;;
+		  esac
+
+		  return 0
+		}
+
+		dictate_sound_path() {
+		  local event="${1:-}"
+		  local cfg=""
+
+	  case "$event" in
+	    start) cfg="${CFG_AUDIO_SOUNDS_START:-}" ;;
+	    stop) cfg="${CFG_AUDIO_SOUNDS_STOP:-}" ;;
+	    process) cfg="${CFG_AUDIO_SOUNDS_PROCESS:-}" ;;
+	    error) cfg="${CFG_AUDIO_SOUNDS_ERROR:-}" ;;
+	    cancel) cfg="${CFG_AUDIO_SOUNDS_CANCEL:-}" ;;
+	    *) return 0 ;;
+	  esac
+
+	  if [[ -z "$cfg" ]]; then
+	    [[ -n "${SOUNDS_DIR:-}" ]] || return 0
+	    cfg="$SOUNDS_DIR/dictate/$event.wav"
+	  else
+	    cfg="$(expand_sound_path "$cfg")"
+	  fi
+
+	  [[ -f "$cfg" ]] && printf "%s" "$cfg"
+	}
+
+play_sound() {
+  local event="${1:-}"
+  local p
+  sound_enabled "$event" || return 0
+  p="$(dictate_sound_path "$event")"
+  [[ -n "$p" ]] || return 0
+  nohup afplay "$p" >/dev/null 2>&1 &
+}
+
+keep_logs_enabled() {
+  [[ "${DICTATE_KEEP_LOGS:-${CFG_DEBUG_KEEP_LOGS:-0}}" == "1" ]]
+}
+
+debug() {
+  echo "Dictate debug"
+  echo ""
+
+  echo "Binaries:"
+  echo "  dictate: $(command -v dictate 2>/dev/null || echo '(not found)')"
+  echo "  ffmpeg:  $(command -v ffmpeg 2>/dev/null || echo '(not found)')"
+  echo "  whisper: $(command -v whisper-cli 2>/dev/null || echo '(not found)')"
+  echo ""
+
+  echo "Env overrides:"
+  echo "  DICTATE_AUDIO_SOURCE=${DICTATE_AUDIO_SOURCE:-}"
+  echo "  DICTATE_AUDIO_INDEX=${DICTATE_AUDIO_INDEX:-}"
+  echo "  DICTATE_AUDIO_NAME=${DICTATE_AUDIO_NAME:-}"
+  echo "  DICTATE_SILENCE_TRIM=${DICTATE_SILENCE_TRIM:-}"
+  echo "  DICTATE_TRIM_WITH_POSTPROCESS=${DICTATE_TRIM_WITH_POSTPROCESS:-}"
+  echo "  DICTATE_REPEATS_LEVEL=${DICTATE_REPEATS_LEVEL:-}"
+  echo "  DICTATE_REPEATS_WITH_POSTPROCESS=${DICTATE_REPEATS_WITH_POSTPROCESS:-}"
+  echo "  DICTATE_POSTPROCESS=${DICTATE_POSTPROCESS:-}"
+  echo "  DICTATE_VOCAB_CLEAN=${DICTATE_VOCAB_CLEAN:-}"
+  echo "  DICTATE_TMUX_POSTPROCESS=${DICTATE_TMUX_POSTPROCESS:-}"
+  echo "  DICTATE_TMUX_AUTOSEND=${DICTATE_TMUX_AUTOSEND:-}"
+  echo "  DICTATE_TMUX_PASTE_TARGET=${DICTATE_TMUX_PASTE_TARGET:-}"
+  echo "  DICTATE_TMUX_SEND_MODE=${DICTATE_TMUX_SEND_MODE:-}"
+  echo "  DICTATE_TMUX_SEND_DELAY_MS=${DICTATE_TMUX_SEND_DELAY_MS:-}"
+  echo "  DICTATE_TMUX_CODEX_TAB_DELAY_MS=${DICTATE_TMUX_CODEX_TAB_DELAY_MS:-}"
+  echo "  DICTATE_INLINE_PASTE_TARGET=${DICTATE_INLINE_PASTE_TARGET:-}"
+  echo "  DICTATE_INLINE_ACTIVATE_DELAY_MS=${DICTATE_INLINE_ACTIVATE_DELAY_MS:-}"
+  echo "  DICTATE_INLINE_SEND_DELAY_MS=${DICTATE_INLINE_SEND_DELAY_MS:-}"
+  echo "  DICTATE_INLINE_SEND_MODE=${DICTATE_INLINE_SEND_MODE:-}"
+  echo "  DICTATE_TMUX_PROCESS_SOUND=${DICTATE_TMUX_PROCESS_SOUND:-}"
+  echo "  DICTATE_TMUX_MODE=${DICTATE_TMUX_MODE:-}"
+  echo "  DICTATE_TMUX_MODEL=${DICTATE_TMUX_MODEL:-}"
+  echo "  DICTATE_LLM_MAX_TOKENS=${DICTATE_LLM_MAX_TOKENS:-}"
+  echo "  DICTATE_LLM_CHUNK_WORDS=${DICTATE_LLM_CHUNK_WORDS:-}"
+  echo "  DICTATE_BRITISH_SPELLING=${DICTATE_BRITISH_SPELLING:-}"
+  echo "  DICTATE_GPU=${DICTATE_GPU:-}"
+  echo "  DICTATE_KEEP_LOGS=${DICTATE_KEEP_LOGS:-}"
+  echo "  DICTATE_TARGET_APP=${DICTATE_TARGET_APP:-}"
+  echo "  DICTATE_TARGET_PANE=${DICTATE_TARGET_PANE:-}"
+  echo ""
+
+  echo "Config:"
+  echo "  audio.source=${CFG_AUDIO_SOURCE:-auto}"
+  echo "  audio.device_name=${CFG_AUDIO_DEVICE_NAME:-}"
+  echo "  audio.mac_name=${CFG_AUDIO_MAC_NAME:-}"
+  echo "  audio.iphone_name=${CFG_AUDIO_IPHONE_NAME:-}"
+  echo "  audio.device_index=${CFG_AUDIO_DEVICE_INDEX:-}"
+  echo "  audio.silence_trim=${CFG_AUDIO_SILENCE_TRIM:-0}"
+  echo "  audio.silence_trim_mode=${CFG_AUDIO_SILENCE_TRIM_MODE:-edges}"
+  echo "  audio.silence_threshold_db=${CFG_AUDIO_SILENCE_THRESHOLD_DB:--60}"
+  echo "  audio.silence_min_ms=${CFG_AUDIO_SILENCE_MIN_MS:-250}"
+  echo "  audio.silence_keep_ms=${CFG_AUDIO_SILENCE_KEEP_MS:-50}"
+  echo "  clean.repeats_level=${CFG_CLEAN_REPEATS_LEVEL:-1}"
+  echo "  whisper.threads=${CFG_WHISPER_THREADS:-5}"
+  echo "  whisper.beam_size=${CFG_WHISPER_BEAM_SIZE:-1}"
+  echo "  whisper.best_of=${CFG_WHISPER_BEST_OF:-1}"
+  echo "  whisper.vad=${CFG_WHISPER_VAD_ENABLED:-0}"
+  echo "  whisper.vad_model=${CFG_WHISPER_VAD_MODEL:-}"
+  echo "  whisper.vad_threshold=${CFG_WHISPER_VAD_THRESHOLD:-0.5}"
+  echo "  whisper.vad_min_speech_ms=${CFG_WHISPER_VAD_MIN_SPEECH_MS:-250}"
+  echo "  whisper.vad_min_silence_ms=${CFG_WHISPER_VAD_MIN_SILENCE_MS:-100}"
+  echo "  whisper.vad_speech_pad_ms=${CFG_WHISPER_VAD_SPEECH_PAD_MS:-30}"
+  echo "  postprocess.enabled=${CFG_POSTPROCESS_ENABLED:-0}"
+  echo "  postprocess.llm=${CFG_POSTPROCESS_LLM:-}"
+  echo "  postprocess.max_tokens=${CFG_POSTPROCESS_MAX_TOKENS:-}"
+  echo "  postprocess.chunk_words=${CFG_POSTPROCESS_CHUNK_WORDS:-}"
+  echo "  inline.autosend=${CFG_INLINE_AUTOSEND:-1}"
+      echo "  inline.paste_target=$(inline_paste_target_label "${CFG_INLINE_PASTE_TARGET:-restore}")"
+      echo "  inline.send_mode=$(inline_send_mode_label "${CFG_INLINE_SEND_MODE:-enter}")"
+      echo "  tmux.autosend=${CFG_TMUX_AUTOSEND:-1}"
+      echo "  tmux.paste_target=${CFG_TMUX_PASTE_TARGET:-origin}"
+      echo "  tmux.postprocess=${CFG_TMUX_POSTPROCESS:-0}"
+      echo "  tmux.process_sound=${CFG_TMUX_PROCESS_SOUND:-0}"
+      echo "  tmux.mode=${CFG_TMUX_MODE:-short}"
+      echo "  tmux.model=${CFG_TMUX_MODEL:-base}"
+      echo "  tmux.send_mode=${CFG_TMUX_SEND_MODE:-auto}"
+      echo "  debug.keep_logs=${CFG_DEBUG_KEEP_LOGS:-0}"
+      echo ""
+
+  echo "ffmpeg devices (trimmed):"
+  devices
+  echo ""
+
+  local src="(none)"
+  local idx="${DICTATE_AUDIO_INDEX:-}"
+  if [[ -n "$idx" ]]; then
+    src="env:DICTATE_AUDIO_INDEX"
+  else
+    local detect_meta detect_src
+    detect_meta="$(detect_audio_index 2>/dev/null || true)"
+    IFS=$'\t' read -r idx detect_src _ <<<"$detect_meta"
+    if [[ -n "$idx" ]]; then
+      src="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
+    elif [[ -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
+      idx="$CFG_AUDIO_DEVICE_INDEX"
+      src="config:audio.device_index"
+    fi
+  fi
+
+  echo "Resolved audio index: ${idx:-<none>} (source: $src)"
+  if [[ -z "$idx" ]]; then
+    echo ""
+    echo "Tip: If you see 'Input/output error' above, macOS is blocking device access for the app launching ffmpeg."
+    echo "Grant Microphone permission to that app (System Settings → Privacy & Security → Microphone)."
+  fi
+}
+
+doctor() {
+  echo "Dictate doctor"
+  echo ""
+
+  local issues=0
+  local warnings=0
+
+  local _age_s
+  _age_s() {
+    local f="${1:-}"
+    [[ -f "$f" ]] || { echo "-"; return 0; }
+    local now mtime
+    now="$(date +%s)"
+    mtime="$(stat -f %m "$f" 2>/dev/null || echo 0)"
+    if [[ "$mtime" -le 0 ]]; then
+      echo "?"
+      return 0
+    fi
+    echo $((now - mtime))
+  }
+
+  echo "State files:"
+  local state_files=(
+    "$STATE_FILE"
+    "/tmp/whisper-dictate-inline.state"
+  )
+  local sf
+  for sf in "${state_files[@]}"; do
+    if [[ ! -f "$sf" ]]; then
+      echo "  - $(basename "$sf"): absent"
+      continue
+    fi
+    local sf_pid sf_target sf_mode
+    sf_pid="$( ( source "$sf" 2>/dev/null || true; printf "%s" "${pid:-}" ) 2>/dev/null || true)"
+    sf_target="$( ( source "$sf" 2>/dev/null || true; printf "%s" "${target_pane:-${target_app:-}}" ) 2>/dev/null || true)"
+    sf_mode="$( ( source "$sf" 2>/dev/null || true; printf "%s" "${model_id:-}" ) 2>/dev/null || true)"
+    local age
+    age="$(_age_s "$sf")"
+    if [[ -n "$sf_pid" ]] && kill -0 "$sf_pid" 2>/dev/null; then
+      echo "  - $(basename "$sf"): active pid=$sf_pid age=${age}s target=${sf_target:-n/a} model=${sf_mode:-n/a}"
+    else
+      echo "  - $(basename "$sf"): stale (pid=${sf_pid:-none}, age=${age}s)"
+      warnings=$((warnings + 1))
+    fi
+  done
+  echo ""
+
+  echo "Processing markers:"
+  local proc_dir="/tmp/dictate-processing"
+  local proc_total=0
+  local proc_live=0
+  local proc_stale=0
+  if [[ -d "$proc_dir" ]]; then
+    local pf
+    for pf in "$proc_dir"/*; do
+      [[ -f "$pf" ]] || continue
+      proc_total=$((proc_total + 1))
+      local marker_pid line
+      marker_pid=""
+      line="$(head -n 1 "$pf" 2>/dev/null || true)"
+      if [[ "$line" =~ ^pid=([0-9]+)$ ]]; then
+        marker_pid="${BASH_REMATCH[1]}"
+      elif [[ "$line" =~ ^[0-9]+$ ]]; then
+        marker_pid="$line"
+      fi
+      if [[ -n "$marker_pid" ]] && kill -0 "$marker_pid" 2>/dev/null; then
+        proc_live=$((proc_live + 1))
+      else
+        proc_stale=$((proc_stale + 1))
+      fi
+    done
+  fi
+  echo "  total=$proc_total live=$proc_live stale=$proc_stale"
+  if [[ "$proc_stale" -gt 0 ]]; then
+    warnings=$((warnings + 1))
+  fi
+  echo ""
+
+  echo "Tmux queue:"
+  local tmux_total=0
+  local tmux_recording=0
+  local tmux_processing=0
+  if [[ -d "$TMUX_JOBS_DIR" ]]; then
+    local jf
+    for jf in "$TMUX_JOBS_DIR"/*; do
+      [[ -f "$jf" ]] || continue
+      tmux_total=$((tmux_total + 1))
+      local st
+      st="$(sed -n 's/^status=//p' "$jf" 2>/dev/null | head -n 1 || true)"
+      case "$st" in
+        recording) tmux_recording=$((tmux_recording + 1)) ;;
+        processing) tmux_processing=$((tmux_processing + 1)) ;;
+      esac
+    done
+  fi
+  echo "  total=$tmux_total recording=$tmux_recording processing=$tmux_processing"
+  echo ""
+
+  echo "Recent logs:"
+  local log_files=(
+    "$RECORD_LOG"
+    "$TRANSCRIBE_LOG"
+    "$TMPDIR/whisper-dictate-inline.record.log"
+    "$TMPDIR/whisper-dictate-inline.transcribe.log"
+    "/tmp/dictate-raycast-inline.log"
+  )
+  local lf
+  for lf in "${log_files[@]}"; do
+    if [[ -f "$lf" ]]; then
+      local age size
+      age="$(_age_s "$lf")"
+      size="$(wc -c < "$lf" 2>/dev/null | tr -d ' ' || echo 0)"
+      echo "  - $(basename "$lf"): present (${size}B, age=${age}s)"
+    else
+      echo "  - $(basename "$lf"): absent"
+    fi
+  done
+  echo ""
+
+  if [[ "$issues" -eq 0 && "$warnings" -eq 0 ]]; then
+    echo "Health: OK"
+  elif [[ "$issues" -eq 0 ]]; then
+    echo "Health: WARN ($warnings)"
+  else
+    echo "Health: FAIL ($issues issues, $warnings warnings)"
+  fi
+  echo "Next: dictate debug   |   dictate logs"
+}
+
+logs() {
+  echo "Logs"
+  echo ""
+  echo "  record:     $RECORD_LOG"
+  echo "  transcribe: $TRANSCRIBE_LOG"
+  echo "  inline rec: $TMPDIR/whisper-dictate-inline.record.log"
+  echo "  inline trn: $TMPDIR/whisper-dictate-inline.transcribe.log"
+  echo ""
+  if [[ -f "$RECORD_LOG" ]]; then
+    echo "--- record (tail) ---"
+    tail -n 40 "$RECORD_LOG" || true
+    echo ""
+  fi
+  if [[ -f "$TRANSCRIBE_LOG" ]]; then
+    echo "--- transcribe (tail) ---"
+    tail -n 80 "$TRANSCRIBE_LOG" || true
+  fi
+  local inline_record="$TMPDIR/whisper-dictate-inline.record.log"
+  local inline_transcribe="$TMPDIR/whisper-dictate-inline.transcribe.log"
+  if [[ -f "$inline_record" ]]; then
+    echo ""
+    echo "--- inline record (tail) ---"
+    tail -n 40 "$inline_record" || true
+  fi
+  if [[ -f "$inline_transcribe" ]]; then
+    echo ""
+    echo "--- inline transcribe (tail) ---"
+    tail -n 80 "$inline_transcribe" || true
+  fi
+}
+
+changelog() {
+  local f="$DICTATE_CONFIG_DIR/CHANGELOG.md"
+  if [[ -f "$f" ]]; then
+    cat "$f"
+  else
+    echo "No changelog yet at: $f"
+  fi
+}
+
+config_set() {
+  # Usage: config_set <path.like.this> <type:bool|int|string> <value>
+  need python3
+  config_ensure
+
+  local key="${1:-}"
+  local type="${2:-}"
+  local value="${3:-}"
+  [[ -n "$key" && -n "$type" ]] || die "config_set requires: <key> <type> <value>"
+
+  python3 - "$DICTATE_CONFIG_FILE" "$key" "$type" "$value" <<'PYEOF'
+import os, sys, tomllib
+
+path = os.path.expanduser(sys.argv[1])
+key = sys.argv[2]
+typ = sys.argv[3]
+raw = sys.argv[4] if len(sys.argv) > 4 else ""
+
+with open(path, "rb") as f:
+  cfg = tomllib.load(f) or {}
+
+def ensure(obj, parts):
+  cur = obj
+  for p in parts[:-1]:
+    nxt = cur.get(p)
+    if not isinstance(nxt, dict):
+      nxt = {}
+      cur[p] = nxt
+    cur = nxt
+  return cur, parts[-1]
+
+def parse_value(typ, raw):
+  if typ == "bool":
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+  if typ == "int":
+    raw = raw.strip()
+    return int(raw) if raw else None
+  if typ == "string":
+    return raw
+  raise SystemExit(f"unknown type: {typ}")
+
+parent, leaf = ensure(cfg, key.split("."))
+val = parse_value(typ, raw)
+if val is None:
+  parent.pop(leaf, None)
+else:
+  parent[leaf] = val
+
+def esc(s: str) -> str:
+  return (
+    s.replace("\\", "\\\\")
+     .replace('"', '\\"')
+     .replace("\n", "\\n")
+     .replace("\r", "\\r")
+     .replace("\t", "\\t")
+  )
+
+def fmt(v):
+  if isinstance(v, bool):
+    return "true" if v else "false"
+  if isinstance(v, int):
+    return str(v)
+  if isinstance(v, float):
+    return str(v)
+  if isinstance(v, str):
+    return f"\"{esc(v)}\""
+  if isinstance(v, list):
+    return "[" + ", ".join(fmt(x) for x in v) + "]"
+  raise TypeError(type(v))
+
+preferred_table_order = [
+  "audio",
+  "clean",
+  "whisper",
+  "postprocess",
+  "inline",
+  "tmux",
+  "debug",
+  "ui.keybinds",
+  "ui.icons",
+]
+
+preferred_key_order = {
+  "audio": ["source", "device_name", "mac_name", "iphone_name", "device_index", "silence_trim", "silence_trim_mode", "silence_threshold_db", "silence_min_ms", "silence_keep_ms"],
+  "clean": ["repeats_level"],
+  "whisper": ["models_dir", "model", "threads", "beam_size", "best_of", "vad", "vad_threshold", "vad_min_speech_ms", "vad_min_silence_ms", "vad_speech_pad_ms"],
+  "postprocess": ["enabled", "llm", "max_tokens", "chunk_words"],
+  "inline": ["autosend", "paste_target"],
+  "tmux": ["autosend", "paste_target", "postprocess", "process_sound", "mode", "model", "send_mode"],
+  "debug": ["keep_logs"],
+  "ui.keybinds": ["tmux", "inline"],
+  "ui.icons": [
+    "recording","processing","ready","error",
+    "base","short","long","email","chat","linkedin","twitter",
+  ],
+}
+
+def split_tables(obj, prefix=""):
+  if not isinstance(obj, dict):
+    return
+  scalars = {}
+  tables = {}
+  for k, v in obj.items():
+    if isinstance(v, dict):
+      tables[k] = v
+    else:
+      scalars[k] = v
+  yield prefix, scalars
+  for k in sorted(tables.keys()):
+    nxt = f"{prefix}.{k}" if prefix else k
+    yield from split_tables(tables[k], nxt)
+
+tables = {}
+for section, scalars in split_tables(cfg, ""):
+  if scalars:
+    tables[section] = scalars
+
+def ordered_keys(section, scalars):
+  pref = preferred_key_order.get(section, [])
+  remaining = sorted([k for k in scalars.keys() if k not in pref])
+  return [k for k in pref if k in scalars] + remaining
+
+parts = [
+  "# Dictate configuration (TOML)",
+  "# Generated by `dictate`; safe to edit.",
+  "",
+]
+
+# Root-level scalars (rare; include if present).
+if "" in tables:
+  for k in ordered_keys("", tables[""]):
+    parts.append(f"{k} = {fmt(tables[''][k])}")
+  parts.append("")
+
+sections = [s for s in tables.keys() if s]
+ordered_sections = []
+for s in preferred_table_order:
+  if s in sections:
+    ordered_sections.append(s)
+    sections.remove(s)
+ordered_sections.extend(sorted(sections))
+
+for s in ordered_sections:
+  parts.append(f"[{s}]")
+  for k in ordered_keys(s, tables[s]):
+    parts.append(f"{k} = {fmt(tables[s][k])}")
+  parts.append("")
+
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w", encoding="utf-8") as f:
+  f.write("\n".join(parts))
+PYEOF
+}
+
+resolve_model_path() {
+  local model_id="${1:-}"
+  local models_dir="${2:-$WHISPER_MODELS_DIR}"
+  model_id="$(printf "%s" "$model_id" | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  case "${model_id:-base}" in
+    ""|base|small|turbo|*.bin|*/*)
+      dictate_lib_resolve_model_path "$model_id" "$models_dir"
+      ;;
+    *)
+      die "unknown model: $model_id (use: base, small, turbo)"
+      ;;
+  esac
+}
+
+transcribe_whisper_cli() {
+  local wav="$1"
+  local model_id="${2:-}"
+  local language="${3:-en}"
+  local threads="${4:-${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}}"
+  local beam="${DICTATE_BEAM_SIZE:-${CFG_WHISPER_BEAM_SIZE:-1}}"
+  local best_of="${DICTATE_BEST_OF:-${CFG_WHISPER_BEST_OF:-1}}"
+  local vad_enabled="${DICTATE_VAD:-${CFG_WHISPER_VAD_ENABLED:-0}}"
+  local vad_model="${DICTATE_VAD_MODEL:-${CFG_WHISPER_VAD_MODEL:-}}"
+  local vad_threshold="${DICTATE_VAD_THRESHOLD:-${CFG_WHISPER_VAD_THRESHOLD:-0.5}}"
+  local vad_min_speech_ms="${DICTATE_VAD_MIN_SPEECH_MS:-${CFG_WHISPER_VAD_MIN_SPEECH_MS:-250}}"
+  local vad_min_silence_ms="${DICTATE_VAD_MIN_SILENCE_MS:-${CFG_WHISPER_VAD_MIN_SILENCE_MS:-100}}"
+  local vad_speech_pad_ms="${DICTATE_VAD_SPEECH_PAD_MS:-${CFG_WHISPER_VAD_SPEECH_PAD_MS:-30}}"
+  local gpu_flag="${DICTATE_GPU:-}"
+  local model
+  model="$(resolve_model_path "$model_id")"
+  [[ -f "$model" ]] || die "model not found: $model"
+
+  local -a args
+  args=(whisper-cli -m "$model" -l "$language" -t "$threads" -bs "$beam" -bo "$best_of")
+
+  if [[ "$vad_enabled" == "1" || "$vad_enabled" == "true" || "$vad_enabled" == "on" ]]; then
+    if [[ -z "$vad_model" || ! -f "$vad_model" ]]; then
+      echo "dictate: whisper.vad enabled but whisper.vad_model is missing; skipping VAD" >>"${TRANSCRIBE_LOG:-/dev/null}"
+      vad_enabled="0"
+    fi
+  fi
+
+  if [[ "$vad_enabled" == "1" || "$vad_enabled" == "true" || "$vad_enabled" == "on" ]]; then
+    args+=(--vad -vm "$vad_model")
+    [[ -n "$vad_threshold" ]] && args+=(-vt "$vad_threshold")
+    [[ -n "$vad_min_speech_ms" ]] && args+=(-vspd "$vad_min_speech_ms")
+    [[ -n "$vad_min_silence_ms" ]] && args+=(-vsd "$vad_min_silence_ms")
+    [[ -n "$vad_speech_pad_ms" ]] && args+=(-vp "$vad_speech_pad_ms")
+
+    # whisper-cli VAD currently triggers a ggml-metal assertion on Apple Silicon.
+    # Force CPU for stability unless the user already forced a GPU mode.
+    if [[ -z "$gpu_flag" ]]; then
+      gpu_flag="-ng"
+    fi
+  fi
+
+  args+=(-nt -np)
+  if [[ -n "$gpu_flag" ]]; then
+    local -a gpu_parts
+    IFS=' ' read -r -a gpu_parts <<<"$gpu_flag"
+    args+=("${gpu_parts[@]}")
+  fi
+  args+=("$wav")
+
+  "${args[@]}" 2>>"${TRANSCRIBE_LOG:-/dev/null}" \
+  | tr '\n' ' ' \
+  | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
+}
+
+transcribe_audio() {
+  local wav="$1"
+  local model_id="${2:-}"
+  local language="${3:-en}"
+  local threads="${4:-2}"
+
+  maybe_trim_silence_inplace "$wav"
+  transcribe_whisper_cli "$wav" "$model_id" "$language" "$threads"
+}
+
+maybe_trim_silence_inplace() {
+  local wav="${1:-}"
+  [[ -n "$wav" && -f "$wav" ]] || return 0
+
+  if bool_is_on "${DICTATE_RUNTIME_SKIP_SILENCE_TRIM:-0}"; then
+    return 0
+  fi
+
+  local enabled="${DICTATE_SILENCE_TRIM:-${CFG_AUDIO_SILENCE_TRIM:-0}}"
+  bool_is_on "$enabled" || return 0
+
+  command -v ffmpeg >/dev/null 2>&1 || return 0
+
+  local mode="${DICTATE_SILENCE_TRIM_MODE:-${CFG_AUDIO_SILENCE_TRIM_MODE:-edges}}"
+  local threshold_db="${DICTATE_SILENCE_THRESHOLD_DB:-${CFG_AUDIO_SILENCE_THRESHOLD_DB:--60}}"
+  local min_ms="${DICTATE_SILENCE_MIN_MS:-${CFG_AUDIO_SILENCE_MIN_MS:-250}}"
+  local keep_ms="${DICTATE_SILENCE_KEEP_MS:-${CFG_AUDIO_SILENCE_KEEP_MS:-50}}"
+
+  local min_s keep_s threshold_amp
+  min_s="$(awk "BEGIN { printf \"%.3f\", (${min_ms:-250})/1000 }")"
+  keep_s="$(awk "BEGIN { printf \"%.3f\", (${keep_ms:-50})/1000 }")"
+  threshold_amp="$(awk "BEGIN { printf \"%.6f\", 10^((${threshold_db:--60})/20) }")"
+
+  local stop_periods="1"
+  if [[ "$mode" == "all" ]]; then
+    # Experimental: attempt to remove interior silences too (may harm cadence/accuracy).
+    stop_periods="-1"
+  fi
+
+  local tmp="${wav}.trim.wav"
+  rm -f "$tmp" 2>/dev/null || true
+
+  if [[ -n "${TRANSCRIBE_LOG:-}" ]]; then
+    printf "[%s] silence_trim: mode=%s threshold_db=%s threshold_amp=%s min_ms=%s keep_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$mode" "$threshold_db" "$threshold_amp" "$min_ms" "$keep_ms" \
+      >>"$TRANSCRIBE_LOG" 2>/dev/null || true
+  fi
+
+  set +e
+  ffmpeg -hide_banner -loglevel error -y \
+    -i "$wav" \
+    -af "silenceremove=start_periods=1:start_duration=${min_s}:start_threshold=${threshold_amp}:start_silence=${keep_s}:stop_periods=${stop_periods}:stop_duration=${min_s}:stop_threshold=${threshold_amp}:stop_silence=${keep_s}:detection=peak" \
+    -ac 1 -ar 16000 -c:a pcm_s16le \
+    "$tmp" >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1
+  local rc=$?
+  set -e
+
+  if [[ "$rc" -ne 0 || ! -s "$tmp" ]]; then
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  fi
+
+  mv -f "$tmp" "$wav" 2>/dev/null || {
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  }
+}
+
+config_load
+
+# Detect mode based on frontmost app
+canonical_mode_name() {
+  local m="${1:-}"
+  case "$m" in
+    "") echo "short" ;;
+    *) echo "$m" ;;
+  esac
+}
+
+mode_to_dir_name() {
+  local m
+  m="$(canonical_mode_name "${1:-}")"
+  echo "$m"
+}
+
+mode_override_key() {
+  local m
+  m="$(canonical_mode_name "${1:-}")"
+  echo "$m"
+}
+
+normalize_mode_name() {
+  local mode
+  mode="$(canonical_mode_name "${1:-}")"
+  [[ -z "$mode" ]] && mode="short"
+  if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]; then
+    echo "$mode"
+  else
+    echo "short"
+  fi
+}
+
+detect_mode() {
+  local app="${1:-}"
+  
+  # If no app provided, try to detect frontmost
+  if [[ -z "$app" ]]; then
+    app="$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null || echo "")"
+  fi
+  
+  [[ -z "$app" ]] && echo "short" && return 0
+  
+  # Check each mode's apps file
+  for mode_dir in "$DICTATE_CONFIG_DIR/modes"/*/; do
+    local mode_name="$(basename "$mode_dir")"
+    local apps_file="$mode_dir/apps"
+    [[ -f "$apps_file" ]] || continue
+    
+    # Check if app matches any line in the apps file (case-insensitive)
+    if grep -iq "^${app}$" "$apps_file" 2>/dev/null; then
+      normalize_mode_name "$mode_name"
+      return 0
+    fi
+  done
+  
+  # Default to short mode
+  echo "short"
+}
+
+# Get current mode (from file, then app-detect fallback)
+get_current_mode() {
+  local target_app="${1:-}"
+  
+  # Allow forcing mode via env var (used by tmux mode)
+  if [[ -n "${DICTATE_FORCE_MODE:-}" ]]; then
+    normalize_mode_name "$DICTATE_FORCE_MODE"
+    return 0
+  fi
+  
+  # Check if mode is explicitly set
+  if [[ -f "$MODE_FILE" ]]; then
+    local saved_mode="$(cat "$MODE_FILE")"
+    normalize_mode_name "$saved_mode"
+    return 0
+  fi
+  
+  # Default detect path
+  detect_mode "$target_app"
+}
+
+# Build system prompt for current mode
+build_mode_prompt() {
+  local mode
+  mode="$(canonical_mode_name "$1")"
+  local mode_dir="$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode")"
+  
+  # Base rules (always apply)
+  local base_prompt='You are cleaning speech-to-text dictation.
+
+HARD RULES:
+- You are a dictation cleaner/editor, not a task-completing assistant.
+- Follow the MODE INSTRUCTIONS below.
+- You may add minimal structural elements required by the mode (e.g. paragraph breaks, email greeting/subject), but do not add new facts, steps, or deliverables.
+- If the dictation asks to create/generate/list items (e.g. "make 10 prompts"), keep it as a request instead of generating the items, unless the MODE INSTRUCTIONS explicitly require generating them.
+- Preserve meaning; do not add new information or opinions.
+- Remove filler words and obvious false starts.
+- Fix obvious transcription errors and apply corrections.
+- Output ONLY the final result (no preamble, no explanations).'
+
+  # Load mode-specific prompt if exists
+  local mode_prompt=""
+  if [[ -f "$mode_dir/prompt" ]]; then
+    mode_prompt="$(cat "$mode_dir/prompt")"
+  fi
+  
+  # Load global vocab
+  local global_vocab=""
+  if [[ -f "$DICTATE_CONFIG_DIR/vocab" ]]; then
+    global_vocab="$(cat "$DICTATE_CONFIG_DIR/vocab" | tr '\n' ';' | sed 's/;$//')"
+  fi
+  
+  # Load mode-specific vocab (overrides globals)
+  local mode_vocab=""
+  if [[ -f "$mode_dir/vocab" ]]; then
+    mode_vocab="$(cat "$mode_dir/vocab" | tr '\n' ';' | sed 's/;$//')"
+  fi
+  
+  # Combine prompts
+  local full_prompt="$base_prompt"
+  
+  if [[ -n "$mode_prompt" ]]; then
+    full_prompt="${full_prompt}
+
+${mode_prompt}"
+  fi
+  
+  if [[ -n "$global_vocab" ]]; then
+    full_prompt="${full_prompt}
+
+GLOBAL CORRECTIONS: ${global_vocab}"
+  fi
+  
+  if [[ -n "$mode_vocab" ]]; then
+    full_prompt="${full_prompt}
+
+MODE CORRECTIONS: ${mode_vocab}"
+  fi
+  
+  echo "$full_prompt"
+}
+
+# --- History Management -----------------------------------------------------
+
+HISTORY_DIR="$DICTATE_CONFIG_DIR/history"
+BENCH_FILE="$HISTORY_DIR/bench.tsv"
+
+bench_field() {
+  printf "%s" "${1:-}" | tr '\t\r\n' '   '
+}
+
+append_bench_entry() {
+  local flow="${1:-unknown}"
+  local status="${2:-ok}"
+  local model="${3:-unknown}"
+  local mode="${4:-none}"
+  local postprocess="${5:-0}"
+  local raw_chars="${6:-0}"
+  local out_chars="${7:-0}"
+  local record_ms="${8:-0}"
+  local transcribe_ms="${9:-0}"
+  local clean_ms="${10:-0}"
+  local postprocess_ms="${11:-0}"
+  local paste_ms="${12:-0}"
+  local total_ms="${13:-0}"
+  local startup_total_ms="${14:-0}"
+  local startup_audio_ms="${15:-0}"
+  local startup_ffmpeg_live_ms="${16:-0}"
+  local startup_target_ms="${17:-0}"
+  local startup_audio_source="${18:-}"
+
+  mkdir -p "$HISTORY_DIR" 2>/dev/null || return 0
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    "$(bench_field "$flow")" \
+    "$(bench_field "$status")" \
+    "$(bench_field "$model")" \
+    "$(bench_field "$mode")" \
+    "$(bench_field "$postprocess")" \
+    "$(bench_field "$raw_chars")" \
+    "$(bench_field "$out_chars")" \
+    "$(bench_field "$record_ms")" \
+    "$(bench_field "$transcribe_ms")" \
+    "$(bench_field "$clean_ms")" \
+    "$(bench_field "$postprocess_ms")" \
+    "$(bench_field "$paste_ms")" \
+    "$(bench_field "$total_ms")" \
+    "$(bench_field "$startup_total_ms")" \
+    "$(bench_field "$startup_audio_ms")" \
+    "$(bench_field "$startup_ffmpeg_live_ms")" \
+    "$(bench_field "$startup_target_ms")" \
+    "$(bench_field "$startup_audio_source")" >>"$BENCH_FILE" 2>/dev/null || true
+
+  local max_rows rows
+  max_rows="${DICTATE_BENCH_MAX_ROWS:-800}"
+  if [[ "$max_rows" =~ ^[0-9]+$ ]] && (( max_rows > 0 )) && [[ -f "$BENCH_FILE" ]]; then
+    rows="$(wc -l < "$BENCH_FILE" | tr -d ' ' || echo 0)"
+    if [[ "$rows" =~ ^[0-9]+$ ]] && (( rows > max_rows )); then
+      tail -n "$max_rows" "$BENCH_FILE" > "${BENCH_FILE}.tmp" 2>/dev/null || true
+      mv -f "${BENCH_FILE}.tmp" "$BENCH_FILE" 2>/dev/null || true
+    fi
+  fi
+}
+
+bench() {
+  local arg="${1:-}"
+  local limit="30"
+
+  case "$arg" in
+    "" ) ;;
+    clear)
+      rm -f "$BENCH_FILE" 2>/dev/null || true
+      echo "Bench data cleared."
+      return 0
+      ;;
+    *)
+      [[ "$arg" =~ ^[0-9]+$ ]] || die "usage: dictate bench [N|clear]"
+      limit="$arg"
+      ;;
+  esac
+
+  if [[ ! -f "$BENCH_FILE" ]]; then
+    echo "No bench data yet."
+    echo "Run a dictation first, then: dictate bench"
+    return 0
+  fi
+
+  need python3
+  python3 - "$BENCH_FILE" "$limit" <<'PYEOF'
+import collections, statistics, sys
+
+path = sys.argv[1]
+limit = int(sys.argv[2]) if len(sys.argv) > 2 else 30
+
+records = []
+with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    for line in fh:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) < 14:
+            continue
+        ts, flow, status, model, mode, post, rawc, outc, rec, trn, cln, pps, pst, tot = parts[:14]
+        startup_total = parts[14] if len(parts) > 14 else "0"
+        startup_audio = parts[15] if len(parts) > 15 else "0"
+        startup_live = parts[16] if len(parts) > 16 else "0"
+        startup_target = parts[17] if len(parts) > 17 else "0"
+        startup_source = parts[18] if len(parts) > 18 else ""
+
+        def to_int(v: str) -> int:
+            try:
+                return int(v)
+            except Exception:
+                return 0
+
+        records.append(
+            {
+                "ts": ts,
+                "flow": flow,
+                "status": status,
+                "model": model,
+                "mode": mode,
+                "post": post in {"1", "true", "on", "yes"},
+                "raw_chars": to_int(rawc),
+                "out_chars": to_int(outc),
+                "record_ms": to_int(rec),
+                "transcribe_ms": to_int(trn),
+                "clean_ms": to_int(cln),
+                "postprocess_ms": to_int(pps),
+                "paste_ms": to_int(pst),
+                "total_ms": to_int(tot),
+                "startup_total_ms": to_int(startup_total),
+                "startup_audio_ms": to_int(startup_audio),
+                "startup_ffmpeg_live_ms": to_int(startup_live),
+                "startup_target_ms": to_int(startup_target),
+                "startup_audio_source": startup_source,
+            }
+        )
+
+if not records:
+    print("No bench data yet.")
+    raise SystemExit(0)
+
+if limit <= 0:
+    limit = 1
+subset = records[-limit:]
+
+def percentile(values, pct):
+    if not values:
+        return 0
+    vals = sorted(values)
+    if len(vals) == 1:
+        return vals[0]
+    pos = (len(vals) - 1) * pct
+    lo = int(pos)
+    hi = min(lo + 1, len(vals) - 1)
+    frac = pos - lo
+    return int(round(vals[lo] * (1 - frac) + vals[hi] * frac))
+
+def fmt_stage(name, values):
+    if not values:
+        return f"{name}: n=0"
+    return (
+        f"{name}: n={len(values)} median={int(statistics.median(values))}ms "
+        f"p90={percentile(values, 0.90)}ms max={max(values)}ms"
+    )
+
+flow_counts = collections.Counter(r["flow"] for r in subset)
+status_counts = collections.Counter(r["status"] for r in subset)
+
+print(f"Dictate bench (last {len(subset)} of {len(records)} runs)")
+print(f"Source: {path}")
+print("")
+print("Counts:")
+print("  by flow: " + ", ".join(f"{k}={v}" for k, v in sorted(flow_counts.items())))
+print("  by status: " + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())))
+
+print("")
+print("Stages:")
+print("  " + fmt_stage("record", [r["record_ms"] for r in subset if r["record_ms"] > 0]))
+print("  " + fmt_stage("transcribe", [r["transcribe_ms"] for r in subset if r["transcribe_ms"] >= 0]))
+print("  " + fmt_stage("clean", [r["clean_ms"] for r in subset if r["clean_ms"] >= 0]))
+print("  " + fmt_stage("postprocess", [r["postprocess_ms"] for r in subset if r["postprocess_ms"] > 0]))
+print("  " + fmt_stage("paste", [r["paste_ms"] for r in subset if r["paste_ms"] > 0]))
+print("  " + fmt_stage("total(stop->done)", [r["total_ms"] for r in subset if r["total_ms"] > 0]))
+
+startup_total_vals = [r["startup_total_ms"] for r in subset if r["startup_total_ms"] > 0]
+startup_audio_vals = [r["startup_audio_ms"] for r in subset if r["startup_audio_ms"] > 0]
+startup_live_vals = [r["startup_ffmpeg_live_ms"] for r in subset if r["startup_ffmpeg_live_ms"] > 0]
+startup_target_vals = [r["startup_target_ms"] for r in subset if r["startup_target_ms"] > 0]
+if startup_total_vals or startup_audio_vals or startup_live_vals or startup_target_vals:
+    print("")
+    print("Startup readiness:")
+    print("  " + fmt_stage("startup.total(invoke->ready)", startup_total_vals))
+    print("  " + fmt_stage("startup.audio_resolve", startup_audio_vals))
+    print("  " + fmt_stage("startup.ffmpeg_livecheck", startup_live_vals))
+    print("  " + fmt_stage("startup.target_capture", startup_target_vals))
+
+latest = subset[-1]
+print("")
+print("Latest:")
+print(
+    "  "
+    + f"{latest['ts']} flow={latest['flow']} status={latest['status']} "
+    + f"model={latest['model']} mode={latest['mode']} postprocess={'on' if latest['post'] else 'off'}"
+)
+print(
+    (
+        "  "
+        + "record={record_ms}ms transcribe={transcribe_ms}ms clean={clean_ms}ms "
+        + "postprocess={postprocess_ms}ms paste={paste_ms}ms total={total_ms}ms "
+        + "raw_chars={raw_chars} out_chars={out_chars}"
+    ).format(**latest)
+)
+if latest.get("startup_total_ms", 0) > 0:
+    print(
+        (
+            "  "
+            + "startup_total={startup_total_ms}ms startup_audio={startup_audio_ms}ms "
+            + "startup_ffmpeg_live={startup_ffmpeg_live_ms}ms startup_target={startup_target_ms}ms "
+            + "audio_source={startup_audio_source}"
+        ).format(**latest)
+    )
+PYEOF
+}
+
+# Save a dictation to history
+# Usage: save_history "raw_transcript" "processed_text" "mode" "app"
+save_history() {
+  local raw="$1"
+  local processed="$2"
+  local mode="${3:-unknown}"
+  local app="${4:-unknown}"
+  
+  mkdir -p "$HISTORY_DIR"
+  
+  # Get retention days from config (default 7)
+  local retention="${CFG_HISTORY_RETENTION_DAYS:-7}"
+  
+  # Clean old entries first
+  cleanup_history "$retention"
+  
+  # Generate timestamp filename
+  local ts
+  ts="$(date '+%Y-%m-%dT%H-%M-%S')"
+  local filename="$HISTORY_DIR/${ts}.json"
+  
+  # Escape for JSON
+  local raw_escaped processed_escaped mode_escaped app_escaped
+  raw_escaped="$(printf '%s' "$raw" | jq -Rs .)"
+  processed_escaped="$(printf '%s' "$processed" | jq -Rs .)"
+  mode_escaped="$(printf '%s' "$mode" | jq -Rs .)"
+  app_escaped="$(printf '%s' "$app" | jq -Rs .)"
+  
+  cat > "$filename" <<EOF
+{
+  "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "mode": $mode_escaped,
+  "app": $app_escaped,
+  "raw": $raw_escaped,
+  "processed": $processed_escaped
+}
+EOF
+}
+
+# Remove history entries older than N days
+cleanup_history() {
+  local days="${1:-7}"
+  [[ -d "$HISTORY_DIR" ]] || return 0
+  
+  # Find and delete files older than N days
+  find "$HISTORY_DIR" -name "*.json" -type f -mtime +"$days" -delete 2>/dev/null || true
+}
+
+# List recent history entries
+list_history() {
+  local limit="${1:-20}"
+  
+  if [[ ! -d "$HISTORY_DIR" ]]; then
+    echo "No history yet."
+    return 0
+  fi
+  
+  local files
+  files="$(ls -1t "$HISTORY_DIR"/*.json 2>/dev/null | head -n "$limit")"
+  
+  if [[ -z "$files" ]]; then
+    echo "No history entries."
+    return 0
+  fi
+  
+  echo "Recent dictations (newest first):"
+  echo ""
+  
+  local i=1
+  while IFS= read -r f; do
+    local basename ts mode preview
+    basename="$(basename "$f" .json)"
+    ts="${basename/T/ }"
+    ts="${ts//-/:}"
+    # Fix: first 2 colons in date should be dashes
+    ts="$(echo "$ts" | sed -E 's/:/-/; s/:/-/')"
+    mode="$(jq -r '.mode // "?"' "$f" 2>/dev/null)"
+    preview="$(jq -r '.processed // .raw' "$f" 2>/dev/null | head -c 60 | tr '\n' ' ')"
+    printf "%2d. [%s] (%s) %s...\n" "$i" "$ts" "$mode" "$preview"
+    ((i++))
+  done <<< "$files"
+}
+
+# Show a specific history entry
+show_history() {
+  local n="${1:-1}"
+  
+  if [[ ! -d "$HISTORY_DIR" ]]; then
+    die "no history directory"
+  fi
+  
+  local file
+  file="$(ls -1t "$HISTORY_DIR"/*.json 2>/dev/null | sed -n "${n}p")"
+  
+  if [[ -z "$file" || ! -f "$file" ]]; then
+    die "history entry $n not found"
+  fi
+  
+  local mode app raw processed
+  mode="$(jq -r '.mode // "?"' "$file")"
+  app="$(jq -r '.app // "?"' "$file")"
+  raw="$(jq -r '.raw // ""' "$file")"
+  processed="$(jq -r '.processed // ""' "$file")"
+  
+  echo "=== Entry $n ==="
+  echo "File: $(basename "$file")"
+  echo "Mode: $mode"
+  echo "App: $app"
+  echo ""
+  echo "--- Raw transcript ---"
+  echo "$raw"
+  echo ""
+  echo "--- Processed ---"
+  echo "$processed"
+}
+
+# Reprocess a history entry with a different mode
+reprocess_history() {
+  local n="${1:-1}"
+  local target_mode="${2:-}"
+  
+  if [[ -z "${CEREBRAS_API_KEY:-}" ]]; then
+    die "reprocess requires CEREBRAS_API_KEY"
+  fi
+  
+  if [[ ! -d "$HISTORY_DIR" ]]; then
+    die "no history directory"
+  fi
+  
+  local file
+  file="$(ls -1t "$HISTORY_DIR"/*.json 2>/dev/null | sed -n "${n}p")"
+  
+  if [[ -z "$file" || ! -f "$file" ]]; then
+    die "history entry $n not found"
+  fi
+  
+  local raw
+  raw="$(jq -r '.raw // ""' "$file")"
+  
+  if [[ -z "$raw" ]]; then
+    die "no raw transcript in entry $n"
+  fi
+  
+  # Determine mode
+  if [[ -z "$target_mode" ]]; then
+    target_mode="$(get_current_mode)"
+  else
+    target_mode="$(canonical_mode_name "$target_mode")"
+    if [[ ! -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$target_mode")" ]]; then
+      die "unknown mode: $target_mode"
+    fi
+  fi
+  
+  echo "🔄 Reprocessing entry $n with $target_mode mode..."
+  
+  local result
+  result="$(DICTATE_FORCE_MODE="$target_mode" postprocess_llm "$raw" "")"
+  result="$(printf "%s" "$result" | auto_paragraphs "$target_mode" | normalize_british_spelling)"
+  
+  printf "%s" "$result" | pbcopy
+  
+  echo "✅ Done. Result copied to clipboard:"
+  echo ""
+  echo "$result"
+}
+
+# Main history command handler
+manage_history() {
+  local subcmd="${1:-}"
+  shift 2>/dev/null || true
+  
+  case "$subcmd" in
+    ""|list)
+      list_history "${1:-20}"
+      ;;
+    stats)
+      need python3
+      local history_dir="$HISTORY_DIR"
+      if [[ ! -d "$history_dir" ]]; then
+        die "no history directory"
+      fi
+      python3 - "$history_dir" <<'PYEOF'
+import glob, json, os, re, statistics, sys
+
+history_dir = os.path.expanduser(sys.argv[1])
+files = sorted(glob.glob(os.path.join(history_dir, "*.json")))
+if not files:
+    print("No history entries found.")
+    raise SystemExit(0)
+
+def word_count(s: str) -> int:
+    return len(re.findall(r"\b\w+\b", s or ""))
+
+raw_chars = []
+raw_words = []
+proc_chars = []
+proc_words = []
+
+for f in files:
+    try:
+        with open(f, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        continue
+    raw = data.get("raw", "") or ""
+    proc = data.get("processed", "") or ""
+    raw_chars.append(len(raw))
+    raw_words.append(word_count(raw))
+    proc_chars.append(len(proc))
+    proc_words.append(word_count(proc))
+
+def summarize(name, arr):
+    if not arr:
+        return ""
+    return f"{name}: max={max(arr)}, p95={int(statistics.quantiles(arr, n=20)[-1])}, median={int(statistics.median(arr))}"
+
+print(f"History entries: {len(files)}")
+print(summarize("raw_chars", raw_chars))
+print(summarize("raw_words", raw_words))
+print(summarize("processed_chars", proc_chars))
+print(summarize("processed_words", proc_words))
+
+# Rough token estimate (~1.33 tokens per word for English)
+approx_max_tokens = int(max(raw_words) * 1.33) if raw_words else 0
+print(f"approx_max_tokens (raw words * 1.33): {approx_max_tokens}")
+PYEOF
+      ;;
+    clear)
+      if [[ -d "$HISTORY_DIR" ]]; then
+        rm -rf "$HISTORY_DIR"
+        echo "History cleared."
+      else
+        echo "No history to clear."
+      fi
+      ;;
+    reprocess)
+      reprocess_history "${1:-1}" "${2:-}"
+      ;;
+    [0-9]*)
+      show_history "$subcmd"
+      ;;
+    *)
+      die "unknown history command: $subcmd (use: list, N, reprocess N [mode], stats, clear)"
+      ;;
+  esac
+}
+
+# LLM post-processing via Cerebras API
+postprocess_llm() {
+  local input="$1"
+  local target_app="${2:-}"
+  
+  if [[ -z "${CEREBRAS_API_KEY:-}" ]]; then
+    echo "$input"
+    return 0
+  fi
+  
+  local current_mode
+  current_mode="$(get_current_mode "$target_app")"
+  local current_mode_key
+  current_mode_key="$(mode_override_key "$current_mode")"
+  
+  lookup_override() {
+    local list="${1:-}"
+    local key="${2:-}"
+    [[ -n "$list" && -n "$key" ]] || return 1
+    local IFS=';'
+    read -r -a pairs <<<"$list"
+    local pair
+    for pair in "${pairs[@]}"; do
+      [[ "$pair" == "$key="* ]] && { echo "${pair#*=}"; return 0; }
+    done
+    return 1
+  }
+
+  lookup_override_for_mode() {
+    local list="${1:-}"
+    local key="${2:-}"
+    lookup_override "$list" "$key" 2>/dev/null || true
+  }
+
+  local llm_model="llama3.1-8b"
+  [[ -n "${CFG_POSTPROCESS_LLM:-}" ]] && llm_model="$CFG_POSTPROCESS_LLM"
+  if [[ -n "${DICTATE_LLM_MODEL:-}" ]]; then
+    llm_model="$DICTATE_LLM_MODEL"
+  else
+    local llm_override=""
+    llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$current_mode_key" 2>/dev/null || true)"
+    [[ -n "$llm_override" ]] && llm_model="$llm_override"
+  fi
+
+  local system_prompt
+  system_prompt="$(build_mode_prompt "$current_mode")"
+
+  local max_tokens=""
+  local chunk_words=""
+  if [[ -n "${DICTATE_LLM_MAX_TOKENS:-}" ]]; then
+    max_tokens="$DICTATE_LLM_MAX_TOKENS"
+  else
+    max_tokens="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$current_mode_key" 2>/dev/null || true)"
+    [[ -z "$max_tokens" ]] && max_tokens="${CFG_POSTPROCESS_MAX_TOKENS:-}"
+  fi
+
+  if [[ -n "${DICTATE_LLM_CHUNK_WORDS:-}" ]]; then
+    chunk_words="$DICTATE_LLM_CHUNK_WORDS"
+  else
+    chunk_words="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$current_mode_key" 2>/dev/null || true)"
+    [[ -z "$chunk_words" ]] && chunk_words="${CFG_POSTPROCESS_CHUNK_WORDS:-}"
+  fi
+  [[ -z "$chunk_words" ]] && chunk_words="0"
+
+  maybe_reject_llm_output() {
+    local input_chunk="$1"
+    local output_text="$2"
+    local mode="$3"
+
+    local in_trim out_trim
+    in_trim="$(printf '%s' "$input_chunk" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    out_trim="$(printf '%s' "$output_text" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+
+    case "$(mode_override_key "$mode")" in
+      short)
+        # Guardrail: in short mode, we want cleaned instructions, not generated artefacts.
+        if [[ ! "$in_trim" =~ ^[\\{\\[] ]] && [[ "$out_trim" =~ ^[\\{\\[] ]]; then
+          if printf '%s' "$out_trim" | grep -Eq '"prompt"[[:space:]]*:'; then
+            echo "$input_chunk"
+            return 0
+          fi
+        fi
+        if [[ "$out_trim" == '```'* && "$in_trim" != '```'* ]]; then
+          echo "$input_chunk"
+          return 0
+        fi
+        ;;
+    esac
+
+    echo "$output_text"
+  }
+
+  request_llm() {
+    local chunk="$1"
+    local escaped_input escaped_prompt
+    escaped_input="$(printf '%s' "$chunk" | jq -Rs .)"
+    escaped_prompt="$(printf '%s' "$system_prompt" | jq -Rs .)"
+
+    local timeout="${DICTATE_LLM_TIMEOUT:-20}"
+    local response=""
+    local curl_rc=0
+    local max_tokens_json=""
+    if [[ -n "$max_tokens" ]]; then
+      max_tokens_json=", \"max_tokens\": ${max_tokens}"
+    fi
+    set +e
+    response="$(curl -sS --fail-with-body --connect-timeout 3 --max-time "$timeout" https://api.cerebras.ai/v1/chat/completions \
+      -H "Authorization: Bearer $CEREBRAS_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "'"$llm_model"'",
+        "messages": [
+          {"role": "system", "content": '"$escaped_prompt"'},
+          {"role": "user", "content": '"$escaped_input"'}
+        ],
+        "temperature": 0.0'"$max_tokens_json"'
+      }' 2>&1)"
+    curl_rc=$?
+    set -e
+    if [[ "$curl_rc" -ne 0 ]]; then
+      if keep_logs_enabled; then
+        printf "[%s] LLM request failed (curl=%s, timeout=%s, mode=%s, model=%s)\n%s\n\n" \
+          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$curl_rc" "$timeout" "$current_mode" "$llm_model" "$response" \
+          >>"$TMPDIR/whisper-dictate.llm.log" 2>/dev/null || true
+      fi
+      echo "$chunk"
+      return 0
+    fi
+
+    local result
+    result="$(printf '%s' "$response" | jq -r '.choices[0].message.content // empty' 2>/dev/null)"
+
+    if [[ -n "$result" && "$result" != "null" ]]; then
+      result="$(maybe_reject_llm_output "$chunk" "$result" "$current_mode")"
+      echo "$result"
+      return 0
+    fi
+
+    local api_error=""
+    api_error="$(printf '%s' "$response" | jq -r '.error.message // .error // empty' 2>/dev/null)"
+    if [[ -n "$api_error" ]]; then
+      if keep_logs_enabled; then
+        printf "[%s] LLM api error (mode=%s, model=%s): %s\n\n" \
+          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$current_mode" "$llm_model" "$api_error" \
+          >>"$TMPDIR/whisper-dictate.llm.log" 2>/dev/null || true
+      fi
+      echo "$chunk"
+      return 0
+    fi
+    if keep_logs_enabled; then
+      printf "[%s] LLM response parse/empty (mode=%s, model=%s)\n%s\n\n" \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$current_mode" "$llm_model" "$response" \
+        >>"$TMPDIR/whisper-dictate.llm.log" 2>/dev/null || true
+    fi
+    echo "$chunk"
+  }
+
+  if [[ "$chunk_words" =~ ^[0-9]+$ && "$chunk_words" -gt 0 ]]; then
+    local chunks
+    chunks="$(
+      python3 - "$chunk_words" <<'PYEOF'
+import re, sys
+max_words = int(sys.argv[1])
+text = sys.stdin.read()
+text = re.sub(r"\s+", " ", text).strip()
+if not text:
+    print("")
+    raise SystemExit(0)
+sentences = re.split(r'(?<=[.!?])\s+', text)
+chunks = []
+cur = []
+count = 0
+for s in sentences:
+    w = len(re.findall(r"\b\w+\b", s))
+    if count + w > max_words and cur:
+        chunks.append(" ".join(cur).strip())
+        cur = [s]
+        count = w
+    else:
+        cur.append(s)
+        count += w
+if cur:
+    chunks.append(" ".join(cur).strip())
+print("\n<<DICTATE_CHUNK>>\n".join(chunks))
+PYEOF
+    <<<"$input")"
+    if [[ -n "$chunks" ]]; then
+      IFS=$'\n' read -r -d '' -a chunk_list < <(printf '%s' "$chunks" | awk 'BEGIN{RS="<<DICTATE_CHUNK>>"; ORS="\0"} {print}')
+      local output="" first="1"
+      for c in "${chunk_list[@]}"; do
+        c="$(printf "%s" "$c" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+        [[ -z "$c" ]] && continue
+        local part
+        part="$(request_llm "$c")"
+        if [[ "$first" == "1" ]]; then
+          output="$part"
+          first="0"
+        else
+          output="${output}"$'\n\n'"$part"
+        fi
+      done
+      echo "$output"
+      return 0
+    fi
+  fi
+
+  request_llm "$input"
+}
+
+normalize_audio_source() {
+  local src="${1:-auto}"
+  src="$(printf "%s" "$src" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "$src" in
+    auto|name|external|mac|iphone) echo "$src" ;;
+    *) echo "auto" ;;
+  esac
+}
+
+detect_audio_index() {
+  need ffmpeg
+  need python3
+
+  local source_mode preferred mac_name iphone_name cache_key
+  source_mode="$(normalize_audio_source "${DICTATE_AUDIO_SOURCE:-${CFG_AUDIO_SOURCE:-auto}}")"
+  preferred="${DICTATE_AUDIO_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}}"
+  mac_name="${CFG_AUDIO_MAC_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}}"
+  iphone_name="${CFG_AUDIO_IPHONE_NAME:-}"
+  cache_key="source=${source_mode};preferred=${preferred};mac=${mac_name};iphone=${iphone_name}"
+
+  local started_ms detected_idx="" detected_name="" detected_match="" detect_meta=""
+  started_ms="$(now_ms)"
+  DICTATE_LAST_AUDIO_INDEX_SOURCE=""
+  DICTATE_LAST_AUDIO_INDEX_MS="0"
+  DICTATE_LAST_AUDIO_INDEX=""
+
+  local allow_cache="0"
+  case "$source_mode" in
+    name|mac) allow_cache="1" ;;
+  esac
+
+  if [[ "$allow_cache" == "1" ]] && load_audio_index_cache && [[ "${CACHED_AUDIO_KEY:-}" == "$cache_key" ]]; then
+    detected_idx="${CACHED_AUDIO_INDEX:-}"
+    detected_name="${CACHED_AUDIO_NAME:-}"
+    detected_match="${CACHED_AUDIO_MATCH:-cache}"
+    if [[ -n "$detected_idx" ]]; then
+      DICTATE_LAST_AUDIO_INDEX_SOURCE="cache:source(${source_mode}):match(${detected_match:-cache}):name(${detected_name:-})"
+      DICTATE_LAST_AUDIO_INDEX_MS="$(( $(now_ms) - started_ms ))"
+      DICTATE_LAST_AUDIO_INDEX="$detected_idx"
+      printf '%s\t%s\t%s\n' "$detected_idx" "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS"
+      return 0
+    fi
+  fi
+
+  detect_meta="$(dictate_lib_detect_audio_device "$source_mode" "$preferred" "$mac_name" "$iphone_name" 2>/dev/null || true)"
+  IFS=$'\t' read -r detected_idx detected_name detected_match <<<"$detect_meta"
+  DICTATE_LAST_AUDIO_INDEX_MS="$(( $(now_ms) - started_ms ))"
+  if [[ -n "$detected_idx" ]]; then
+    DICTATE_LAST_AUDIO_INDEX_SOURCE="detect:source(${source_mode}):match(${detected_match:-unknown}):name(${detected_name:-})"
+    DICTATE_LAST_AUDIO_INDEX="$detected_idx"
+    if [[ "$allow_cache" == "1" ]]; then
+      write_audio_index_cache "$cache_key" "$detected_idx" "$detected_name" "$detected_match"
+    fi
+    printf '%s\t%s\t%s\n' "$detected_idx" "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS"
+    return 0
+  fi
+
+  DICTATE_LAST_AUDIO_INDEX_SOURCE="detect:miss:source(${source_mode})"
+  printf '\t%s\t%s\n' "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS"
+  return 1
+}
+
+detect_audio_name_by_index() {
+  need ffmpeg
+  need python3
+  local idx="${1:-}"
+  [[ -n "$idx" ]] || return 1
+
+  local out
+  out="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
+
+  python3 -c '
+import re, sys
+
+target = sys.argv[1] if len(sys.argv) > 1 else ""
+lines = sys.argv[2].splitlines() if len(sys.argv) > 2 else []
+
+inaudio = False
+for line in lines:
+    if "AVFoundation audio devices:" in line:
+        inaudio = True
+        continue
+    if "AVFoundation video devices:" in line:
+        inaudio = False
+        continue
+    if not inaudio:
+        continue
+    m = re.search(r"\[(\d+)\]\s+(.*)$", line)
+    if not m:
+        continue
+    idx, name = m.group(1), m.group(2)
+    if idx == target:
+        print(name)
+        sys.exit(0)
+
+sys.exit(1)
+' "$idx" "$out"
+}
+
+devices() {
+  need ffmpeg
+  # ffmpeg prints an expected "Error opening input" after listing devices; hide that noise.
+  # On some macOS setups, device enumeration can fail entirely (e.g., missing Microphone permission).
+  local out trimmed
+  out="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
+  trimmed="$(printf "%s\n" "$out" | awk '/Error opening input/ { exit } { print }' || true)"
+  printf "%s\n" "$trimmed"
+
+  # If no indices were printed, show a hint for the common macOS failure mode.
+  if ! printf "%s\n" "$trimmed" | grep -Eq '\[[0-9]+\]'; then
+    if printf "%s\n" "$out" | grep -q "Input/output error"; then
+      echo ""
+      echo "No devices listed (ffmpeg: Input/output error)."
+      echo "Tip: On macOS, grant Microphone permission to your terminal app (System Settings → Privacy & Security → Microphone), then rerun: dictate devices"
+    fi
+  fi
+}
+
+sleep_ms() {
+  local ms="${1:-0}"
+  if [[ -z "$ms" || ! "$ms" =~ ^[0-9]+$ ]]; then
+    ms=0
+  fi
+  if (( ms <= 0 )); then
+    return 0
+  fi
+  local sec=$((ms / 1000))
+  local rem=$((ms % 1000))
+  sleep "${sec}.$(printf '%03d' "$rem")"
+}
+
+bool_is_on() {
+  local raw="${1:-}"
+  local v
+  v="$(printf "%s" "$raw" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+tmux_pane_child_command() {
+  local pane="${1:-}"
+  [[ -n "$pane" ]] || return 0
+
+  local pane_pid=""
+  pane_pid="$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null || true)"
+  if [[ -z "$pane_pid" || ! "$pane_pid" =~ ^[0-9]+$ ]]; then
+    return 0
+  fi
+
+  local child_pid=""
+  child_pid="$(/usr/bin/pgrep -P "$pane_pid" 2>/dev/null | head -n 1 || true)"
+  if [[ -z "$child_pid" || ! "$child_pid" =~ ^[0-9]+$ ]]; then
+    return 0
+  fi
+
+  /bin/ps -p "$child_pid" -o command= 2>/dev/null | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' || true
+}
+
+tmux_pane_tty_name() {
+  local pane="${1:-}"
+  [[ -n "$pane" ]] || return 0
+
+  local tty=""
+  tty="$(tmux display-message -p -t "$pane" '#{pane_tty}' 2>/dev/null || true)"
+  tty="$(printf "%s" "$tty" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  tty="${tty#/dev/}"
+  tty="${tty##*/}"
+
+  [[ -n "$tty" && "$tty" != "??" ]] || return 0
+  printf "%s" "$tty"
+}
+
+tmux_pane_foreground_command() {
+  local pane="${1:-}"
+  [[ -n "$pane" ]] || return 0
+
+  local tty=""
+  tty="$(tmux_pane_tty_name "$pane")"
+  [[ -n "$tty" ]] || return 0
+
+  # Use terminal foreground process group (tpgid) to find the active program in the pane.
+  # This is more reliable than "first child of shell" when the shell has background jobs.
+  local tpgid=""
+  tpgid="$(/bin/ps -t "$tty" -o tpgid= 2>/dev/null | awk 'NF { print $1; exit }' || true)"
+  if [[ -z "$tpgid" || ! "$tpgid" =~ ^[0-9]+$ || "$tpgid" == "0" ]]; then
+    return 0
+  fi
+
+  /bin/ps -p "$tpgid" -o command= 2>/dev/null | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' || true
+}
+
+tmux_should_use_codex_send() {
+  local pane_cmd="${1:-}"
+  local child_cmd="${2:-}"
+
+  case "$pane_cmd" in
+    codex*) return 0 ;;
+  esac
+  local exe="" arg1=""
+  exe="$(printf "%s" "$child_cmd" | awk '{print $1}' || true)"
+  arg1="$(printf "%s" "$child_cmd" | awk '{print $2}' || true)"
+  case "$exe" in
+    codex|*/codex) return 0 ;;
+  esac
+  # Handle shebang wrappers where the interpreter is first (node/python) and the script path is arg1.
+  case "$arg1" in
+    codex|*/codex) return 0 ;;
+  esac
+
+  return 1
+}
+
+tmux_short_path() {
+  local p="${1:-}"
+  [[ -n "$p" ]] || return 0
+  p="${p%/}"
+  [[ -z "$p" ]] && { echo "/"; return 0; }
+  local base parent
+  base="$(basename "$p")"
+  parent="$(basename "$(dirname "$p")")"
+  if [[ "$parent" == "/" || "$parent" == "." || "$parent" == "$base" ]]; then
+    echo "$base"
+  else
+    echo "$parent/$base"
+  fi
+}
+
+tmux_describe_pane() {
+  local pane="${1:-}"
+  [[ -n "$pane" ]] || return 0
+  local label="$pane"
+  local title path
+  title="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null || true)"
+  path="$(tmux display-message -p -t "$pane" '#{pane_current_path}' 2>/dev/null || true)"
+  path="$(tmux_short_path "$path")"
+  [[ -n "$title" ]] && label="$label · $title"
+  [[ -n "$path" ]] && label="$label · $path"
+  echo "$label"
+}
+
+tmux_pane_cwd_label() {
+  local pane="${1:-}"
+  [[ -n "$pane" ]] || { echo "target"; return 0; }
+  local path title
+  path="$(tmux display-message -p -t "$pane" '#{pane_current_path}' 2>/dev/null || true)"
+  title="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null || true)"
+  if [[ -n "$path" ]]; then
+    path="${path%/}"
+    [[ -z "$path" ]] && { echo "/"; return 0; }
+    basename "$path"
+    return 0
+  fi
+  if [[ -n "$title" ]]; then
+    echo "$title"
+    return 0
+  fi
+  echo "target"
+}
+
+tmux_resolve_invoking_pane() {
+  # Prefer TMUX_PANE from the invoking shell; this is the most precise origin pane.
+  if [[ -n "${TMUX_PANE:-}" ]]; then
+    if tmux display-message -p -t "$TMUX_PANE" '#{pane_id}' >/dev/null 2>&1; then
+      printf "%s" "$TMUX_PANE"
+      return 0
+    fi
+  fi
+
+  if [[ -n "${TMUX:-}" ]]; then
+    local active_pane=""
+    active_pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null || true)"
+    if [[ -n "$active_pane" ]] && tmux display-message -p -t "$active_pane" '#{pane_id}' >/dev/null 2>&1; then
+      printf "%s" "$active_pane"
+      return 0
+    fi
+  fi
+
+  # Only use explicit env override as a final fallback.
+  if [[ -n "${DICTATE_TARGET_PANE:-}" ]]; then
+    if tmux display-message -p -t "$DICTATE_TARGET_PANE" '#{pane_id}' >/dev/null 2>&1; then
+      printf "%s" "$DICTATE_TARGET_PANE"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+tmux_pane_exists() {
+  local pane="${1:-}"
+  [[ -n "$pane" ]] || return 1
+  tmux display-message -p -t "$pane" '#{pane_id}' >/dev/null 2>&1
+}
+
+tmux_autosend_after_paste() {
+  local pane="${1:-}"
+  local pane_cmd="" pane_fg="" pane_child="" send_mode=""
+  local send_delay_ms="${DICTATE_TMUX_SEND_DELAY_MS:-90}"
+  local codex_tab_delay_ms="${DICTATE_TMUX_CODEX_TAB_DELAY_MS:-35}"
+  local effective_key="Enter"
+
+  pane_cmd="$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null || true)"
+  pane_fg="$(tmux_pane_foreground_command "$pane")"
+  pane_child=""
+  if [[ -z "$pane_fg" ]]; then
+    pane_child="$(tmux_pane_child_command "$pane")"
+  fi
+  send_mode="${DICTATE_TMUX_SEND_MODE:-${CFG_TMUX_SEND_MODE:-auto}}"
+  send_mode="$(printf "%s" "$send_mode" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  case "$send_mode" in
+    auto|enter|codex) ;;
+    *) send_mode="auto" ;;
+  esac
+
+  if [[ "$send_mode" == "auto" ]]; then
+    # Prefer tmux foreground command for routing; child-process matching is a fallback.
+    case "$pane_cmd" in
+      codex*) send_mode="codex" ;;
+      *)
+        if tmux_should_use_codex_send "" "$pane_fg"; then
+          send_mode="codex"
+        elif tmux_should_use_codex_send "" "$pane_child"; then
+          send_mode="codex"
+        else
+          send_mode="enter"
+        fi
+        ;;
+    esac
+  fi
+
+  sleep_ms "$send_delay_ms"
+
+  case "$send_mode" in
+    codex)
+      # Codex UI: Tab queues message, Enter confirms send.
+      tmux send-keys -t "$pane" C-i
+      sleep_ms "$codex_tab_delay_ms"
+      tmux send-keys -t "$pane" Enter
+      effective_key="C-i+Enter"
+      ;;
+    enter|*)
+      # Enter-only send path.
+      tmux send-keys -t "$pane" Enter
+      ;;
+  esac
+
+  if keep_logs_enabled; then
+    echo "[autosend] pane=$pane mode=$send_mode key=$effective_key pane_cmd=${pane_cmd:-<none>} fg_cmd=${pane_fg:-<none>} child_cmd=${pane_child:-<none>}" >&2
+  fi
+}
+
+resolve_tmux_postprocess_requested() {
+  # tmux postprocess is controlled by tmux-specific config/env.
+  # Do not let DICTATE_POSTPROCESS override tmux behavior.
+  local do_postprocess="${DICTATE_TMUX_POSTPROCESS:-${CFG_TMUX_POSTPROCESS:-${CFG_POSTPROCESS_ENABLED:-0}}}"
+  if bool_is_on "$do_postprocess"; then
+    echo "1"
+  else
+    echo "0"
+  fi
+}
+
+resolve_tmux_postprocess_effective() {
+  local requested
+  requested="$(resolve_tmux_postprocess_requested)"
+  if [[ "$requested" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
+    echo "1"
+  else
+    echo "0"
+  fi
+}
+
+start() {
+  need ffmpeg
+  need tmux
+
+  local model_id="${DICTATE_TMUX_MODEL:-${CFG_TMUX_MODEL:-${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-}}}}"
+  local startup_started_ms startup_audio_ms startup_ffmpeg_live_ms startup_total_ms startup_audio_source
+  startup_started_ms="$(now_ms)"
+  startup_audio_ms=0
+  startup_ffmpeg_live_ms=0
+  startup_total_ms=0
+  startup_audio_source="(none)"
+  local preferred_audio_name="${DICTATE_AUDIO_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}}"
+
+  local audio_index="${DICTATE_AUDIO_INDEX:-}"
+  # Resolve by selected source strategy unless index is explicitly forced.
+  if [[ -n "$audio_index" ]]; then
+    startup_audio_source="env:DICTATE_AUDIO_INDEX"
+  else
+    local detect_meta detect_src detect_ms
+    detect_meta="$(detect_audio_index 2>/dev/null || true)"
+    IFS=$'\t' read -r audio_index detect_src detect_ms <<<"$detect_meta"
+    startup_audio_ms="${detect_ms:-0}"
+    startup_audio_source="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
+  fi
+  if [[ -z "$audio_index" && -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
+    audio_index="$CFG_AUDIO_DEVICE_INDEX"
+    startup_audio_source="config:audio.device_index"
+  fi
+  [[ -n "$audio_index" ]] || die "no audio device found. Run: dictate debug"
+
+  if [[ -f "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+    if kill -0 "${pid:-0}" 2>/dev/null; then
+      die "already recording (pid=$pid). Run: dictate stop"
+    fi
+    rm -f "$STATE_FILE"
+  fi
+
+  local target_pane
+  target_pane="$(tmux_resolve_invoking_pane || true)"
+  if [[ -z "$target_pane" ]]; then
+    die "not running inside tmux and DICTATE_TARGET_PANE is not set. Start tmux and run dictate from the target pane, set DICTATE_TARGET_PANE, or use: dictate inline"
+  fi
+
+  # Track tmux job for queue display.
+  # Use ffmpeg pid (not this shell pid) so stale recording markers self-clean correctly.
+  local job_id job_file
+  job_id="tmux-$(date +%s)-$$"
+  mkdir -p "$TMUX_JOBS_DIR" 2>/dev/null || true
+  job_file="$TMUX_JOBS_DIR/$job_id"
+
+  local wav
+  wav="$TMPDIR/whisper-dictate-$$.wav"
+  rm -f "$wav" 2>/dev/null || true
+
+  # Record in background until 'dictate stop' sends SIGINT.
+  : >"$RECORD_LOG" 2>/dev/null || true
+  local ffmpeg_live_started_ms
+  ffmpeg_live_started_ms="$(now_ms)"
+  local pid
+  local spawned="0"
+  local retry_allowed="0"
+
+  if [[ -z "${DICTATE_AUDIO_INDEX:-}" && -n "$preferred_audio_name" ]]; then
+    retry_allowed="1"
+  fi
+
+  while :; do
+    ffmpeg \
+      -hide_banner -loglevel error \
+      -f avfoundation -i ":${audio_index}" \
+      -ac 1 -ar 16000 -c:a pcm_s16le \
+      "$wav" >>"$RECORD_LOG" 2>&1 &
+    pid="$!"
+    spawned="1"
+
+    # If ffmpeg fails immediately (common: missing mic permission), surface it now.
+    sleep 0.2
+    if kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+
+    if [[ "$retry_allowed" == "1" ]]; then
+      retry_allowed="0"
+      clear_audio_index_cache
+      local retry_index="" retry_src="" retry_ms="" retry_meta=""
+      retry_meta="$(DICTATE_AUDIO_NAME="$preferred_audio_name" detect_audio_index 2>/dev/null || true)"
+      IFS=$'\t' read -r retry_index retry_src retry_ms <<<"$retry_meta"
+      if [[ -n "$retry_index" ]]; then
+        audio_index="$retry_index"
+        startup_audio_ms=$(( startup_audio_ms + ${retry_ms:-0} ))
+        startup_audio_source="retry:${retry_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
+        continue
+      fi
+    fi
+
+    rm -f "$wav" 2>/dev/null || true
+    die "recording failed to start (ffmpeg exited). Check $RECORD_LOG and ensure your terminal app has Microphone permission (System Settings → Privacy & Security → Microphone)."
+  done
+  if [[ "$spawned" == "1" ]]; then
+    startup_ffmpeg_live_ms=$(( $(now_ms) - ffmpeg_live_started_ms ))
+  fi
+
+  {
+    echo "id=$job_id"
+    echo "status=recording"
+    echo "pane=$target_pane"
+    echo "pid=$pid"
+    echo "started_at=$(date +%s)"
+  } >"$job_file" 2>/dev/null || true
+
+  # Store state as shell-safe assignments.
+  local record_started_ms
+  record_started_ms="$(now_ms)"
+  startup_total_ms=$(( record_started_ms - startup_started_ms ))
+  (( startup_total_ms < 0 )) && startup_total_ms=0
+  printf 'pid=%q\nwav=%q\ntarget_pane=%q\nmodel_id=%q\nlanguage=%q\njob_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\n' \
+    "$pid" "$wav" "$target_pane" "$model_id" "${DICTATE_LANGUAGE:-en}" "$job_id" "$record_started_ms" \
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "0" "$startup_audio_source" >"$STATE_FILE"
+
+  local target_label
+  target_label="$(tmux_pane_cwd_label "$target_pane")"
+  echo "🎙️ RECORDING → ${target_label:-target}"
+}
+
+stop() {
+  need tmux
+
+  [[ -f "$STATE_FILE" ]] || die "not recording. Run: dictate start"
+
+  # shellcheck disable=SC1090
+  . "$STATE_FILE"
+  local state_record_started_ms="${record_started_ms:-}"
+  local startup_total_ms="${startup_total_ms:-0}"
+  local startup_audio_ms="${startup_audio_ms:-0}"
+  local startup_ffmpeg_live_ms="${startup_ffmpeg_live_ms:-0}"
+  local startup_target_ms="${startup_target_ms:-0}"
+  local startup_audio_source="${startup_audio_source:-}"
+  local stop_requested_ms
+  stop_requested_ms="$(now_ms)"
+  rm -f "$STATE_FILE"
+
+  [[ -n "${pid:-}" && -n "${wav:-}" && -n "${target_pane:-}" && -n "${model_id:-}" ]] || die "state file invalid; try: dictate start"
+  local job_id="${job_id:-}"
+  local record_ms="0"
+  if [[ -n "$state_record_started_ms" && "$state_record_started_ms" =~ ^[0-9]+$ ]]; then
+    record_ms=$((stop_requested_ms - state_record_started_ms))
+    (( record_ms < 0 )) && record_ms=0
+  fi
+
+  # Stop recording.
+  kill -INT "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+
+  local do_enter do_copy
+  do_enter="${DICTATE_ENTER:-}"
+  if [[ -z "$do_enter" ]]; then
+    do_enter="${DICTATE_TMUX_AUTOSEND:-${CFG_TMUX_AUTOSEND:-1}}"
+  fi
+  do_copy="${DICTATE_COPY:-1}"
+  if [[ "$do_copy" != "0" ]]; then
+    need pbcopy
+  fi
+
+  # Update tmux job status → processing
+  local job_file=""
+  if [[ -n "$job_id" ]]; then
+    job_file="$TMUX_JOBS_DIR/$job_id"
+    mkdir -p "$TMUX_JOBS_DIR" 2>/dev/null || true
+    {
+      echo "id=$job_id"
+      echo "status=processing"
+      echo "pane=$target_pane"
+      echo "pid=$$"
+      echo "updated_at=$(date +%s)"
+    } >"$job_file" 2>/dev/null || true
+  fi
+
+  (
+    set -euo pipefail
+    trap '[[ -n "${job_file:-}" ]] && rm -f "$job_file" 2>/dev/null || true' EXIT
+
+    local success="0"
+    local transcribe_ms=0 clean_ms=0 postprocess_ms=0 paste_ms=0 total_ms=0
+    local stage_started_ms flow_started_ms
+    flow_started_ms="$(now_ms)"
+    local do_process_sound="${DICTATE_TMUX_PROCESS_SOUND:-${CFG_TMUX_PROCESS_SOUND:-0}}"
+    if [[ "$do_process_sound" == "1" ]]; then
+      play_sound process
+    fi
+
+    # LLM post-processing if enabled (Cerebras API)
+    # Tmux mode defaults to short mode unless explicitly configured.
+    local do_postprocess
+    do_postprocess="$(resolve_tmux_postprocess_effective)"
+    local tmux_mode="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
+    tmux_mode="$(canonical_mode_name "$tmux_mode")"
+    case "$tmux_mode" in
+      short|long) ;;
+      *)
+        tmux_mode="short"
+        ;;
+    esac
+    if [[ ! -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$tmux_mode")" ]]; then
+      tmux_mode="short"
+    fi
+
+    local txt
+    local runtime_skip_silence_trim="0"
+    if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_TRIM_WITH_POSTPROCESS:-0}"; then
+      runtime_skip_silence_trim="1"
+    fi
+    stage_started_ms="$(now_ms)"
+    txt="$(DICTATE_RUNTIME_SKIP_SILENCE_TRIM="$runtime_skip_silence_trim" transcribe_audio "$wav" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "${language:-en}" "${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}")"
+    transcribe_ms=$(( $(now_ms) - stage_started_ms ))
+
+    stage_started_ms="$(now_ms)"
+    txt="$(printf "%s" "$txt" | sanitize_transcript_artifacts)"
+    # Clean filler words / stutters (regex-based, fast)
+    if [[ "${DICTATE_CLEAN:-0}" == "1" ]]; then
+      local run_repeats="1"
+      if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_REPEATS_WITH_POSTPROCESS:-0}"; then
+        run_repeats="0"
+      fi
+      txt="$(printf "%s" "$txt" | clean_fillers)"
+      if [[ "$run_repeats" == "1" ]]; then
+        local repeats_level="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}"
+        if [[ "$repeats_level" != "0" ]]; then
+          txt="$(printf "%s" "$txt" | clean_repeats "$repeats_level")"
+        fi
+      fi
+    fi
+    clean_ms=$(( $(now_ms) - stage_started_ms ))
+
+    if [[ -z "${txt//[[:space:]]/}" ]]; then
+      rm -f "$wav"
+      total_ms=$(( $(now_ms) - flow_started_ms ))
+      append_bench_entry "tmux" "no_speech" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$tmux_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
+        "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+      if keep_logs_enabled; then
+        echo "[transcribe] empty after artifact cleanup; skipping paste/send" >>"$TRANSCRIBE_LOG"
+      fi
+      exit 0
+    fi
+
+    # Save raw transcript for history
+    local raw_txt="$txt"
+
+    if [[ "$do_postprocess" == "1" ]]; then
+      stage_started_ms="$(now_ms)"
+      # Signal processing for SwiftBar
+      local proc_file="/tmp/dictate-processing/tmux-$$"
+      mkdir -p /tmp/dictate-processing
+      touch "$proc_file"
+
+      # Force tmux mode (default: short)
+      txt="$(DICTATE_FORCE_MODE="$tmux_mode" postprocess_llm "$txt" "Ghostty")"
+      txt="$(printf "%s" "$txt" | auto_paragraphs "$tmux_mode")"
+
+      rm -f "$proc_file"
+      # Signal "just processed" for SwiftBar
+      touch /tmp/dictate-just-processed
+      postprocess_ms=$(( $(now_ms) - stage_started_ms ))
+    elif bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
+      txt="$(printf "%s" "$txt" | apply_vocab_corrections "$tmux_mode")"
+    fi
+
+    txt="$(printf "%s" "$txt" | normalize_british_spelling)"
+
+    # Save to history
+    save_history "$raw_txt" "$txt" "$tmux_mode" "tmux"
+
+    stage_started_ms="$(now_ms)"
+    if [[ "$do_copy" != "0" ]]; then
+      printf "%s" "$txt" | pbcopy
+    fi
+
+    local paste_target="${DICTATE_TMUX_PASTE_TARGET:-${CFG_TMUX_PASTE_TARGET:-origin}}"
+    local dest_pane="$target_pane"
+    if [[ "$paste_target" == "current" ]]; then
+      local current_pane=""
+      current_pane="$(tmux_resolve_invoking_pane || true)"
+      if tmux_pane_exists "$current_pane"; then
+        dest_pane="$current_pane"
+      fi
+    elif ! tmux_pane_exists "$dest_pane"; then
+      local fallback_pane=""
+      fallback_pane="$(tmux_resolve_invoking_pane || true)"
+      if tmux_pane_exists "$fallback_pane"; then
+        dest_pane="$fallback_pane"
+      fi
+    fi
+    tmux set-buffer -b whisper_dictate -- "$txt"
+    # -p: bracketed paste (when supported/requested by the app)
+    # -r: preserve LF (avoid converting newlines to CR/"Enter")
+    tmux paste-buffer -p -r -t "$dest_pane" -b whisper_dictate
+    if [[ "$do_enter" != "0" ]]; then
+      tmux_autosend_after_paste "$dest_pane"
+    fi
+    tmux delete-buffer -b whisper_dictate >/dev/null 2>&1 || true
+    paste_ms=$(( $(now_ms) - stage_started_ms ))
+
+    rm -f "$wav"
+
+    total_ms=$(( $(now_ms) - flow_started_ms ))
+    local raw_chars="${#raw_txt}"
+    local out_chars="${#txt}"
+    append_bench_entry "tmux" "ok" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$tmux_mode" "$do_postprocess" "$raw_chars" "$out_chars" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+
+    # Sound when done
+    play_sound stop
+
+    success="1"
+    if [[ "$success" == "1" ]] && ! keep_logs_enabled; then
+      rm -f "$RECORD_LOG" "$TRANSCRIBE_LOG" 2>/dev/null || true
+    fi
+  ) >"$TRANSCRIBE_LOG" 2>&1 & disown
+
+  local target_label
+  target_label="$(tmux_pane_cwd_label "$target_pane")"
+  echo "⏹️ STOPPED → transcribing → ${target_label:-target}"
+}
+
+# Cancel recording: stop without transcribing or pasting
+cancel() {
+  local state_file="${1:-$STATE_FILE}"
+  local inline_state="/tmp/whisper-dictate-inline.state"
+  
+  # Check tmux state first, then inline
+  local found=""
+  if [[ -f "$state_file" ]]; then
+    found="$state_file"
+  elif [[ -f "$inline_state" ]]; then
+    found="$inline_state"
+  fi
+  
+  if [[ -z "$found" ]]; then
+    echo "Not recording (nothing to cancel)"
+    return 0
+  fi
+  
+  # shellcheck disable=SC1090
+  . "$found"
+  rm -f "$found"
+
+  # Remove tmux job file if present
+  if [[ -n "${job_id:-}" ]]; then
+    rm -f "$TMUX_JOBS_DIR/$job_id" 2>/dev/null || true
+  fi
+  
+  # Stop recording process
+  if [[ -n "${pid:-}" ]]; then
+    kill -INT "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+  
+  # Remove wav file without transcribing
+  if [[ -n "${wav:-}" && -f "$wav" ]]; then
+    rm -f "$wav"
+  fi
+  
+  # Clear any processing markers
+  rm -f /tmp/dictate-processing/* 2>/dev/null || true
+  
+  # Set cancel flag for SwiftBar (shows cancel icon briefly)
+  touch /tmp/dictate-cancelled.flag
+  
+  play_sound cancel  # audible feedback that we cancelled
+  echo "🚫 CANCELLED (recording discarded)"
+}
+
+inline_paste_via_osascript() {
+  osascript -e 'tell application "System Events" to keystroke "v" using command down'
+}
+
+inline_send_key_via_osascript() {
+  local send_mode="${1:-enter}"
+  send_mode="$(normalize_inline_send_mode "$send_mode")"
+  case "$send_mode" in
+    ctrl_j)
+      osascript -e 'tell application "System Events" to keystroke "j" using control down'
+      ;;
+    cmd_enter)
+      osascript -e 'tell application "System Events" to key code 36 using command down'
+      ;;
+    *)
+      osascript -e 'tell application "System Events" to key code 36'
+      ;;
+  esac
+}
+
+# Inline mode: foreground recording, no tmux required
+inline() {
+  need ffmpeg
+  
+  local model_id="${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-}}"
+  local do_postprocess="${DICTATE_POSTPROCESS:-}"
+  [[ -z "$do_postprocess" ]] && do_postprocess="${CFG_POSTPROCESS_ENABLED:-0}"
+  if bool_is_on "$do_postprocess" && [[ -n "${CEREBRAS_API_KEY:-}" ]]; then
+    do_postprocess="1"
+  else
+    do_postprocess="0"
+  fi
+  local detected_mode="none"
+  local flow_started_ms record_started_ms record_ms=0
+  local transcribe_ms=0 clean_ms=0 postprocess_ms=0 paste_ms=0 total_ms=0
+  local stage_started_ms
+  local startup_started_ms startup_total_ms startup_audio_ms startup_target_ms startup_ffmpeg_live_ms startup_audio_source
+  startup_started_ms="$(now_ms)"
+  startup_total_ms=0
+  startup_audio_ms=0
+  startup_target_ms=0
+  startup_ffmpeg_live_ms=0
+  startup_audio_source="(none)"
+  local preferred_audio_name="${DICTATE_AUDIO_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}}"
+  local paste_target
+  paste_target="$(normalize_inline_paste_target "${DICTATE_INLINE_PASTE_TARGET:-${CFG_INLINE_PASTE_TARGET:-restore}}")"
+  
+  local audio_index="${DICTATE_AUDIO_INDEX:-}"
+  # Resolve by selected source strategy unless index is explicitly forced.
+  if [[ -n "$audio_index" ]]; then
+    startup_audio_source="env:DICTATE_AUDIO_INDEX"
+  else
+    local detect_meta detect_src detect_ms
+    detect_meta="$(detect_audio_index 2>/dev/null || true)"
+    IFS=$'\t' read -r audio_index detect_src detect_ms <<<"$detect_meta"
+    startup_audio_ms="${detect_ms:-0}"
+    startup_audio_source="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
+  fi
+  if [[ -z "$audio_index" && -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
+    audio_index="$CFG_AUDIO_DEVICE_INDEX"
+    startup_audio_source="config:audio.device_index"
+  fi
+  [[ -n "$audio_index" ]] || die "no audio device found. Run: dictate debug"
+  
+  # Capture target app only when inline is configured to restore/origin behavior.
+  local target_app="${DICTATE_TARGET_APP:-}"
+  if [[ "$paste_target" == "restore" && -z "$target_app" ]]; then
+    stage_started_ms="$(now_ms)"
+    target_app="$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null || echo "Ghostty")"
+    startup_target_ms=$(( $(now_ms) - stage_started_ms ))
+  fi
+  
+  local wav
+  wav="/tmp/dictate-inline-$$.wav"
+  local record_log
+  record_log="$TMPDIR/whisper-dictate-inline.record.log"
+  local transcribe_log
+  transcribe_log="$TMPDIR/whisper-dictate-inline.transcribe.log"
+  
+  echo "🎙️ Recording... (Ctrl+C to stop)"
+  
+  # Record until Ctrl+C
+  flow_started_ms="$(now_ms)"
+  record_started_ms="$flow_started_ms"
+  startup_total_ms=$(( record_started_ms - startup_started_ms ))
+  (( startup_total_ms < 0 )) && startup_total_ms=0
+  trap 'echo ""' INT
+  : >"$record_log" 2>/dev/null || true
+  ffmpeg -hide_banner -loglevel error \
+    -f avfoundation -i ":${audio_index}" \
+    -ac 1 -ar 16000 -c:a pcm_s16le \
+    "$wav" >"$record_log" 2>&1 || true
+  trap - INT
+  record_ms=$(( $(now_ms) - record_started_ms ))
+  (( record_ms < 0 )) && record_ms=0
+  
+  if [[ ! -s "$wav" ]]; then
+    rm -f "$wav" 2>/dev/null
+    local hint=""
+    if [[ -s "$record_log" ]]; then
+      hint="$(tail -n 2 "$record_log" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//')"
+    fi
+    if [[ -n "$hint" ]]; then
+      echo "Recording failed ($hint)"
+    else
+      echo "No audio recorded"
+    fi
+    echo "Tip: On macOS, grant Microphone permission to your terminal app (System Settings → Privacy & Security → Microphone), then run: dictate devices"
+    echo "Log: $record_log"
+    total_ms=$(( $(now_ms) - flow_started_ms ))
+    append_bench_entry "inline" "record_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "0" "0" "0" "0" "$total_ms" \
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    return 1
+  fi
+  if ! keep_logs_enabled; then
+    rm -f "$record_log" 2>/dev/null || true
+  fi
+  
+  echo "⏳ Transcribing..."
+  
+  local txt
+  : >"$transcribe_log" 2>/dev/null || true
+  local TRANSCRIBE_LOG="$transcribe_log"
+  local whisper_rc=0
+  local runtime_skip_silence_trim="0"
+  if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_TRIM_WITH_POSTPROCESS:-0}"; then
+    runtime_skip_silence_trim="1"
+  fi
+  stage_started_ms="$(now_ms)"
+  set +e
+  txt="$(DICTATE_RUNTIME_SKIP_SILENCE_TRIM="$runtime_skip_silence_trim" transcribe_audio "$wav" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "${DICTATE_LANGUAGE:-en}" "${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}")"
+  whisper_rc=$?
+  set -e
+  transcribe_ms=$(( $(now_ms) - stage_started_ms ))
+  if [[ "$whisper_rc" -ne 0 ]]; then
+    echo "Transcription failed (backend exit $whisper_rc)"
+    echo "Log: $transcribe_log"
+    total_ms=$(( $(now_ms) - flow_started_ms ))
+    append_bench_entry "inline" "transcribe_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" \
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    return 1
+  fi
+  
+  rm -f "$wav"
+  stage_started_ms="$(now_ms)"
+  txt="$(printf "%s" "$txt" | sanitize_transcript_artifacts)"
+  # Clean filler words / stutters if enabled (regex-based, fast)
+  if [[ "${DICTATE_CLEAN:-0}" == "1" ]]; then
+    local run_repeats="1"
+    if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_REPEATS_WITH_POSTPROCESS:-0}"; then
+      run_repeats="0"
+    fi
+    txt="$(printf "%s" "$txt" | clean_fillers)"
+    if [[ "$run_repeats" == "1" ]]; then
+      local repeats_level="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}"
+      if [[ "$repeats_level" != "0" ]]; then
+        txt="$(printf "%s" "$txt" | clean_repeats "$repeats_level")"
+      fi
+    fi
+  fi
+  clean_ms=$(( $(now_ms) - stage_started_ms ))
+
+  if [[ -z "${txt//[[:space:]]/}" ]]; then
+    echo "No speech detected"
+    total_ms=$(( $(now_ms) - flow_started_ms ))
+    append_bench_entry "inline" "no_speech" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    return 1
+  fi
+
+  # Save raw transcript for history
+  local raw_txt="$txt"
+
+  if [[ "$do_postprocess" == "1" ]]; then
+    stage_started_ms="$(now_ms)"
+    detected_mode="$(get_current_mode "$target_app")"
+    echo "🤖 Post-processing ($detected_mode mode)..."
+    
+    # Signal processing for SwiftBar
+    local proc_file="/tmp/dictate-processing/inline-$$"
+    mkdir -p /tmp/dictate-processing
+    printf "pid=%s\nkind=inline\n" "$$" >"$proc_file" 2>/dev/null || true
+    
+    txt="$(DICTATE_FORCE_MODE="$detected_mode" postprocess_llm "$txt" "$target_app")"
+    txt="$(printf "%s" "$txt" | auto_paragraphs "$detected_mode")"
+    
+    rm -f "$proc_file"
+    # Signal "just processed" for SwiftBar
+    touch /tmp/dictate-just-processed
+    postprocess_ms=$(( $(now_ms) - stage_started_ms ))
+  elif bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
+    detected_mode="$(get_current_mode "$target_app")"
+    txt="$(printf "%s" "$txt" | apply_vocab_corrections "$detected_mode")"
+  fi
+
+  txt="$(printf "%s" "$txt" | normalize_british_spelling)"
+  
+  stage_started_ms="$(now_ms)"
+  # Copy to clipboard
+  if ! printf "%s" "$txt" | pbcopy; then
+    echo "Clipboard copy failed (pbcopy)."
+    echo "Text:"
+    echo "$txt"
+    paste_ms=$(( $(now_ms) - stage_started_ms ))
+    total_ms=$(( $(now_ms) - flow_started_ms ))
+    append_bench_entry "inline" "clipboard_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    return 1
+  fi
+  
+  # Determine paste target based on config/env
+  # "restore/origin" = use app from recording start (target_app captured at start)
+  # "current" = paste to whatever is frontmost now
+  local activate_delay_ms="${DICTATE_INLINE_ACTIVATE_DELAY_MS:-90}"
+  local send_delay_default_ms="35"
+  local send_delay_ms="${DICTATE_INLINE_SEND_DELAY_MS:-$send_delay_default_ms}"
+  local inline_send_mode
+  inline_send_mode="$(normalize_inline_send_mode "${DICTATE_INLINE_SEND_MODE:-${CFG_INLINE_SEND_MODE:-enter}}")"
+  [[ "$activate_delay_ms" =~ ^[0-9]+$ ]] || activate_delay_ms=90
+  [[ "$send_delay_ms" =~ ^[0-9]+$ ]] || send_delay_ms="$send_delay_default_ms"
+
+  # Auto-send (press Enter) unless disabled via env or config file
+  local do_autosend="${DICTATE_AUTOSEND:-}"
+  [[ -z "$do_autosend" ]] && do_autosend="${CFG_INLINE_AUTOSEND:-}"
+  # Default to ON if not set
+  [[ -z "$do_autosend" ]] && do_autosend="1"
+
+  # Activate target app (best effort), then paste.
+  # NOTE: `target_app` is the *process name* (e.g. "wezterm-gui"), which may not
+  # match the app name for `tell application "X"`. Setting frontmost via System
+  # Events works reliably with process names.
+  local osa_err=""
+  if [[ "$paste_target" == "restore" && -n "$target_app" ]]; then
+    local target_app_escaped="${target_app//\"/\\\"}"
+    if ! osa_err="$(osascript -e "tell application \"System Events\" to set frontmost of process \"$target_app_escaped\" to true" 2>&1)"; then
+      echo "Warning: couldn't activate target app process: $target_app"
+      [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+    fi
+    if (( activate_delay_ms > 0 )); then
+      sleep_ms "$activate_delay_ms"
+    fi
+  fi
+
+  if [[ "$do_autosend" == "1" ]]; then
+    if ! osa_err="$(inline_paste_via_osascript 2>&1)"; then
+      echo "Paste/send failed (text is on clipboard)."
+      echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
+      [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+      paste_ms=$(( $(now_ms) - stage_started_ms ))
+      total_ms=$(( $(now_ms) - flow_started_ms ))
+      append_bench_entry "inline" "autosend_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+        "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+      return 1
+    fi
+    sleep_ms "$send_delay_ms"
+    if ! osa_err="$(inline_send_key_via_osascript "$inline_send_mode" 2>&1)"; then
+      echo "Paste/send failed (text is on clipboard)."
+      echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
+      [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+      paste_ms=$(( $(now_ms) - stage_started_ms ))
+      total_ms=$(( $(now_ms) - flow_started_ms ))
+      append_bench_entry "inline" "autosend_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+        "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+      return 1
+    fi
+    echo "✅ Sent ($(inline_send_mode_desc "$inline_send_mode"))"
+  else
+    if ! osa_err="$(inline_paste_via_osascript 2>&1)"; then
+      echo "Paste failed (text is on clipboard)."
+      echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
+      [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+      paste_ms=$(( $(now_ms) - stage_started_ms ))
+      total_ms=$(( $(now_ms) - flow_started_ms ))
+      append_bench_entry "inline" "paste_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+        "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+      return 1
+    fi
+    echo "✅ Pasted (no Enter)"
+  fi
+
+  paste_ms=$(( $(now_ms) - stage_started_ms ))
+  total_ms=$(( $(now_ms) - flow_started_ms ))
+  append_bench_entry "inline" "ok" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+
+  # Save history asynchronously so paste/send latency is not blocked by JSON + file I/O.
+  local history_app="${target_app:-current}"
+  ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" ) >/dev/null 2>&1 &
+}
+
+status() {
+  local inline_state="/tmp/whisper-dictate-inline.state"
+  local proc_dir="/tmp/dictate-processing"
+
+  onoff() {
+    [[ "${1:-0}" == "1" ]] && echo "ON" || echo "OFF"
+  }
+
+  age_s() {
+    local f="${1:-}"
+    [[ -f "$f" ]] || { echo "-"; return 0; }
+    local now mtime
+    now="$(date +%s)"
+    mtime="$(stat -f %m "$f" 2>/dev/null || echo 0)"
+    [[ "$mtime" -gt 0 ]] || { echo "?"; return 0; }
+    echo $((now - mtime))
+  }
+
+  resolve_model_label() {
+    local id="${1:-base}"
+    local path rc
+    set +e
+    path="$(resolve_model_path "$id" 2>/dev/null)"
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 && -n "$path" ]]; then
+      basename "$path"
+    else
+      echo "$id"
+    fi
+  }
+
+  count_processing_markers() {
+    local total=0 live=0 stale=0
+    local pf marker_pid line
+    if [[ -d "$proc_dir" ]]; then
+      for pf in "$proc_dir"/*; do
+        [[ -f "$pf" ]] || continue
+        total=$((total + 1))
+        marker_pid=""
+        line="$(head -n 1 "$pf" 2>/dev/null || true)"
+        if [[ "$line" =~ ^pid=([0-9]+)$ ]]; then
+          marker_pid="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[0-9]+$ ]]; then
+          marker_pid="$line"
+        fi
+        if [[ -n "$marker_pid" ]] && kill -0 "$marker_pid" 2>/dev/null; then
+          live=$((live + 1))
+        else
+          stale=$((stale + 1))
+        fi
+      done
+    fi
+    echo "$total $live $stale"
+  }
+
+  count_tmux_jobs_snapshot() {
+    local total=0 rec=0 proc=0
+    local jf st marker_pid now mtime age
+    now="$(date +%s)"
+    if [[ -d "$TMUX_JOBS_DIR" ]]; then
+      for jf in "$TMUX_JOBS_DIR"/*; do
+        [[ -f "$jf" ]] || continue
+        st="$(sed -n 's/^status=//p' "$jf" 2>/dev/null | head -n 1 || true)"
+        marker_pid="$(sed -n 's/^pid=//p' "$jf" 2>/dev/null | head -n 1 || true)"
+        mtime="$(stat -f %m "$jf" 2>/dev/null || echo 0)"
+        age=$((now - mtime))
+        if [[ "$age" -gt 1800 ]]; then
+          rm -f "$jf" 2>/dev/null || true
+          continue
+        fi
+        case "$st" in
+          recording|processing)
+            if [[ -z "$marker_pid" || ! "$marker_pid" =~ ^[0-9]+$ ]]; then
+              rm -f "$jf" 2>/dev/null || true
+              continue
+            fi
+            if ! kill -0 "$marker_pid" 2>/dev/null; then
+              rm -f "$jf" 2>/dev/null || true
+              continue
+            fi
+            ;;
+        esac
+        total=$((total + 1))
+        case "$st" in
+          recording) rec=$((rec + 1)) ;;
+          processing) proc=$((proc + 1)) ;;
+        esac
+      done
+    fi
+    echo "$total $rec $proc"
+  }
+
+  describe_state_file() {
+    local label="${1:-}"
+    local file="${2:-}"
+    [[ -n "$label" && -n "$file" ]] || return 0
+    if [[ ! -f "$file" ]]; then
+      echo "  $label: idle"
+      return 0
+    fi
+
+    local st_pid st_target st_app st_model st_lang st_age st_label
+    st_pid="$( ( source "$file" 2>/dev/null || true; printf "%s" "${pid:-}" ) 2>/dev/null || true)"
+    st_target="$( ( source "$file" 2>/dev/null || true; printf "%s" "${target_pane:-}" ) 2>/dev/null || true)"
+    st_app="$( ( source "$file" 2>/dev/null || true; printf "%s" "${target_app:-}" ) 2>/dev/null || true)"
+    st_model="$( ( source "$file" 2>/dev/null || true; printf "%s" "${model_id:-}" ) 2>/dev/null || true)"
+    st_lang="$( ( source "$file" 2>/dev/null || true; printf "%s" "${language:-}" ) 2>/dev/null || true)"
+    st_age="$(age_s "$file")"
+
+    if [[ "$label" == "tmux" ]]; then
+      st_label="$st_target"
+      [[ -n "$st_target" ]] && st_label="$(tmux_describe_pane "$st_target")"
+    else
+      st_label="${st_app:-n/a}"
+    fi
+
+    if [[ -n "$st_pid" ]] && kill -0 "$st_pid" 2>/dev/null; then
+      echo "  $label: active pid=$st_pid age=${st_age}s target=${st_label:-n/a} model=${st_model:-n/a} lang=${st_lang:-en}"
+    else
+      echo "  $label: stale state file (pid=${st_pid:-none}, age=${st_age}s)"
+    fi
+  }
+
+  local mode_inline
+  mode_inline="$(canonical_mode_name "$(get_current_mode)")"
+  case "$mode_inline" in
+    short|long|base|email|chat|linkedin|twitter) ;;
+    *) mode_inline="short" ;;
+  esac
+
+  local mode_tmux_raw mode_tmux
+  mode_tmux_raw="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
+  mode_tmux="$(canonical_mode_name "$mode_tmux_raw")"
+  case "$mode_tmux" in
+    short|long) ;;
+    *) mode_tmux="short" ;;
+  esac
+
+  local model_inline_id model_inline_label
+  model_inline_id="${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-base}}"
+  model_inline_label="$(resolve_model_label "$model_inline_id")"
+
+  local model_tmux_id model_tmux_label
+  model_tmux_id="${DICTATE_TMUX_MODEL:-${CFG_TMUX_MODEL:-$model_inline_id}}"
+  model_tmux_label="$(resolve_model_label "$model_tmux_id")"
+
+  local post_inline post_inline_requested post_tmux post_tmux_requested
+  post_inline_requested="${DICTATE_POSTPROCESS:-${CFG_POSTPROCESS_ENABLED:-0}}"
+  if bool_is_on "$post_inline_requested"; then
+    post_inline_requested="1"
+  else
+    post_inline_requested="0"
+  fi
+  post_inline="$post_inline_requested"
+  post_tmux_requested="$(resolve_tmux_postprocess_requested)"
+  post_tmux="$(resolve_tmux_postprocess_effective)"
+  local cerebras_key_set="0"
+  [[ -n "${CEREBRAS_API_KEY:-}" ]] && cerebras_key_set="1"
+  if [[ "$cerebras_key_set" != "1" ]]; then
+    post_inline="0"
+  fi
+
+  local inline_autosend inline_target inline_send_mode tmux_autosend tmux_target tmux_process_sound
+  inline_autosend="${DICTATE_AUTOSEND:-${CFG_INLINE_AUTOSEND:-1}}"
+  inline_target="$(inline_paste_target_label "${DICTATE_INLINE_PASTE_TARGET:-${CFG_INLINE_PASTE_TARGET:-restore}}")"
+  inline_send_mode="$(inline_send_mode_label "${DICTATE_INLINE_SEND_MODE:-${CFG_INLINE_SEND_MODE:-enter}}")"
+  tmux_autosend="${DICTATE_TMUX_AUTOSEND:-${CFG_TMUX_AUTOSEND:-1}}"
+  tmux_target="${DICTATE_TMUX_PASTE_TARGET:-${CFG_TMUX_PASTE_TARGET:-origin}}"
+  tmux_process_sound="${DICTATE_TMUX_PROCESS_SOUND:-${CFG_TMUX_PROCESS_SOUND:-0}}"
+  local tmux_send_mode keep_logs_val
+  tmux_send_mode="${DICTATE_TMUX_SEND_MODE:-${CFG_TMUX_SEND_MODE:-auto}}"
+  case "$tmux_send_mode" in
+    auto|enter|codex) ;;
+    *) tmux_send_mode="auto" ;;
+  esac
+  keep_logs_val="${DICTATE_KEEP_LOGS:-${CFG_DEBUG_KEEP_LOGS:-0}}"
+
+  local clean_enabled repeats_level silence_trim
+  clean_enabled="${DICTATE_CLEAN:-0}"
+  repeats_level="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}"
+  silence_trim="${DICTATE_SILENCE_TRIM:-${CFG_AUDIO_SILENCE_TRIM:-0}}"
+  local vocab_clean
+  vocab_clean="${DICTATE_VOCAB_CLEAN:-1}"
+  if bool_is_on "$vocab_clean"; then
+    vocab_clean="1"
+  else
+    vocab_clean="0"
+  fi
+
+  local llm_model llm_max_tokens llm_chunk_words
+  llm_model="${DICTATE_LLM_MODEL:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}}"
+  llm_max_tokens="${DICTATE_LLM_MAX_TOKENS:-${CFG_POSTPROCESS_MAX_TOKENS:-}}"
+  llm_chunk_words="${DICTATE_LLM_CHUNK_WORDS:-${CFG_POSTPROCESS_CHUNK_WORDS:-}}"
+
+  lookup_override() {
+    local list="${1:-}"
+    local key="${2:-}"
+    [[ -n "$list" && -n "$key" ]] || return 1
+    local IFS=';'
+    read -r -a pairs <<<"$list"
+    local pair
+    for pair in "${pairs[@]}"; do
+      [[ "$pair" == "$key="* ]] && { echo "${pair#*=}"; return 0; }
+    done
+    return 1
+  }
+
+  lookup_override_for_mode() {
+    local list="${1:-}"
+    local mode="${2:-}"
+    local key value
+    key="$(mode_override_key "$mode")"
+    value="$(lookup_override "$list" "$key" 2>/dev/null || true)"
+    [[ -n "$value" ]] && echo "$value"
+  }
+
+  local profile_short_llm profile_short_max profile_short_chunk
+  local profile_long_llm profile_long_max profile_long_chunk
+  profile_short_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  profile_short_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  profile_short_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  profile_long_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "long" 2>/dev/null || true)"
+  profile_long_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "long" 2>/dev/null || true)"
+  profile_long_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "long" 2>/dev/null || true)"
+
+  local audio_name audio_idx audio_src audio_source_mode
+  audio_source_mode="$(normalize_audio_source "${DICTATE_AUDIO_SOURCE:-${CFG_AUDIO_SOURCE:-auto}}")"
+  audio_name="${DICTATE_AUDIO_NAME:-${CFG_AUDIO_DEVICE_NAME:-}}"
+  audio_idx="${DICTATE_AUDIO_INDEX:-}"
+  audio_src="(none)"
+  if [[ -n "$audio_idx" ]]; then
+      audio_src="env:DICTATE_AUDIO_INDEX"
+  else
+    local detect_meta detect_src
+    detect_meta="$(detect_audio_index 2>/dev/null || true)"
+    IFS=$'\t' read -r audio_idx detect_src _ <<<"$detect_meta"
+    if [[ -n "$audio_idx" ]]; then
+      audio_src="${detect_src:-detect:source(${audio_source_mode})}"
+    elif [[ -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
+      audio_idx="${CFG_AUDIO_DEVICE_INDEX}"
+      audio_src="config:audio.device_index"
+    fi
+  fi
+
+  local key_status="UNSET"
+  [[ -n "${CEREBRAS_API_KEY:-}" ]] && key_status="SET"
+
+  local proc_total proc_live proc_stale
+  read -r proc_total proc_live proc_stale < <(count_processing_markers)
+
+  local tmux_total tmux_rec tmux_proc
+  read -r tmux_total tmux_rec tmux_proc < <(count_tmux_jobs_snapshot)
+
+  echo "Dictate status"
+  echo ""
+  echo "Runtime:"
+  describe_state_file "tmux" "$STATE_FILE"
+  describe_state_file "inline" "$inline_state"
+  echo "  processing markers: total=${proc_total:-0} live=${proc_live:-0} stale=${proc_stale:-0}"
+  echo "  tmux queue: total=${tmux_total:-0} recording=${tmux_rec:-0} processing=${tmux_proc:-0}"
+
+  echo ""
+  echo "Effective settings:"
+  echo "  mode.inline: $mode_inline"
+  echo "  mode.tmux: $mode_tmux"
+  echo "  model.inline: $model_inline_id ($model_inline_label)"
+  echo "  model.tmux: $model_tmux_id ($model_tmux_label)"
+  echo "  whisper.threads/beam/best_of: ${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}/${DICTATE_BEAM_SIZE:-${CFG_WHISPER_BEAM_SIZE:-1}}/${DICTATE_BEST_OF:-${CFG_WHISPER_BEST_OF:-1}}"
+  echo "  language: ${DICTATE_LANGUAGE:-en}"
+  echo "  postprocess.inline: $(onoff "$post_inline")"
+  echo "  postprocess.tmux: $(onoff "$post_tmux")"
+  if [[ "$cerebras_key_set" != "1" && ( "$post_inline_requested" == "1" || "$post_tmux_requested" == "1" ) ]]; then
+    echo "  postprocess.note: disabled at runtime (CEREBRAS_API_KEY missing)"
+  fi
+  echo "  llm: $llm_model"
+  [[ -n "$llm_max_tokens" ]] && echo "  llm.max_tokens: $llm_max_tokens"
+  [[ -n "$llm_chunk_words" ]] && echo "  llm.chunk_words: $llm_chunk_words"
+  echo "  profile.short: llm=${profile_short_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_short_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_short_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
+  echo "  profile.long: llm=${profile_long_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_long_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_long_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
+  echo "  british_spelling: $(onoff "${DICTATE_BRITISH_SPELLING:-1}")"
+  echo "  clean.regex: $(onoff "$clean_enabled")"
+  echo "  clean.repeats_level: $repeats_level"
+  echo "  clean.vocab_only_when_postprocess_off: $(onoff "$vocab_clean")"
+  echo "  silence_trim: $(onoff "$silence_trim") (${CFG_AUDIO_SILENCE_TRIM_MODE:-edges})"
+  echo "  inline.autosend: $(onoff "$inline_autosend")"
+  echo "  inline.target: $inline_target"
+  echo "  inline.send_mode: $inline_send_mode"
+  echo "  tmux.autosend: $(onoff "$tmux_autosend")"
+  echo "  tmux.target: $tmux_target"
+  echo "  tmux.process_sound: $(onoff "$tmux_process_sound")"
+  echo "  tmux.send_mode: $tmux_send_mode"
+  echo "  debug.keep_logs: $(onoff "$keep_logs_val")"
+  echo "  audio.source: ${audio_source_mode}"
+  echo "  audio.device_name: ${audio_name:-<none>}"
+  echo "  audio.mac_name: ${CFG_AUDIO_MAC_NAME:-<none>}"
+  echo "  audio.iphone_name: ${CFG_AUDIO_IPHONE_NAME:-<none>}"
+  echo "  audio.device_index_fallback: ${CFG_AUDIO_DEVICE_INDEX:-<none>}"
+  echo "  audio.index_resolved: ${audio_idx:-<none>} (source: $audio_src)"
+  echo "  sounds: master=$(onoff "${CFG_AUDIO_SOUNDS_ENABLED:-1}") start=$(onoff "${CFG_AUDIO_SOUNDS_START_ENABLED:-1}") stop=$(onoff "${CFG_AUDIO_SOUNDS_STOP_ENABLED:-1}") process=$(onoff "${CFG_AUDIO_SOUNDS_PROCESS_ENABLED:-1}") error=$(onoff "${CFG_AUDIO_SOUNDS_ERROR_ENABLED:-1}") cancel=$(onoff "${CFG_AUDIO_SOUNDS_CANCEL_ENABLED:-1}")"
+  echo "  cerebras_api_key: $key_status"
+
+  echo ""
+  echo "Active env overrides:"
+  local override_vars=(
+    DICTATE_AUDIO_SOURCE DICTATE_AUDIO_INDEX DICTATE_AUDIO_NAME
+    DICTATE_MODEL DICTATE_TMUX_MODEL
+    DICTATE_TMUX_MODE
+    DICTATE_POSTPROCESS DICTATE_TMUX_POSTPROCESS DICTATE_VOCAB_CLEAN
+    DICTATE_AUTOSEND DICTATE_TMUX_AUTOSEND
+    DICTATE_INLINE_PASTE_TARGET DICTATE_INLINE_SEND_MODE
+    DICTATE_INLINE_ACTIVATE_DELAY_MS DICTATE_INLINE_SEND_DELAY_MS
+    DICTATE_TMUX_PASTE_TARGET DICTATE_TMUX_PROCESS_SOUND
+    DICTATE_TMUX_SEND_MODE
+    DICTATE_TMUX_SEND_DELAY_MS DICTATE_TMUX_CODEX_TAB_DELAY_MS
+    DICTATE_CLEAN DICTATE_REPEATS_LEVEL DICTATE_SILENCE_TRIM
+    DICTATE_TRIM_WITH_POSTPROCESS DICTATE_REPEATS_WITH_POSTPROCESS
+    DICTATE_LLM_MODEL DICTATE_LLM_MAX_TOKENS DICTATE_LLM_CHUNK_WORDS DICTATE_BRITISH_SPELLING
+    DICTATE_THREADS DICTATE_BEAM_SIZE DICTATE_BEST_OF DICTATE_GPU
+    DICTATE_LANGUAGE
+    DICTATE_TARGET_APP DICTATE_TARGET_PANE
+    DICTATE_KEEP_LOGS
+    CEREBRAS_API_KEY
+  )
+  local shown=0 var val
+  for var in "${override_vars[@]}"; do
+    val="${!var-}"
+    [[ -n "$val" ]] || continue
+    if [[ "$var" == "CEREBRAS_API_KEY" ]]; then
+      echo "  $var=<set>"
+    else
+      echo "  $var=$val"
+    fi
+    shown=$((shown + 1))
+  done
+  if [[ "$shown" -eq 0 ]]; then
+    echo "  (none)"
+  fi
+
+  echo ""
+  echo "More detail: dictate debug   |   dictate doctor   |   dictate logs"
+}
+
+toggle() {
+  if [[ -f "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+    if kill -0 "${pid:-0}" 2>/dev/null; then
+      stop
+    else
+      # Stale state, clean up and start fresh
+      rm -f "$STATE_FILE" "$wav" 2>/dev/null
+      start
+    fi
+  else
+    start
+  fi
+}
+
+set_model() {
+  local name="${1:-}"
+  case "$name" in
+    base)  config_set "whisper.model" "string" "base";  config_load; echo "Model set: base.en (fast)" ;;
+    small) config_set "whisper.model" "string" "small"; config_load; echo "Model set: small.en (accurate)" ;;
+    turbo) config_set "whisper.model" "string" "turbo"; config_load; echo "Model set: large-v3-turbo-q5 (fast+accurate)" ;;
+    "")
+      local current="${CFG_WHISPER_MODEL:-base}"
+      local resolved
+      resolved="$(resolve_model_path "$current")"
+      echo "Current model: $(basename "$resolved") ($current)"
+      echo ""
+      echo "Available:"
+      echo "  base   - 141 MB  ⚡⚡⚡⚡  fast, good accuracy (default)"
+      echo "  small  - 465 MB  ⚡⚡⚡   slower, better accuracy"
+      echo "  turbo  - 547 MB  ⚡⚡⚡   large-v3-turbo-q5, fast+accurate"
+      ;;
+    *) die "unknown model: $name (use: base, small, turbo)" ;;
+  esac
+}
+
+set_postprocess() {
+  local val="${1:-}"
+  case "$val" in
+    on|1)  config_set "postprocess.enabled" "bool" "true";  config_load; echo "Post-processing: ON (Cerebras)" ;;
+    off|0) config_set "postprocess.enabled" "bool" "false"; config_load; echo "Post-processing: OFF" ;;
+    "")
+      [[ "${CFG_POSTPROCESS_ENABLED:-0}" == "1" ]] && echo "Post-processing: ON" || echo "Post-processing: OFF"
+      ;;
+    *) die "unknown value: $val (use: on, off)" ;;
+  esac
+}
+
+set_keep_logs() {
+  local val="${1:-}"
+  case "$val" in
+    on|1|true)
+      config_set "debug.keep_logs" "bool" "true"
+      config_load
+      echo "keep_logs: ON"
+      ;;
+    off|0|false)
+      config_set "debug.keep_logs" "bool" "false"
+      config_load
+      echo "keep_logs: OFF"
+      ;;
+    "")
+      if keep_logs_enabled; then
+        echo "keep_logs: ON"
+      else
+        echo "keep_logs: OFF"
+      fi
+      echo "Env override: DICTATE_KEEP_LOGS=${DICTATE_KEEP_LOGS:-<unset>}"
+      ;;
+    *)
+      die "usage: dictate keep-logs [on|off]"
+      ;;
+  esac
+}
+
+set_silence_trim() {
+  local val="${1:-show}"
+  case "$val" in
+    on|1|true)
+      config_set "audio.silence_trim" "bool" "true"
+      config_load
+      echo "silence_trim: ON"
+      ;;
+    off|0|false)
+      config_set "audio.silence_trim" "bool" "false"
+      config_load
+      echo "silence_trim: OFF"
+      ;;
+    toggle)
+      if [[ "${CFG_AUDIO_SILENCE_TRIM:-0}" == "1" ]]; then
+        config_set "audio.silence_trim" "bool" "false"
+      else
+        config_set "audio.silence_trim" "bool" "true"
+      fi
+      config_load
+      [[ "${CFG_AUDIO_SILENCE_TRIM:-0}" == "1" ]] && echo "silence_trim: ON" || echo "silence_trim: OFF"
+      ;;
+    show|"")
+      [[ "${CFG_AUDIO_SILENCE_TRIM:-0}" == "1" ]] && echo "silence_trim: ON" || echo "silence_trim: OFF"
+      echo "mode: ${CFG_AUDIO_SILENCE_TRIM_MODE:-edges}"
+      echo "threshold_db: ${CFG_AUDIO_SILENCE_THRESHOLD_DB:--60}"
+      echo "min_ms: ${CFG_AUDIO_SILENCE_MIN_MS:-250}"
+      echo "keep_ms: ${CFG_AUDIO_SILENCE_KEEP_MS:-50}"
+      ;;
+    *)
+      die "usage: dictate silence-trim [on|off|toggle|show]"
+      ;;
+  esac
+}
+
+set_repeats_level() {
+  local val="${1:-show}"
+  case "$val" in
+    0|1|2)
+      config_set "clean.repeats_level" "int" "$val"
+      config_load
+      echo "repeats_level: ${CFG_CLEAN_REPEATS_LEVEL:-1}"
+      ;;
+    off)
+      config_set "clean.repeats_level" "int" "0"
+      config_load
+      echo "repeats_level: ${CFG_CLEAN_REPEATS_LEVEL:-0}"
+      ;;
+    toggle)
+      local current="${CFG_CLEAN_REPEATS_LEVEL:-1}"
+      local next="1"
+      case "$current" in
+        0) next="1" ;;
+        1) next="2" ;;
+        *) next="0" ;;
+      esac
+      config_set "clean.repeats_level" "int" "$next"
+      config_load
+      echo "repeats_level: ${CFG_CLEAN_REPEATS_LEVEL:-$next}"
+      ;;
+    show|"")
+      echo "repeats_level: ${CFG_CLEAN_REPEATS_LEVEL:-1}"
+      echo "  0 = off"
+      echo "  1 = dedupe repeated words"
+      echo "  2 = dedupe repeated words + short phrases"
+      ;;
+    *)
+      die "usage: dictate repeats [0|1|2|off|toggle|show]"
+      ;;
+  esac
+}
+
+set_autosend() {
+  local val="${1:-}"
+  case "$val" in
+    on|1)  config_set "inline.autosend" "bool" "true";  config_load; echo "Auto-send: ON (paste + send key)" ;;
+    off|0) config_set "inline.autosend" "bool" "false"; config_load; echo "Auto-send: OFF (paste only)" ;;
+    "")
+      [[ "${CFG_INLINE_AUTOSEND:-1}" == "1" ]] && echo "Auto-send: ON" || echo "Auto-send: OFF"
+      echo ""
+      echo "Note: Applies to inline mode only. Use: dictate tmux autosend on|off"
+      ;;
+    *) die "unknown value: $val (use: on, off)" ;;
+  esac
+}
+
+normalize_inline_paste_target() {
+  local val="${1:-restore}"
+  case "$val" in
+    current) echo "current" ;;
+    origin|restore|"") echo "restore" ;;
+    *) echo "restore" ;;
+  esac
+}
+
+normalize_inline_send_mode() {
+  local val="${1:-enter}"
+  case "$val" in
+    enter|"") echo "enter" ;;
+    ctrl_j|ctrl-j|ctrlj|ctrl+j) echo "ctrl_j" ;;
+    cmd_enter|cmd-enter|cmdenter|cmd+enter) echo "cmd_enter" ;;
+    *) echo "enter" ;;
+  esac
+}
+
+inline_send_mode_label() {
+  local norm
+  norm="$(normalize_inline_send_mode "${1:-enter}")"
+  case "$norm" in
+    ctrl_j) echo "ctrl_j" ;;
+    cmd_enter) echo "cmd_enter" ;;
+    *) echo "enter" ;;
+  esac
+}
+
+inline_send_mode_desc() {
+  local norm
+  norm="$(normalize_inline_send_mode "${1:-enter}")"
+  case "$norm" in
+    ctrl_j) echo "Ctrl+J" ;;
+    cmd_enter) echo "Cmd+Enter" ;;
+    *) echo "Enter" ;;
+  esac
+}
+
+inline_paste_target_label() {
+  local norm
+  norm="$(normalize_inline_paste_target "${1:-restore}")"
+  if [[ "$norm" == "current" ]]; then
+    echo "current"
+  else
+    echo "origin"
+  fi
+}
+
+set_paste_target() {
+  local val="${1:-}"
+  case "$val" in
+    origin|restore) config_set "inline.paste_target" "string" "restore"; config_load; echo "Paste target: ORIGIN (app from recording start)" ;;
+    current) config_set "inline.paste_target" "string" "current"; config_load; echo "Paste target: CURRENT (wherever you are now)" ;;
+    "")
+      local current_raw="${DICTATE_INLINE_PASTE_TARGET:-${CFG_INLINE_PASTE_TARGET:-restore}}"
+      local current
+      current="$(inline_paste_target_label "$current_raw")"
+      echo "Paste target: $current"
+      echo ""
+      echo "Options:"
+      echo "  origin  - paste to app that was frontmost when recording started (alias: restore)"
+      echo "  current - paste to whatever app is frontmost when recording stops"
+      ;;
+    *) die "unknown value: $val (use: origin, current, restore)" ;;
+  esac
+}
+
+set_inline_send_mode() {
+  local val="${1:-}"
+  case "$val" in
+    enter)
+      config_set "inline.send_mode" "string" "enter"
+      config_load
+      echo "Inline send mode: Enter"
+      ;;
+    ctrl_j|ctrl-j|ctrlj|ctrl+j)
+      config_set "inline.send_mode" "string" "ctrl_j"
+      config_load
+      echo "Inline send mode: Ctrl+J"
+      ;;
+    cmd_enter|cmd-enter|cmdenter|cmd+enter)
+      config_set "inline.send_mode" "string" "cmd_enter"
+      config_load
+      echo "Inline send mode: Cmd+Enter"
+      ;;
+    "")
+      local current_raw="${DICTATE_INLINE_SEND_MODE:-${CFG_INLINE_SEND_MODE:-enter}}"
+      local current
+      current="$(inline_send_mode_label "$current_raw")"
+      echo "Inline send mode: $current ($(inline_send_mode_desc "$current_raw"))"
+      echo ""
+      echo "Options:"
+      echo "  enter     - autosend with Enter"
+      echo "  ctrl_j    - autosend with Ctrl+J (often needed in Claude Code)"
+      echo "  cmd_enter - autosend with Cmd+Enter"
+      ;;
+    *)
+      die "unknown value: $val (use: enter, ctrl_j, cmd_enter)"
+      ;;
+  esac
+}
+
+manage_tmux() {
+  local sub="${1:-}"
+  local val="${2:-}"
+  local tmux_mode_current
+  local tmux_send_mode_current
+  tmux_mode_current="$(canonical_mode_name "${CFG_TMUX_MODE:-short}")"
+  case "$tmux_mode_current" in
+    short|long) ;;
+    *) tmux_mode_current="short" ;;
+  esac
+  tmux_send_mode_current="${CFG_TMUX_SEND_MODE:-auto}"
+  case "$tmux_send_mode_current" in
+    auto|enter|codex) ;;
+    *) tmux_send_mode_current="auto" ;;
+  esac
+
+  case "$sub" in
+    ""|show)
+      echo "tmux defaults:"
+      [[ "${CFG_TMUX_AUTOSEND:-1}" == "1" ]] && echo "  autosend: ON" || echo "  autosend: OFF"
+      echo "  target: ${CFG_TMUX_PASTE_TARGET:-origin}"
+      [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]] && echo "  postprocess: ON" || echo "  postprocess: OFF"
+      [[ "${CFG_TMUX_PROCESS_SOUND:-0}" == "1" ]] && echo "  process_sound: ON" || echo "  process_sound: OFF"
+      echo "  send_mode: $tmux_send_mode_current"
+      echo "  mode: $tmux_mode_current"
+      ;;
+    autosend)
+      case "$val" in
+        on|1)  config_set "tmux.autosend" "bool" "true";  config_load; echo "tmux autosend: ON (paste + Enter)" ;;
+        off|0) config_set "tmux.autosend" "bool" "false"; config_load; echo "tmux autosend: OFF (paste only)" ;;
+        "")
+          [[ "${CFG_TMUX_AUTOSEND:-1}" == "1" ]] && echo "tmux autosend: ON" || echo "tmux autosend: OFF"
+          ;;
+        *) die "unknown value: $val (use: on, off)" ;;
+      esac
+      ;;
+    target)
+      case "$val" in
+        origin) config_set "tmux.paste_target" "string" "origin"; config_load; echo "tmux target: origin (pane where recording started)" ;;
+        current) config_set "tmux.paste_target" "string" "current"; config_load; echo "tmux target: current (pane at stop time)" ;;
+        "")
+          local current="${CFG_TMUX_PASTE_TARGET:-origin}"
+          echo "tmux target: $current"
+          if [[ -n "${TMUX:-}" ]]; then
+            local active_pane active_label
+            active_pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null || true)"
+            if [[ -n "$active_pane" ]]; then
+              active_label="$(tmux_describe_pane "$active_pane")"
+              echo "active pane: ${active_label:-$active_pane}"
+            fi
+          fi
+          echo ""
+          echo "Options:"
+          echo "  origin  - paste to pane where recording started"
+          echo "  current - paste to whatever pane is active at stop"
+          ;;
+        *) die "unknown value: $val (use: origin, current)" ;;
+      esac
+      ;;
+    postprocess)
+      case "$val" in
+        on|1)  config_set "tmux.postprocess" "bool" "true";  config_load; echo "tmux postprocess: ON" ;;
+        off|0) config_set "tmux.postprocess" "bool" "false"; config_load; echo "tmux postprocess: OFF" ;;
+        "")
+          [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]] && echo "tmux postprocess: ON" || echo "tmux postprocess: OFF"
+          ;;
+        *) die "unknown value: $val (use: on, off)" ;;
+      esac
+      ;;
+    process-sound|process_sound|processsound)
+      case "$val" in
+        on|1)  config_set "tmux.process_sound" "bool" "true";  config_load; echo "tmux process_sound: ON" ;;
+        off|0) config_set "tmux.process_sound" "bool" "false"; config_load; echo "tmux process_sound: OFF" ;;
+        "")
+          [[ "${CFG_TMUX_PROCESS_SOUND:-0}" == "1" ]] && echo "tmux process_sound: ON" || echo "tmux process_sound: OFF"
+          ;;
+        *) die "unknown value: $val (use: on, off)" ;;
+      esac
+      ;;
+    send-mode|send_mode|sendmode)
+      case "$val" in
+        auto|enter|codex)
+          config_set "tmux.send_mode" "string" "$val"
+          config_load
+          echo "tmux send_mode: $val"
+          ;;
+        "")
+          local current_send_mode="${CFG_TMUX_SEND_MODE:-auto}"
+          case "$current_send_mode" in
+            auto|enter|codex) ;;
+            *) current_send_mode="auto" ;;
+          esac
+          echo "tmux send_mode: $current_send_mode"
+          echo ""
+          echo "Options:"
+          echo "  auto   - detect Codex (Tab+Enter), otherwise Enter"
+          echo "  enter  - always send Enter"
+          echo "  codex  - always send Tab+Enter"
+          ;;
+        *) die "unknown value: $val (use: auto, enter, codex)" ;;
+      esac
+      ;;
+    mode)
+      if [[ -z "$val" ]]; then
+        echo "tmux mode: $tmux_mode_current"
+        echo ""
+        echo "Available:"
+        echo "  short"
+        echo "  long"
+      else
+        local canonical
+        canonical="$(canonical_mode_name "$val")"
+        case "$canonical" in
+          short|long) ;;
+          *) die "unknown tmux mode: $val (use: short, long)" ;;
+        esac
+        config_set "tmux.mode" "string" "$canonical"
+        config_load
+        echo "tmux mode: $canonical"
+      fi
+      ;;
+    model)
+      case "$val" in
+        base)  config_set "tmux.model" "string" "base";  config_load; echo "tmux model: base.en (fast)" ;;
+        small) config_set "tmux.model" "string" "small"; config_load; echo "tmux model: small.en (accurate)" ;;
+        turbo) config_set "tmux.model" "string" "turbo"; config_load; echo "tmux model: large-v3-turbo-q5 (fast+accurate)" ;;
+        "")
+          local current="${CFG_TMUX_MODEL:-${CFG_WHISPER_MODEL:-base}}"
+          local resolved
+          resolved="$(resolve_model_path "$current")"
+          echo "tmux model: $(basename "$resolved") ($current)"
+          echo ""
+          echo "Available:"
+          echo "  base   - 141 MB  ⚡⚡⚡⚡  fast, good accuracy (default)"
+          echo "  small  - 465 MB  ⚡⚡⚡   slower, better accuracy"
+          echo "  turbo  - 547 MB  ⚡⚡⚡   large-v3-turbo-q5, fast+accurate"
+          ;;
+        *) die "unknown model: $val (use: base, small, turbo)" ;;
+      esac
+      ;;
+    *)
+      die "usage: dictate tmux [autosend|target|postprocess|process-sound|send-mode|mode|model] [value]"
+      ;;
+  esac
+}
+
+set_llm() {
+  local a1="${1:-}"
+  local a2="${2:-}"
+
+  lookup_override() {
+    local list="${1:-}"
+    local key="${2:-}"
+    [[ -n "$list" && -n "$key" ]] || return 1
+    local IFS=';'
+    read -r -a pairs <<<"$list"
+    local pair
+    for pair in "${pairs[@]}"; do
+      [[ "$pair" == "$key="* ]] && { echo "${pair#*=}"; return 0; }
+    done
+    return 1
+  }
+
+  lookup_override_for_mode() {
+    local list="${1:-}"
+    local key="${2:-}"
+    lookup_override "$list" "$key" 2>/dev/null || true
+  }
+
+  resolve_llm_alias() {
+    local name="${1:-}"
+    case "$name" in
+      fast|8b) echo "llama3.1-8b" ;;
+      smart|70b) echo "llama-3.3-70b" ;;
+      qwen|32b) echo "qwen-3-32b" ;;
+      gpt|oss) echo "gpt-oss-120b" ;;
+      *) echo "$name" ;;
+    esac
+  }
+
+  if [[ -n "$a1" && -z "$a2" && -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$a1")" ]]; then
+    local mode
+    mode="$(canonical_mode_name "$a1")"
+    local mode_key
+    mode_key="$(mode_override_key "$mode")"
+    local override=""
+    override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+    if [[ -n "$override" ]]; then
+      echo "LLM override for mode '$mode': $override"
+    else
+      echo "LLM override for mode '$mode': (none; uses global ${CFG_POSTPROCESS_LLM:-llama3.1-8b})"
+    fi
+    echo ""
+    echo "Set with:"
+    echo "  dictate llm $mode fast|smart|qwen|gpt"
+    return 0
+  fi
+
+  if [[ -n "$a1" && -n "$a2" && -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$a1")" ]]; then
+    local mode
+    mode="$(canonical_mode_name "$a1")"
+    local mode_key
+    mode_key="$(mode_override_key "$mode")"
+    local model_id
+    model_id="$(resolve_llm_alias "$a2")"
+    config_set "postprocess.mode_overrides.${mode_key}.llm" "string" "$model_id"
+    config_load
+    echo "LLM override set for mode '$mode': $model_id"
+    return 0
+  fi
+
+  local name="$a1"
+  case "$name" in
+    fast|8b)   config_set "postprocess.llm" "string" "llama3.1-8b";  config_load; echo "LLM set: llama3.1-8b (fast)" ;;
+    smart|70b) config_set "postprocess.llm" "string" "llama-3.3-70b"; config_load; echo "LLM set: llama-3.3-70b (smart)" ;;
+    qwen|32b)  config_set "postprocess.llm" "string" "qwen-3-32b";     config_load; echo "LLM set: qwen-3-32b (balanced)" ;;
+    gpt|oss)   config_set "postprocess.llm" "string" "gpt-oss-120b";   config_load; echo "LLM set: gpt-oss-120b (fastest+smart)" ;;
+    "")
+      local current="llama3.1-8b"
+      [[ -n "${CFG_POSTPROCESS_LLM:-}" ]] && current="$CFG_POSTPROCESS_LLM"
+      echo "Current LLM: $current"
+      echo ""
+      echo "Available:"
+      echo "  fast  (llama3.1-8b)   - ~2200 t/s, simple cleanup"
+      echo "  smart (llama-3.3-70b) - ~2100 t/s, better understanding"
+      echo "  qwen  (qwen-3-32b)    - ~2600 t/s, balanced"
+      echo "  gpt   (gpt-oss-120b)  - ~3000 t/s, fastest + 120B params"
+      echo ""
+      echo "Per-mode override:"
+      echo "  dictate llm <mode> <llm>   (e.g., dictate llm short smart)"
+      ;;
+    *) die "unknown LLM: $name (use: fast, smart, qwen, gpt, or: dictate llm <mode> <llm>)" ;;
+  esac
+}
+
+set_profile() {
+  local a1="${1:-}"
+  local a2="${2:-}"
+  local a3="${3:-}"
+
+  lookup_override() {
+    local list="${1:-}"
+    local key="${2:-}"
+    [[ -n "$list" && -n "$key" ]] || return 1
+    local IFS=';'
+    read -r -a pairs <<<"$list"
+    local pair
+    for pair in "${pairs[@]}"; do
+      [[ "$pair" == "$key="* ]] && { echo "${pair#*=}"; return 0; }
+    done
+    return 1
+  }
+
+  lookup_override_for_mode() {
+    local list="${1:-}"
+    local key="${2:-}"
+    lookup_override "$list" "$key" 2>/dev/null || true
+  }
+
+  resolve_llm_alias() {
+    local name="${1:-}"
+    case "$name" in
+      fast|8b) echo "llama3.1-8b" ;;
+      smart|70b) echo "llama-3.3-70b" ;;
+      qwen|32b) echo "qwen-3-32b" ;;
+      gpt|oss) echo "gpt-oss-120b" ;;
+      *) echo "$name" ;;
+    esac
+  }
+
+  show_one_profile() {
+    local mode="${1:-short}"
+    local mode_key
+    mode_key="$(mode_override_key "$mode")"
+
+    local llm_override max_override chunk_override
+    llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+    max_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+    chunk_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+
+    local llm_effective max_effective chunk_effective
+    llm_effective="${llm_override:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}}"
+    max_effective="${max_override:-${CFG_POSTPROCESS_MAX_TOKENS:-}}"
+    chunk_effective="${chunk_override:-${CFG_POSTPROCESS_CHUNK_WORDS:-}}"
+
+    echo "$mode profile:"
+    echo "  llm: ${llm_effective}${llm_override:+ (override)}"
+    [[ -n "$max_effective" ]] && echo "  max_tokens: ${max_effective}${max_override:+ (override)}" || echo "  max_tokens: <unset>"
+    [[ -n "$chunk_effective" ]] && echo "  chunk_words: ${chunk_effective}${chunk_override:+ (override)}" || echo "  chunk_words: <unset>"
+  }
+
+  if [[ -z "$a1" ]]; then
+    echo "Postprocess profiles"
+    echo ""
+    echo "Global defaults:"
+    echo "  llm: ${CFG_POSTPROCESS_LLM:-llama3.1-8b}"
+    [[ -n "${CFG_POSTPROCESS_MAX_TOKENS:-}" ]] && echo "  max_tokens: ${CFG_POSTPROCESS_MAX_TOKENS}" || echo "  max_tokens: <unset>"
+    [[ -n "${CFG_POSTPROCESS_CHUNK_WORDS:-}" ]] && echo "  chunk_words: ${CFG_POSTPROCESS_CHUNK_WORDS}" || echo "  chunk_words: <unset>"
+    echo ""
+    show_one_profile "short"
+    echo ""
+    show_one_profile "long"
+    echo ""
+    echo "Set overrides:"
+    echo "  dictate profile short llm gpt"
+    echo "  dictate profile short max_tokens 2000"
+    echo "  dictate profile long chunk_words 1000"
+    return 0
+  fi
+
+  local mode
+  mode="$(canonical_mode_name "$a1")"
+  case "$mode" in
+    short|long) ;;
+    *) die "usage: dictate profile [short|long] [llm|max_tokens|chunk_words|clear] [value]" ;;
+  esac
+  local mode_key
+  mode_key="$(mode_override_key "$mode")"
+
+  if [[ -z "$a2" ]]; then
+    show_one_profile "$mode"
+    echo ""
+    echo "Set overrides:"
+    echo "  dictate profile $mode llm gpt|smart|qwen|fast|<model>"
+    echo "  dictate profile $mode max_tokens <n>"
+    echo "  dictate profile $mode chunk_words <n>"
+    echo "  dictate profile $mode clear"
+    return 0
+  fi
+
+  case "$a2" in
+    llm)
+      [[ -n "$a3" ]] || die "usage: dictate profile $mode llm <model|fast|smart|qwen|gpt>"
+      local llm_id
+      llm_id="$(resolve_llm_alias "$a3")"
+      config_set "postprocess.mode_overrides.${mode_key}.llm" "string" "$llm_id"
+      config_load
+      echo "$mode profile llm: $llm_id"
+      ;;
+    max_tokens|chunk_words)
+      [[ -n "$a3" ]] || die "usage: dictate profile $mode $a2 <n>"
+      [[ "$a3" =~ ^[0-9]+$ ]] || die "$a2 must be a positive integer"
+      [[ "$a3" -gt 0 ]] || die "$a2 must be > 0"
+      config_set "postprocess.mode_overrides.${mode_key}.${a2}" "int" "$a3"
+      config_load
+      echo "$mode profile $a2: $a3"
+      ;;
+    clear|reset)
+      config_set "postprocess.mode_overrides.${mode_key}.llm" "string" ""
+      config_set "postprocess.mode_overrides.${mode_key}.max_tokens" "int" ""
+      config_set "postprocess.mode_overrides.${mode_key}.chunk_words" "int" ""
+      config_load
+      echo "$mode profile overrides cleared (now using global defaults)."
+      ;;
+    *)
+      die "usage: dictate profile [short|long] [llm|max_tokens|chunk_words|clear] [value]"
+      ;;
+  esac
+}
+
+set_device() {
+  local a1="${1:-}"
+  local a2="${2:-}"
+  shift 2>/dev/null || true
+
+  case "$a1" in
+    "")
+      local configured_source
+      configured_source="$(normalize_audio_source "${CFG_AUDIO_SOURCE:-auto}")"
+      echo "Device selection (source-aware):"
+      echo "  source: $configured_source"
+      echo "  named device (source=name): ${CFG_AUDIO_DEVICE_NAME:-<none>}"
+      echo "  mac hint: ${CFG_AUDIO_MAC_NAME:-<none>}"
+      echo "  iphone hint: ${CFG_AUDIO_IPHONE_NAME:-<none>}"
+      echo "  fallback index: ${CFG_AUDIO_DEVICE_INDEX:-<none>}"
+      local detect_meta resolved_idx resolved_src
+      detect_meta="$(detect_audio_index 2>/dev/null || true)"
+      IFS=$'\t' read -r resolved_idx resolved_src _ <<<"$detect_meta"
+      echo "  resolved now: ${resolved_idx:-<none>} (${resolved_src:-not found})"
+      echo ""
+      echo "Available devices:"
+      devices
+      echo ""
+      echo "Quick source commands:"
+      echo "  dictate device auto"
+      echo "  dictate device external"
+      echo "  dictate device mac"
+      echo "  dictate device iphone"
+      echo "  dictate device name \"MacBook Air Microphone\""
+      echo "  dictate device iphone-name \"Rico's iPhone\""
+      ;;
+    auto|external|mac|iphone)
+      config_set "audio.source" "string" "$(normalize_audio_source "$a1")"
+      config_set "audio.device_index" "int" ""
+      clear_audio_index_cache
+      config_load
+      echo "Device source set: ${CFG_AUDIO_SOURCE:-auto}"
+      ;;
+    source)
+      [[ -n "$a2" ]] || die "usage: dictate device source <auto|external|mac|iphone|name>"
+      local src_raw src_norm
+      src_raw="$(printf "%s" "$a2" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+      case "$src_raw" in
+        auto|external|mac|iphone|name) ;;
+        *) die "usage: dictate device source <auto|external|mac|iphone|name>" ;;
+      esac
+      src_norm="$(normalize_audio_source "$src_raw")"
+      config_set "audio.source" "string" "$src_norm"
+      config_set "audio.device_index" "int" ""
+      clear_audio_index_cache
+      config_load
+      echo "Device source set: ${CFG_AUDIO_SOURCE:-$src_norm}"
+      ;;
+    name)
+      local name="${*:-}"
+      [[ -n "$name" ]] || die "usage: dictate device name \"<substring>\""
+      config_set "audio.source" "string" "name"
+      config_set "audio.device_name" "string" "$name"
+      local detected=""
+      detected="$(DICTATE_AUDIO_SOURCE="name" DICTATE_AUDIO_NAME="$name" detect_audio_index 2>/dev/null | awk -F'\t' 'NR==1{print $1}' || true)"
+      if [[ -n "$detected" ]]; then
+        config_set "audio.device_index" "int" "$detected"
+        write_audio_index_cache "source=name;preferred=${name};mac=${CFG_AUDIO_MAC_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}};iphone=${CFG_AUDIO_IPHONE_NAME:-}" "$detected" "$name" "name"
+      else
+        config_set "audio.device_index" "int" ""
+        clear_audio_index_cache
+      fi
+      config_load
+      echo "Device source set: name (\"${CFG_AUDIO_DEVICE_NAME:-}\")"
+      [[ -n "$detected" ]] && echo "Fallback index: $detected"
+      ;;
+    mac-name)
+      local mac_name="${*:-}"
+      [[ -n "$mac_name" ]] || die "usage: dictate device mac-name \"<substring>\""
+      config_set "audio.mac_name" "string" "$mac_name"
+      clear_audio_index_cache
+      config_load
+      echo "Mac source hint set: ${CFG_AUDIO_MAC_NAME:-$mac_name}"
+      ;;
+    iphone-name|phone-name)
+      local iphone_name="${*:-}"
+      [[ -n "$iphone_name" ]] || die "usage: dictate device iphone-name \"<substring>\""
+      config_set "audio.iphone_name" "string" "$iphone_name"
+      clear_audio_index_cache
+      config_load
+      echo "iPhone source hint set: ${CFG_AUDIO_IPHONE_NAME:-$iphone_name}"
+      ;;
+    index)
+      [[ -n "$a2" ]] || die "usage: dictate device index <n>"
+      [[ "$a2" =~ ^[0-9]+$ ]] || die "invalid device index: $a2 (must be a number)"
+      config_set "audio.device_index" "int" "$a2"
+      clear_audio_index_cache
+      config_load
+      echo "Device pinned: index $a2"
+      echo "Note: indices can change when devices connect/disconnect; prefer: dictate device name \"...\""
+      ;;
+    *)
+      if [[ "$a1" =~ ^[0-9]+$ ]]; then
+        local name=""
+        name="$(detect_audio_name_by_index "$a1" 2>/dev/null || true)"
+        if [[ -n "$name" ]]; then
+          config_set "audio.source" "string" "name"
+          config_set "audio.device_name" "string" "$name"
+        fi
+        config_set "audio.device_index" "int" "$a1"
+        if [[ -n "$name" ]]; then
+          write_audio_index_cache "source=name;preferred=${name};mac=${CFG_AUDIO_MAC_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}};iphone=${CFG_AUDIO_IPHONE_NAME:-}" "$a1" "$name" "name"
+        else
+          clear_audio_index_cache
+        fi
+        config_load
+        if [[ -n "$name" ]]; then
+          echo "Device set: $a1 ($name)"
+          echo "Note: Dictate will prefer the name; index is only a fallback."
+        else
+          echo "Device set: $a1"
+          echo "Note: couldn't resolve a name for index $a1; index may change between boots/devices."
+        fi
+      else
+        die "usage: dictate device [<index>|index <n>|auto|external|mac|iphone|source <...>|name \"<substring>\"|mac-name \"<substring>\"|iphone-name \"<substring>\"]"
+      fi
+      ;;
+  esac
+}
+
+VOCAB_FILE="$DICTATE_CONFIG_DIR/vocab"
+
+normalize_vocab_entry() {
+  local entry="${1:-}"
+  entry="$(printf "%s" "$entry" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [[ -n "$entry" ]] || return 1
+  [[ "$entry" == \#* ]] && return 1
+
+  local left="" right=""
+  if [[ "$entry" == *"::"* ]]; then
+    left="${entry%%::*}"
+    right="${entry#*::}"
+  elif [[ "$entry" == *"→"* ]]; then
+    left="${entry%%→*}"
+    right="${entry#*→}"
+  else
+    return 2
+  fi
+
+  left="$(printf "%s" "$left" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  right="$(printf "%s" "$right" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [[ -n "$left" && -n "$right" ]] || return 2
+  printf "%s → %s" "$left" "$right"
+}
+
+append_vocab_entry() {
+  local raw="${1:-}"
+  local normalized=""
+  normalized="$(normalize_vocab_entry "$raw" 2>/dev/null || true)"
+  [[ -n "$normalized" ]] || return 2
+  mkdir -p "$(dirname "$VOCAB_FILE")"
+  touch "$VOCAB_FILE"
+  if grep -Fxq "$normalized" "$VOCAB_FILE" 2>/dev/null; then
+    return 1
+  fi
+  printf "%s\n" "$normalized" >>"$VOCAB_FILE"
+  return 0
+}
+
+import_vocab_stream() {
+  local added=0 dup=0 invalid=0
+  local line norm rc
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    norm="$(normalize_vocab_entry "$line" 2>/dev/null || true)"
+    if [[ -z "$norm" ]]; then
+      # Ignore blanks/comments silently; count malformed non-empty entries.
+      line="$(printf "%s" "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+      if [[ -n "$line" && "$line" != \#* ]]; then
+        invalid=$((invalid + 1))
+      fi
+      continue
+    fi
+    append_vocab_entry "$norm"
+    rc=$?
+    case "$rc" in
+      0) added=$((added + 1)) ;;
+      1) dup=$((dup + 1)) ;;
+      *) invalid=$((invalid + 1)) ;;
+    esac
+  done
+  echo "$added $dup $invalid"
+}
+
+manage_vocab() {
+  local subcmd="${1:-}"
+  shift 2>/dev/null || true
+  
+  case "$subcmd" in
+    add)
+      [[ "$#" -gt 0 ]] || die "usage: dictate vocab add \"wrong::right\" [\"a::b\" ...]"
+      local token part
+      local added=0 dup=0 invalid=0
+      for token in "$@"; do
+        local IFS=';'
+        # Allow semicolon-separated batch in one argument.
+        read -r -a _parts <<<"$token"
+        for part in "${_parts[@]}"; do
+          if append_vocab_entry "$part"; then
+            added=$((added + 1))
+          else
+            case "$?" in
+              1) dup=$((dup + 1)) ;;
+              *) invalid=$((invalid + 1)) ;;
+            esac
+          fi
+        done
+      done
+      echo "Vocab add: added=$added duplicate=$dup invalid=$invalid"
+      if [[ "$invalid" -gt 0 ]]; then
+        echo "Tip: use format wrong::right"
+      fi
+      return 0
+      ;;
+    import)
+      local src="${1:-}"
+      [[ -n "$src" ]] || die "usage: dictate vocab import <file>"
+      src="$(expand_path "$src")"
+      [[ -f "$src" ]] || die "file not found: $src"
+      local stats added dup invalid
+      stats="$(import_vocab_stream < "$src")"
+      added="$(printf "%s" "$stats" | awk "{print \$1}")"
+      dup="$(printf "%s" "$stats" | awk "{print \$2}")"
+      invalid="$(printf "%s" "$stats" | awk "{print \$3}")"
+      [[ -n "$added" ]] || added=0
+      [[ -n "$dup" ]] || dup=0
+      [[ -n "$invalid" ]] || invalid=0
+      echo "Vocab import ($src): added=$added duplicate=$dup invalid=$invalid"
+      ;;
+    clipboard|clip|paste)
+      need pbpaste
+      local clip
+      clip="$(pbpaste)"
+      [[ -n "${clip//[[:space:]]/}" ]] || die "clipboard is empty"
+      local stats added dup invalid
+      stats="$(printf "%s\n" "$clip" | import_vocab_stream)"
+      added="$(printf "%s" "$stats" | awk "{print \$1}")"
+      dup="$(printf "%s" "$stats" | awk "{print \$2}")"
+      invalid="$(printf "%s" "$stats" | awk "{print \$3}")"
+      [[ -n "$added" ]] || added=0
+      [[ -n "$dup" ]] || dup=0
+      [[ -n "$invalid" ]] || invalid=0
+      echo "Vocab clipboard import: added=$added duplicate=$dup invalid=$invalid"
+      ;;
+    dedupe|clean)
+      if [[ ! -f "$VOCAB_FILE" ]]; then
+        echo "No custom vocab file"
+        return 0
+      fi
+      local before after tmp
+      before="$(wc -l < "$VOCAB_FILE" | tr -d ' ')"
+      tmp="$(mktemp "${TMPDIR:-/tmp}/dictate-vocab.XXXXXX")"
+      awk '
+        function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+        {
+          line = trim($0)
+          if (line == "" || line ~ /^#/) next
+          gsub(/[[:space:]]*::[[:space:]]*/, " → ", line)
+          gsub(/[[:space:]]*→[[:space:]]*/, " → ", line)
+          if (!seen[line]++) print line
+        }
+      ' "$VOCAB_FILE" >"$tmp"
+      mv -f "$tmp" "$VOCAB_FILE"
+      after="$(wc -l < "$VOCAB_FILE" | tr -d ' ')"
+      echo "Vocab dedupe: $before -> $after entries"
+      ;;
+    edit)
+      ${EDITOR:-nvim} "$VOCAB_FILE"
+      ;;
+    rm|remove)
+      local pattern="$*"
+      if [[ -z "$pattern" ]]; then
+        die "usage: dictate vocab rm \"pattern\""
+      fi
+      if [[ ! -f "$VOCAB_FILE" ]]; then
+        echo "No custom vocab file"
+        return 0
+      fi
+      local before after
+      before="$(wc -l < "$VOCAB_FILE")"
+      grep -v "$pattern" "$VOCAB_FILE" > "$VOCAB_FILE.tmp" || true
+      mv "$VOCAB_FILE.tmp" "$VOCAB_FILE"
+      after="$(wc -l < "$VOCAB_FILE")"
+      echo "Removed $((before - after)) entries matching: $pattern"
+      ;;
+    "")
+      if [[ -f "$VOCAB_FILE" ]]; then
+        echo "Custom corrections (~/.config/dictate/vocab):"
+        echo ""
+        nl -ba "$VOCAB_FILE"
+        echo ""
+        echo "$(wc -l < "$VOCAB_FILE" | tr -d ' ') entries"
+        echo ""
+        echo "Commands:"
+        echo "  dictate vocab add \"wrong::right\" [\"a::b\" ...]"
+        echo "  dictate vocab import <file>"
+        echo "  dictate vocab clipboard"
+        echo "  dictate vocab dedupe"
+      else
+        echo "No custom vocab file yet."
+        echo ""
+        echo "Add corrections:"
+        echo "  dictate vocab add \"health lag::help flag\""
+        echo "  dictate vocab add \"my app::MyApp\""
+      fi
+      ;;
+    *) die "unknown vocab command: $subcmd (use: add, import, clipboard, dedupe, edit, rm)" ;;
+  esac
+}
+
+manage_mode() {
+  local subcmd="${1:-}"
+  shift 2>/dev/null || true
+  
+  mkdir -p "$DICTATE_CONFIG_DIR/modes"
+  
+  case "$subcmd" in
+    short|long|base|email|chat)
+      local canonical
+      canonical="$(canonical_mode_name "$subcmd")"
+      echo "$canonical" > "$MODE_FILE"
+      echo "Mode set: $canonical (fixed)"
+      ;;
+    apps)
+      local apps_subcmd="${1:-}"
+      shift 2>/dev/null || true
+      
+      # Get current mode for apps command
+      local current_mode
+      current_mode="$(get_current_mode)"
+      
+      local apps_file="$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$current_mode")/apps"
+      
+      case "$apps_subcmd" in
+        add)
+          local app_name="$*"
+          if [[ -z "$app_name" ]]; then
+            die "usage: dictate mode apps add \"AppName\""
+          fi
+          mkdir -p "$(dirname "$apps_file")"
+          echo "$app_name" >> "$apps_file"
+          echo "Added '$app_name' to $current_mode mode"
+          ;;
+        "")
+          echo "Apps for $current_mode mode:"
+          if [[ -f "$apps_file" ]]; then
+            cat "$apps_file" | sed 's/^/  /'
+          else
+            echo "  (none configured)"
+          fi
+          ;;
+        *) die "unknown apps command: $apps_subcmd (use: add)" ;;
+      esac
+      ;;
+    create)
+      local new_mode="$1"
+      if [[ -z "$new_mode" ]]; then
+        die "usage: dictate mode create <name>"
+      fi
+      local new_dir="$DICTATE_CONFIG_DIR/modes/$new_mode"
+      if [[ -d "$new_dir" ]]; then
+        die "mode '$new_mode' already exists"
+      fi
+      mkdir -p "$new_dir"
+      touch "$new_dir/apps"
+      touch "$new_dir/vocab"
+      echo "Context: $new_mode mode." > "$new_dir/prompt"
+      echo "Created mode: $new_mode"
+      echo "  Edit apps: dictate mode apps add \"AppName\""
+      echo "  Edit prompt: \$EDITOR $new_dir/prompt"
+      ;;
+    edit)
+      local mode_to_edit="${1:-}"
+      if [[ -z "$mode_to_edit" ]]; then
+        # Edit current mode
+        mode_to_edit="$(get_current_mode)"
+      fi
+      mode_to_edit="$(canonical_mode_name "$mode_to_edit")"
+      local prompt_file="$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode_to_edit")/prompt"
+      if [[ ! -f "$prompt_file" ]]; then
+        mkdir -p "$(dirname "$prompt_file")"
+        echo "Context: $mode_to_edit mode." > "$prompt_file"
+      fi
+      ${EDITOR:-nvim} "$prompt_file"
+      ;;
+    "")
+      # Show current mode and list all
+      local current="short"
+      [[ -f "$MODE_FILE" ]] && current="$(cat "$MODE_FILE")"
+      current="$(canonical_mode_name "$current")"
+      echo "Current mode: $current (fixed)"
+      
+      echo ""
+      echo "Available modes:"
+      local app_count_short=0
+      local app_count_long=0
+      [[ -f "$DICTATE_CONFIG_DIR/modes/short/apps" ]] && app_count_short="$(wc -l < "$DICTATE_CONFIG_DIR/modes/short/apps" | tr -d ' ')"
+      [[ -f "$DICTATE_CONFIG_DIR/modes/long/apps" ]] && app_count_long="$(wc -l < "$DICTATE_CONFIG_DIR/modes/long/apps" | tr -d ' ')"
+      echo "  short ($app_count_short apps)"
+      echo "  long ($app_count_long apps)"
+      for mode_dir in "$DICTATE_CONFIG_DIR/modes"/*/; do
+        local mode_name
+        mode_name="$(basename "$mode_dir")"
+        case "$mode_name" in
+          short|long) continue ;;
+        esac
+        local app_count=0
+        [[ -f "$mode_dir/apps" ]] && app_count="$(wc -l < "$mode_dir/apps" | tr -d ' ')"
+        echo "  $mode_name ($app_count apps)"
+      done
+      echo ""
+      echo "Commands:"
+      echo "  dictate mode <name>     - set fixed mode"
+      echo "  dictate mode apps       - list apps for current mode"
+      echo "  dictate mode apps add X - add app to current mode"
+      echo "  dictate mode create X   - create new mode"
+      echo "  dictate mode edit [X]   - edit mode prompt"
+      ;;
+    *)
+      # Check if it's a custom mode name
+      local canonical
+      canonical="$(canonical_mode_name "$subcmd")"
+      if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$canonical")" ]]; then
+        echo "$canonical" > "$MODE_FILE"
+        echo "Mode set: $canonical (fixed)"
+      else
+        die "unknown mode: $subcmd"
+      fi
+      ;;
+  esac
+}
+
+# Replay: re-run LLM post-processing on clipboard or provided text with a mode
+# Usage: dictate replay [mode] [text]
+#   dictate replay long          # reprocess clipboard with long mode
+#   dictate replay long "text"   # reprocess provided text with long mode
+replay() {
+  local target_mode="${1:-}"
+  shift 2>/dev/null || true
+  local provided_text="$*"
+  
+  # Check for API key
+  if [[ -z "${CEREBRAS_API_KEY:-}" ]]; then
+    die "replay requires CEREBRAS_API_KEY for LLM post-processing"
+  fi
+  
+  # Get input: from argument or clipboard
+  local input
+  if [[ -n "$provided_text" ]]; then
+    input="$provided_text"
+    echo "📝 Using provided text..."
+  else
+    input="$(pbpaste)"
+    if [[ -z "$input" ]]; then
+      die "clipboard is empty (or provide text: dictate replay <mode> \"text\")"
+    fi
+  fi
+  
+  # Determine mode
+  local mode_to_use
+  if [[ -n "$target_mode" ]]; then
+    target_mode="$(canonical_mode_name "$target_mode")"
+    # Validate mode exists
+    if [[ ! -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$target_mode")" ]]; then
+      die "unknown mode: $target_mode (available: $(ls -1 "$DICTATE_CONFIG_DIR/modes" 2>/dev/null | tr '\n' ' '))"
+    fi
+    mode_to_use="$target_mode"
+  else
+    mode_to_use="$(get_current_mode)"
+  fi
+  
+  echo "📋 Clipboard: ${input:0:50}..."
+  echo "🔄 Re-processing with $mode_to_use mode..."
+  
+  # Force the mode and run post-processing
+  local result
+  result="$(DICTATE_FORCE_MODE="$mode_to_use" postprocess_llm "$input" "")"
+  result="$(printf "%s" "$result" | auto_paragraphs "$mode_to_use" | normalize_british_spelling)"
+  
+  if [[ -z "$result" || "$result" == "$input" ]]; then
+    echo "⚠️ No changes (LLM returned same text or failed)"
+    return 0
+  fi
+  
+  # Copy result to clipboard
+  printf "%s" "$result" | pbcopy
+  
+  echo "✅ Done. Result copied to clipboard:"
+  echo ""
+  echo "$result"
+}
+
+manage_keybind() {
+  local mode="${1:-}"
+  local key="${2:-}"
+
+  if [[ -z "$mode" ]]; then
+    # Show current keybinds
+    echo "Current keybinds:"
+    echo "  tmux: ${CFG_UI_KEYBIND_TMUX:-F12}"
+    echo "  inline: ${CFG_UI_KEYBIND_INLINE:-F11}"
+    echo ""
+    echo "Set keybind: dictate keybind <tmux|inline> <key>"
+    echo "Note: This is for display only. Update actual bindings in zsh/Raycast."
+  elif [[ -z "$key" ]]; then
+    # Show specific keybind
+    case "$mode" in
+      tmux) echo "tmux: ${CFG_UI_KEYBIND_TMUX:-F12}" ;;
+      inline) echo "inline: ${CFG_UI_KEYBIND_INLINE:-F11}" ;;
+      *) die "unknown mode: $mode (use: tmux, inline)" ;;
+    esac
+  else
+    # Set keybind
+    if [[ "$mode" != "tmux" && "$mode" != "inline" ]]; then
+      die "unknown mode: $mode (use: tmux, inline)"
+    fi
+
+    config_set "ui.keybinds.${mode}" "string" "$key"
+    config_load
+    echo "Keybind set: $mode=$key"
+    echo "Note: Update actual binding in zsh config or Raycast to match."
+  fi
+}
+
+manage_sounds() {
+  local target="${1:-}"
+  local val="${2:-}"
+
+  local onoff
+  onoff() {
+    [[ "${1:-}" == "1" ]] && echo "ON" || echo "OFF"
+  }
+
+  case "$target" in
+    "" )
+      echo "Sounds:"
+      echo "  enabled: $(onoff "${CFG_AUDIO_SOUNDS_ENABLED:-1}")"
+      echo "  start:   $(onoff "${CFG_AUDIO_SOUNDS_START_ENABLED:-1}")"
+      echo "  stop:    $(onoff "${CFG_AUDIO_SOUNDS_STOP_ENABLED:-1}")"
+      echo "  process: $(onoff "${CFG_AUDIO_SOUNDS_PROCESS_ENABLED:-1}")"
+      echo "  error:   $(onoff "${CFG_AUDIO_SOUNDS_ERROR_ENABLED:-1}")"
+      echo "  cancel:  $(onoff "${CFG_AUDIO_SOUNDS_CANCEL_ENABLED:-1}")"
+      echo ""
+      echo "Paths (from config):"
+      echo "  start:   ${CFG_AUDIO_SOUNDS_START:-$SOUNDS_DIR/dictate/start.wav}"
+      echo "  stop:    ${CFG_AUDIO_SOUNDS_STOP:-$SOUNDS_DIR/dictate/stop.wav}"
+      echo "  process: ${CFG_AUDIO_SOUNDS_PROCESS:-$SOUNDS_DIR/dictate/process.wav}"
+      echo "  error:   ${CFG_AUDIO_SOUNDS_ERROR:-$SOUNDS_DIR/dictate/error.wav}"
+      echo "  cancel:  ${CFG_AUDIO_SOUNDS_CANCEL:-$SOUNDS_DIR/dictate/cancel.wav}"
+      ;;
+    on|off|mute|unmute)
+      case "$target" in
+        on|unmute) config_set "audio.sounds.enabled" "bool" "true" ;;
+        off|mute) config_set "audio.sounds.enabled" "bool" "false" ;;
+      esac
+      config_load
+      echo "Sounds: $(onoff "${CFG_AUDIO_SOUNDS_ENABLED:-1}")"
+      ;;
+    start|stop|process|error|cancel)
+      [[ -n "$val" ]] || die "usage: dictate sound $target on|off"
+      case "$val" in
+        on|1) config_set "audio.sounds.${target}_enabled" "bool" "true" ;;
+        off|0) config_set "audio.sounds.${target}_enabled" "bool" "false" ;;
+        *) die "usage: dictate sound $target on|off" ;;
+      esac
+      config_load
+      local state="1"
+      case "$target" in
+        start) state="${CFG_AUDIO_SOUNDS_START_ENABLED:-1}" ;;
+        stop) state="${CFG_AUDIO_SOUNDS_STOP_ENABLED:-1}" ;;
+        process) state="${CFG_AUDIO_SOUNDS_PROCESS_ENABLED:-1}" ;;
+        error) state="${CFG_AUDIO_SOUNDS_ERROR_ENABLED:-1}" ;;
+        cancel) state="${CFG_AUDIO_SOUNDS_CANCEL_ENABLED:-1}" ;;
+      esac
+      echo "$target: $(onoff "$state")"
+      ;;
+    *) die "usage: dictate sound [on|off|start|stop|process|error|cancel] [on|off]" ;;
+  esac
+}
+
+case "$cmd" in
+  -h|--help|help) usage ;;
+  devices) devices ;;
+  device) set_device "${@:2}" ;;
+  debug) debug ;;
+  doctor) doctor ;;
+  logs) logs ;;
+  bench) bench "${2:-}" ;;
+  changelog) changelog ;;
+  status) status ;;
+  stop) stop ;;
+  cancel) cancel ;;
+  toggle|"") toggle ;;
+  inline) inline ;;
+  sound|sounds) manage_sounds "${2:-}" "${3:-}" ;;
+  model) set_model "${2:-}" ;;
+  postprocess) set_postprocess "${2:-}" ;;
+  keep-logs|keep_logs|keeplogs) set_keep_logs "${2:-}" ;;
+  silence-trim|silence_trim) set_silence_trim "${2:-}" ;;
+  repeats) set_repeats_level "${2:-}" ;;
+  autosend) set_autosend "${2:-}" ;;
+  send-mode|send_mode|sendmode) set_inline_send_mode "${2:-}" ;;
+  target|paste_target) set_paste_target "${2:-}" ;;
+  tmux) manage_tmux "${2:-}" "${3:-}" ;;
+  llm) set_llm "${2:-}" "${3:-}" ;;
+  profile) set_profile "${2:-}" "${3:-}" "${4:-}" ;;
+  vocab) manage_vocab "${2:-}" "${@:3}" ;;
+  mode) manage_mode "${2:-}" "${@:3}" ;;
+  keybind) manage_keybind "${2:-}" "${3:-}" ;;
+  replay) replay "${2:-}" "${@:3}" ;;
+  history) manage_history "${2:-}" "${@:3}" ;;
+  *) die "unknown command: $cmd (run: dictate --help)" ;;
+esac
