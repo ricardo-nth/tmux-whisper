@@ -2,12 +2,19 @@
 
 ## Current working version
 
-- **Stable release**: `v0.3.0` (tagged on 2026-02-18)
-- **Next target**: `v0.4.0` (public hardening)
+- **Stable release**: `v0.4.0` (tagged on 2026-02-18)
+- **Next target**: `v0.5.x` (UX + config maturity)
 - **Primary development branch**: `main` in `ricardo-nth/dictate-cli`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/dictate-cli`
   - Bootstrap/local install (testing): `bootstrap.sh` or `./install.sh --force`
+
+## 2026-02-18
+
+- **Release hardening follow-up (CI portability + local test hygiene)**:
+  - Fixed Linux CI/runtime compatibility for state-file mtime handling in `dictate status`/`dictate doctor` by adding portable `stat` fallbacks.
+  - Ensured diagnostics paths (`dictate debug`/`dictate status`) degrade gracefully when `ffmpeg` is unavailable instead of hard-exiting.
+  - Updated regression harness to stub `osascript` in missing-binary checks so local test runs do not emit real macOS notifications.
 
 ## 2026-02-18
 
