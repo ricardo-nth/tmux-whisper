@@ -32,6 +32,12 @@ brew tap ricardo-nth/tap
 brew install ricardo-nth/tap/dictate-cli
 ```
 
+Or one-line bootstrap:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash
+```
+
 Update:
 
 ```bash
@@ -41,20 +47,14 @@ brew upgrade dictate-cli
 First run:
 
 ```bash
-dictate --help
 dictate debug
-```
-
-Bootstrap install:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash
+dictate --help
 ```
 
 Pinned to a tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/v0.2.0/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/v0.3.0/bootstrap.sh | bash
 ```
 
 Pass install flags through bootstrap:
@@ -154,7 +154,9 @@ This runs:
 
 - `bash -n` syntax checks across shipped shell scripts
 - `tests/test_lib.sh` (helper behavior)
+- `tests/test_cli.sh` (relocation behavior for brew installs)
 - `tests/test_install.sh` (installer smoke tests)
+- `tests/test_bootstrap.sh` (bootstrap flow smoke test)
 
 GitHub Actions runs the same checks on push and pull requests.
 
