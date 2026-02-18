@@ -831,7 +831,8 @@ doctor() {
     [[ -f "$f" ]] || { echo "-"; return 0; }
     local now mtime
     now="$(date +%s)"
-    mtime="$(stat -f %m "$f" 2>/dev/null || echo 0)"
+    mtime="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)"
+    [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
     if [[ "$mtime" -le 0 ]]; then
       echo "?"
       return 0
@@ -3149,7 +3150,8 @@ status() {
     [[ -f "$f" ]] || { echo "-"; return 0; }
     local now mtime
     now="$(date +%s)"
-    mtime="$(stat -f %m "$f" 2>/dev/null || echo 0)"
+    mtime="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)"
+    [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
     [[ "$mtime" -gt 0 ]] || { echo "?"; return 0; }
     echo $((now - mtime))
   }
@@ -3201,7 +3203,8 @@ status() {
         [[ -f "$jf" ]] || continue
         st="$(sed -n 's/^status=//p' "$jf" 2>/dev/null | head -n 1 || true)"
         marker_pid="$(sed -n 's/^pid=//p' "$jf" 2>/dev/null | head -n 1 || true)"
-        mtime="$(stat -f %m "$jf" 2>/dev/null || echo 0)"
+        mtime="$(stat -f %m "$jf" 2>/dev/null || stat -c %Y "$jf" 2>/dev/null || echo 0)"
+        [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
         age=$((now - mtime))
         if [[ "$age" -gt 1800 ]]; then
           rm -f "$jf" 2>/dev/null || true
