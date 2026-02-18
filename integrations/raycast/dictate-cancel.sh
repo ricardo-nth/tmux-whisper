@@ -6,7 +6,7 @@
 # @raycast.packageName Dictate
 # @raycast.description Cancel current recording (discard without pasting)
 
-export PATH="/opt/homebrew/bin:$PATH"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 SWIFTBAR_PLUGIN_ID="dictate-status.0.2s.sh"
 
 if [[ -f "$HOME/.zshenv" ]]; then

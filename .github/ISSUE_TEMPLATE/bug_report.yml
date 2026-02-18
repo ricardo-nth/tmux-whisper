@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible issue in Dictate
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened and what you expected.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: flow
+    attributes:
+      label: Affected flow
+      options:
+        - tmux
+        - inline
+        - raycast
+        - swiftbar
+        - install/bootstrap
+        - homebrew
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste key output from `dictate debug` and `dictate doctor`.
+      render: shell
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      placeholder: |
+        macOS:
+        install channel (brew/bootstrap/local):
+        whisper model:
+        tmux version (if relevant):

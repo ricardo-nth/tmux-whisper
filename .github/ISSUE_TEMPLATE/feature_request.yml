@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose an enhancement aligned with roadmap direction
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What problem does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe behavior, CLI surface, and tradeoffs.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: roadmap
+    attributes:
+      label: Roadmap area
+      options:
+        - v0.4 hardening
+        - v0.5 UX/config maturity
+        - v0.6 terminal-first UX
+        - v0.7 integrations
+        - post-v1 experimental
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / compatibility
+      description: Any behavior or migration risks?

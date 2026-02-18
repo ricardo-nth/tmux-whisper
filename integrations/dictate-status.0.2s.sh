@@ -20,8 +20,8 @@ if [[ -z "${HOME:-}" ]]; then
   export HOME
 fi
 
-# SwiftBar often runs with a minimal PATH; prefer Homebrew for python3/ffmpeg, etc.
-export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
+# SwiftBar often runs with a minimal PATH; include user-local + common package paths.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CONFIG_DIR="$XDG_CONFIG_HOME/dictate"
@@ -418,6 +418,16 @@ ICON_PROCESSING="$(get_icon "processing" "⏳")"
 ICON_READY="$(get_icon "ready" "🎙️")"
 ICON_ERROR="$(get_icon "error" "⚠️")"
 ICON_CANCEL="$(get_icon "cancel" "🚫")"
+
+if [[ ! -x "$DICTATE_BIN" ]]; then
+  echo "$ICON_ERROR"
+  echo "---"
+  echo "Dictate binary not found | color=red"
+  echo "Checked: ${DICTATE_BIN:-<none>} | size=11 color=gray"
+  echo "Install (stable): brew install ricardo-nth/tap/dictate-cli | size=11"
+  echo "Install (dev): ./install.sh --force | size=11"
+  exit 0
+fi
 
 # Check for recent cancel (show briefly)
 if just_cancelled; then

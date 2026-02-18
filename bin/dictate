@@ -599,14 +599,56 @@ keep_logs_enabled() {
   [[ "${DICTATE_KEEP_LOGS:-${CFG_DEBUG_KEEP_LOGS:-0}}" == "1" ]]
 }
 
+detect_install_channel() {
+  local bin_path="${1:-}"
+  case "$bin_path" in
+    /opt/homebrew/*|/usr/local/Homebrew/*|/usr/local/opt/*|/usr/local/bin/*)
+      echo "homebrew"
+      ;;
+    "$HOME/.local/bin/"*)
+      echo "local-user"
+      ;;
+    *)
+      echo "custom"
+      ;;
+  esac
+}
+
 debug() {
   echo "Dictate debug"
   echo ""
 
+  local dictate_bin ffmpeg_bin whisper_bin python_bin install_channel
+  dictate_bin="$(command -v dictate 2>/dev/null || true)"
+  ffmpeg_bin="$(command -v ffmpeg 2>/dev/null || true)"
+  whisper_bin="$(command -v whisper-cli 2>/dev/null || true)"
+  python_bin="$(command -v python3 2>/dev/null || true)"
+  install_channel="$(detect_install_channel "$dictate_bin")"
+
   echo "Binaries:"
-  echo "  dictate: $(command -v dictate 2>/dev/null || echo '(not found)')"
-  echo "  ffmpeg:  $(command -v ffmpeg 2>/dev/null || echo '(not found)')"
-  echo "  whisper: $(command -v whisper-cli 2>/dev/null || echo '(not found)')"
+  echo "  dictate: ${dictate_bin:-'(not found)'}"
+  echo "  ffmpeg:  ${ffmpeg_bin:-'(not found)'}"
+  echo "  whisper: ${whisper_bin:-'(not found)'}"
+  echo "  python3: ${python_bin:-'(not found)'}"
+  echo "  channel: $install_channel"
+  echo "  lib:     $DICTATE_LIB_PATH $([[ -r "$DICTATE_LIB_PATH" ]] && echo '(ok)' || echo '(missing)')"
+  echo ""
+
+  local models_dir
+  models_dir="$(expand_path "${CFG_WHISPER_MODELS_DIR:-$DEFAULT_WHISPER_MODELS_DIR}")"
+  local model_count="0"
+  if [[ -d "$models_dir" ]]; then
+    model_count="$(find "$models_dir" -maxdepth 1 -type f -name 'ggml-*.bin' | wc -l | tr -d ' ')"
+  fi
+
+  echo "Paths:"
+  echo "  config_dir:   $DICTATE_CONFIG_DIR $([[ -d "$DICTATE_CONFIG_DIR" ]] && echo '(ok)' || echo '(missing)')"
+  echo "  config_file:  $DICTATE_CONFIG_FILE $([[ -f "$DICTATE_CONFIG_FILE" ]] && echo '(ok)' || echo '(missing)')"
+  echo "  modes_dir:    $DICTATE_CONFIG_DIR/modes $([[ -d "$DICTATE_CONFIG_DIR/modes" ]] && echo '(ok)' || echo '(missing)')"
+  echo "  vocab_file:   $DICTATE_CONFIG_DIR/vocab $([[ -f "$DICTATE_CONFIG_DIR/vocab" ]] && echo '(ok)' || echo '(missing)')"
+  echo "  models_dir:   $models_dir ($model_count models)"
+  echo "  raycast_dir:  $DICTATE_CONFIG_DIR/integrations/raycast $([[ -d "$DICTATE_CONFIG_DIR/integrations/raycast" ]] && echo '(ok)' || echo '(missing)')"
+  echo "  swiftbar_plg: $HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh $([[ -f "$HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh" ]] && echo '(ok)' || echo '(missing)')"
   echo ""
 
   echo "Env overrides:"
@@ -680,7 +722,11 @@ debug() {
       echo ""
 
   echo "ffmpeg devices (trimmed):"
-  devices
+  if [[ -n "$ffmpeg_bin" ]]; then
+    devices
+  else
+    echo "  ffmpeg not found; skipping device enumeration."
+  fi
   echo ""
 
   local src="(none)"
@@ -713,6 +759,67 @@ doctor() {
 
   local issues=0
   local warnings=0
+
+  local check_required_dep
+  check_required_dep() {
+    local dep="$1"
+    if command -v "$dep" >/dev/null 2>&1; then
+      echo "  - $dep: ok"
+    else
+      echo "  - $dep: missing"
+      issues=$((issues + 1))
+    fi
+  }
+
+  local check_optional_dep
+  check_optional_dep() {
+    local dep="$1"
+    if command -v "$dep" >/dev/null 2>&1; then
+      echo "  - $dep: ok"
+    else
+      echo "  - $dep: missing (optional)"
+      warnings=$((warnings + 1))
+    fi
+  }
+
+  echo "Dependencies:"
+  check_required_dep python3
+  check_required_dep ffmpeg
+  check_required_dep whisper-cli
+  check_optional_dep tmux
+  echo ""
+
+  echo "Install sanity:"
+  local dictate_bin install_channel
+  dictate_bin="$(command -v dictate 2>/dev/null || true)"
+  install_channel="$(detect_install_channel "$dictate_bin")"
+  echo "  - dictate binary: ${dictate_bin:-missing}"
+  if [[ -z "$dictate_bin" ]]; then
+    issues=$((issues + 1))
+  fi
+  echo "  - install channel: $install_channel"
+  echo "  - shared library: $DICTATE_LIB_PATH $([[ -r "$DICTATE_LIB_PATH" ]] && echo '(ok)' || echo '(missing)')"
+  [[ -r "$DICTATE_LIB_PATH" ]] || issues=$((issues + 1))
+  echo "  - config file: $DICTATE_CONFIG_FILE $([[ -f "$DICTATE_CONFIG_FILE" ]] && echo '(ok)' || echo '(missing)')"
+  [[ -f "$DICTATE_CONFIG_FILE" ]] || warnings=$((warnings + 1))
+  echo "  - raycast inline: $DICTATE_CONFIG_DIR/integrations/raycast/dictate-inline.sh $([[ -f "$DICTATE_CONFIG_DIR/integrations/raycast/dictate-inline.sh" ]] && echo '(ok)' || echo '(missing)')"
+  echo "  - swiftbar plugin: $HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh $([[ -f "$HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh" ]] && echo '(ok)' || echo '(missing)')"
+  echo ""
+
+  echo "Models:"
+  local models_dir
+  models_dir="$(expand_path "${CFG_WHISPER_MODELS_DIR:-$DEFAULT_WHISPER_MODELS_DIR}")"
+  local model_count=0
+  if [[ -d "$models_dir" ]]; then
+    model_count="$(find "$models_dir" -maxdepth 1 -type f -name 'ggml-*.bin' | wc -l | tr -d ' ')"
+  fi
+  echo "  - dir: $models_dir"
+  echo "  - ggml models: $model_count"
+  if [[ "$model_count" -eq 0 ]]; then
+    warnings=$((warnings + 1))
+    echo "  - hint: place ggml-*.bin models in the models dir, then run: dictate model"
+  fi
+  echo ""
 
   local _age_s
   _age_s() {

@@ -164,6 +164,8 @@ This runs:
 - `bash -n` syntax checks across shipped shell scripts
 - `tests/test_lib.sh` (helper behavior)
 - `tests/test_cli.sh` (relocation behavior for brew installs)
+- `tests/test_regression.sh` (diagnostic/integration hardening guards)
+- `tests/test_flow_parity.sh` (stubbed tmux/inline lifecycle + send-path parity)
 - `tests/test_install.sh` (installer smoke tests)
 - `tests/test_bootstrap.sh` (bootstrap flow smoke test)
 
@@ -176,6 +178,12 @@ GitHub Actions runs the same checks on push and pull requests.
 ## Roadmap
 
 See `ROADMAP.md` for current milestone direction (tmux-first hardening -> UX maturity -> integration platform -> stable release).
+
+## Contributing
+
+See `CONTRIBUTING.md` for branch, validation, and release expectations.
+
+Release operators should also follow `docs/RELEASE_CHECKLIST.md`.
 
 ## Safety Notes
 
