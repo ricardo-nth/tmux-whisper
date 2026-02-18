@@ -62,7 +62,7 @@ dictate --help
 Pinned to stable tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/v0.4.0/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/v0.4.1/bootstrap.sh | bash
 ```
 
 Pass install flags through bootstrap:

@@ -14,7 +14,7 @@ Any arguments after `bash -s --` are forwarded to install.sh.
 Examples:
   curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash
   curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash -s -- --force
-  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/v0.4.0/bootstrap.sh | bash -s -- --no-sounds
+  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/v0.4.1/bootstrap.sh | bash -s -- --no-sounds
 USAGE
 }
 

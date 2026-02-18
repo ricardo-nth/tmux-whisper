@@ -2,7 +2,7 @@
 
 ## Current working version
 
-- **Stable release**: `v0.4.0` (tagged on 2026-02-18)
+- **Stable release**: `v0.4.1` (tagged on 2026-02-18)
 - **Next target**: `v0.5.x` (UX + config maturity)
 - **Primary development branch**: `main` in `ricardo-nth/dictate-cli`
 - **Distribution channels**:
