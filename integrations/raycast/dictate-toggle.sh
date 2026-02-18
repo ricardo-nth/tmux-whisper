@@ -6,7 +6,7 @@
 # @raycast.packageName Dictate
 # @raycast.description Toggle recording → paste+Enter into tmux pane
 
-export PATH="/opt/homebrew/bin:$PATH"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 export DICTATE_CLEAN=1
 SWIFTBAR_PLUGIN_ID="dictate-status.0.2s.sh"
 
@@ -25,6 +25,20 @@ DICTATE_SOUNDS_DIR="${SOUNDS_DIR:-}/dictate"
 CONFIG_TOML="$HOME/.config/dictate/config.toml"
 DICTATE_BIN="${DICTATE_BIN:-$(command -v dictate 2>/dev/null || true)}"
 DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/dictate}"
+
+notify() {
+  local msg="${1:-Dictate error}"
+  local escaped="${msg//\"/\\\"}"
+  command -v osascript >/dev/null 2>&1 || return 0
+  osascript -e "display notification \"$escaped\" with title \"Dictate\"" 2>/dev/null || true
+}
+
+die_with_notice() {
+  local msg="${1:-Unknown error}"
+  echo "dictate-toggle: $msg" >&2
+  notify "$msg"
+  exit 1
+}
 
 refresh_swiftbar() {
   /usr/bin/open -g "swiftbar://refreshplugin?plugin=${SWIFTBAR_PLUGIN_ID}" 2>/dev/null || true
@@ -121,8 +135,16 @@ load_config_sounds
 
 STATE_FILE="/tmp/whisper-dictate.state"
 
+if [[ ! -x "$DICTATE_BIN" ]]; then
+  die_with_notice "Dictate binary not found. Install via brew or ./install.sh --force."
+fi
+
+if ! command -v tmux >/dev/null 2>&1; then
+  die_with_notice "tmux not found in PATH."
+fi
+
 if ! tmux list-sessions &>/dev/null; then
-  osascript -e 'display notification "No tmux session running" with title "Dictate" sound name "Basso"'
+  notify "No tmux session running."
   exit 1
 fi
 

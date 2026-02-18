@@ -61,5 +61,23 @@ assert_contains "debug_local_user_channel" "$local_debug" "channel: local-user"
 assert_file_contains "raycast_inline_lib_resolution" "$ROOT/integrations/raycast/dictate-inline.sh" "command -v dictate-lib.sh"
 assert_file_contains "raycast_toggle_dictate_resolution" "$ROOT/integrations/raycast/dictate-toggle.sh" "command -v dictate"
 assert_file_contains "swiftbar_dictate_resolution" "$ROOT/integrations/dictate-status.0.2s.sh" "command -v dictate"
+assert_file_contains "raycast_inline_path_hardening" "$ROOT/integrations/raycast/dictate-inline.sh" "/usr/local/bin"
+assert_file_contains "raycast_toggle_path_hardening" "$ROOT/integrations/raycast/dictate-toggle.sh" "/usr/local/bin"
+assert_file_contains "raycast_cancel_path_hardening" "$ROOT/integrations/raycast/dictate-cancel.sh" "/usr/local/bin"
+assert_file_contains "swiftbar_path_hardening" "$ROOT/integrations/dictate-status.0.2s.sh" "/usr/local/bin"
+assert_file_contains "raycast_inline_dependency_notice" "$ROOT/integrations/raycast/dictate-inline.sh" 'Missing dependency: $dep'
+assert_file_contains "raycast_toggle_binary_notice" "$ROOT/integrations/raycast/dictate-toggle.sh" "Dictate binary not found."
+assert_file_contains "swiftbar_missing_binary_notice" "$ROOT/integrations/dictate-status.0.2s.sh" "Dictate binary not found | color=red"
+
+# --- Regression 4: script-level behavior for missing dictate binary is explicit. ---
+TOGGLE_HOME="$TMP_ROOT/home-toggle"
+mkdir -p "$TOGGLE_HOME"
+toggle_out="$(HOME="$TOGGLE_HOME" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/raycast/dictate-toggle.sh" 2>&1 || true)"
+assert_contains "raycast_toggle_missing_binary_runtime" "$toggle_out" "dictate-toggle: Dictate binary not found."
+
+SWIFTBAR_HOME="$TMP_ROOT/home-swiftbar"
+mkdir -p "$SWIFTBAR_HOME"
+swiftbar_out="$(HOME="$SWIFTBAR_HOME" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/dictate-status.0.2s.sh")"
+assert_contains "swiftbar_missing_binary_runtime" "$swiftbar_out" "Dictate binary not found"
 
 echo "Regression tests passed."

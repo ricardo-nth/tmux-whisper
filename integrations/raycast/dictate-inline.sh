@@ -10,7 +10,7 @@ LOG="/tmp/dictate-raycast-inline.log"
 exec >> "$LOG" 2>&1
 echo "=== $(date) ==="
 
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 export DICTATE_CLEAN=1
 
 if [[ -f "$HOME/.zshenv" ]]; then
@@ -24,6 +24,14 @@ if [[ -z "${CEREBRAS_API_KEY:-}" && -f "${ZDOTDIR:-$HOME}/.zshrc" ]]; then
   eval "$(grep '^export CEREBRAS_API_KEY=' "${ZDOTDIR:-$HOME}/.zshrc" 2>/dev/null || true)"
 fi
 DICTATE_SOUNDS_DIR="${SOUNDS_DIR:-}/dictate"
+
+notify_inline_error() {
+  local msg="${1:-Dictate inline error}"
+  local escaped="${msg//\"/\\\"}"
+  echo "ERROR: $msg"
+  command -v osascript >/dev/null 2>&1 || return 0
+  osascript -e "display notification \"$escaped\" with title \"Dictate Inline\"" 2>/dev/null || true
+}
 
 STATE_FILE="/tmp/whisper-dictate-inline.state"
 PROCESSING_DIR="/tmp/dictate-processing"
@@ -49,11 +57,19 @@ if [[ ! -r "$DICTATE_LIB_PATH" ]]; then
 fi
 
 if [[ ! -r "$DICTATE_LIB_PATH" ]]; then
-  echo "dictate-inline: missing shared library: $DICTATE_LIB_PATH"
+  notify_inline_error "Missing dictate-lib.sh. Reinstall with brew or ./install.sh --force."
   exit 1
 fi
 # shellcheck disable=SC1090
 source "$DICTATE_LIB_PATH"
+
+for dep in ffmpeg whisper-cli; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    notify_inline_error "Missing dependency: $dep"
+    echo "error" >/tmp/dictate-error.flag
+    exit 1
+  fi
+done
 
 TRACE="${DICTATE_RAYCAST_TRACE:-0}"
 now_ms() {

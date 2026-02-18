@@ -23,6 +23,11 @@
     - `docs/RELEASE_CHECKLIST.md`
   - Added hardening regression coverage:
     - `tests/test_regression.sh` for install-channel detection and integration path-resolution guards.
+  - Integration hardening (Raycast/SwiftBar):
+    - Broadened integration PATH fallbacks to include user-local + Homebrew + `/usr/local/bin`.
+    - Raycast toggle now fails fast with explicit notifications when `dictate` or `tmux` is missing.
+    - Raycast inline now fails fast with explicit notifications when `dictate-lib.sh`, `ffmpeg`, or `whisper-cli` is missing.
+    - SwiftBar now shows a clear `Dictate binary not found` status instead of silent broken menu commands.
 
 ## 2026-02-18
 
