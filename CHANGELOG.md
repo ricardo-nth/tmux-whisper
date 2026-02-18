@@ -1,5 +1,13 @@
 # Dictate changelog
 
+## Current working version
+
+- **Stable release**: `v0.3.0` (tagged on 2026-02-18)
+- **Primary development branch**: `main` in `ricardo-nth/dictate-cli`
+- **Distribution channels**:
+  - Homebrew (stable): `brew install ricardo-nth/tap/dictate-cli`
+  - Bootstrap/local install (testing): `bootstrap.sh` or `./install.sh --force`
+
 ## 2026-02-18
 
 - **New (public packaging + distribution)**:
