@@ -71,24 +71,24 @@ LOCAL_DICTATE_CONFIG_FILE="$LOCAL_DICTATE_CONFIG_DIR/config.toml"
 local_debug="$(HOME="$LOCAL_HOME" PATH="$LOCAL_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOCAL_DICTATE_CONFIG_DIR" DICTATE_CONFIG_FILE="$LOCAL_DICTATE_CONFIG_FILE" dictate debug)"
 assert_contains "debug_local_user_channel" "$local_debug" "channel: local-user"
 
-# --- Regression 3: doctor should warn on legacy config schema versions. ---
-LEGACY_HOME="$TMP_ROOT/home-legacy"
-LEGACY_BIN="$LEGACY_HOME/.local/bin"
-LEGACY_CFG="$LEGACY_HOME/.config/dictate"
-mkdir -p "$LEGACY_BIN" "$LEGACY_CFG"
-cp "$ROOT/bin/dictate" "$LEGACY_BIN/dictate"
-cp "$ROOT/bin/dictate-lib.sh" "$LEGACY_BIN/dictate-lib.sh"
-chmod +x "$LEGACY_BIN/dictate" "$LEGACY_BIN/dictate-lib.sh"
-cat >"$LEGACY_CFG/config.toml" <<'EOF'
+# --- Regression 3: doctor should fail on schema mismatch. ---
+MISMATCH_HOME="$TMP_ROOT/home-mismatch"
+MISMATCH_BIN="$MISMATCH_HOME/.local/bin"
+MISMATCH_CFG="$MISMATCH_HOME/.config/dictate"
+mkdir -p "$MISMATCH_BIN" "$MISMATCH_CFG"
+cp "$ROOT/bin/dictate" "$MISMATCH_BIN/dictate"
+cp "$ROOT/bin/dictate-lib.sh" "$MISMATCH_BIN/dictate-lib.sh"
+chmod +x "$MISMATCH_BIN/dictate" "$MISMATCH_BIN/dictate-lib.sh"
+cat >"$MISMATCH_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 0
 
 [audio]
 source = "auto"
 EOF
-legacy_doctor="$(HOME="$LEGACY_HOME" PATH="$LEGACY_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LEGACY_CFG" DICTATE_CONFIG_FILE="$LEGACY_CFG/config.toml" dictate doctor)"
-assert_contains "doctor_schema_legacy_status" "$legacy_doctor" "config schema: v0 (expected v1, status=legacy)"
-assert_contains "doctor_schema_legacy_hint" "$legacy_doctor" "config schema is older than this release"
+mismatch_doctor="$(HOME="$MISMATCH_HOME" PATH="$MISMATCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MISMATCH_CFG" DICTATE_CONFIG_FILE="$MISMATCH_CFG/config.toml" dictate doctor)"
+assert_contains "doctor_schema_mismatch_status" "$mismatch_doctor" "config schema: v0 (expected v1, status=mismatch)"
+assert_contains "doctor_schema_mismatch_hint" "$mismatch_doctor" "this build requires config schema v1"
 
 # --- Regression 4: integration scripts keep PATH-based command resolution. ---
 assert_file_contains "raycast_inline_lib_resolution" "$ROOT/integrations/raycast/dictate-inline.sh" "command -v dictate-lib.sh"

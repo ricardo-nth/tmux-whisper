@@ -550,16 +550,10 @@ PYEOF
 
 config_schema_status() {
   local raw="${CFG_META_CONFIG_VERSION:-}"
-  if [[ "$raw" =~ ^[0-9]+$ ]]; then
-    if (( raw == DICTATE_CONFIG_SCHEMA_VERSION )); then
-      echo "ok"
-    elif (( raw < DICTATE_CONFIG_SCHEMA_VERSION )); then
-      echo "legacy"
-    else
-      echo "future"
-    fi
+  if [[ "$raw" =~ ^[0-9]+$ ]] && (( raw == DICTATE_CONFIG_SCHEMA_VERSION )); then
+    echo "ok"
   else
-    echo "unknown"
+    echo "mismatch"
   fi
 }
 
@@ -844,17 +838,9 @@ doctor() {
   cfg_schema_version="$(config_schema_version_label)"
   echo "  - config schema: ${cfg_schema_version} (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=${cfg_schema_status})"
   case "$cfg_schema_status" in
-    legacy)
-      warnings=$((warnings + 1))
-      echo "  - hint: config schema is older than this release. Run ./install.sh --force to refresh defaults (backups are created)."
-      ;;
-    future)
-      warnings=$((warnings + 1))
-      echo "  - hint: config schema is newer than this binary. Upgrade dictate to avoid drift."
-      ;;
-    unknown)
-      warnings=$((warnings + 1))
-      echo "  - hint: add [meta] config_version = ${DICTATE_CONFIG_SCHEMA_VERSION} in config.toml."
+    mismatch)
+      issues=$((issues + 1))
+      echo "  - hint: this build requires config schema v${DICTATE_CONFIG_SCHEMA_VERSION}. Run ./install.sh --force to refresh defaults (backups are created)."
       ;;
   esac
   echo "  - raycast inline: $DICTATE_CONFIG_DIR/integrations/raycast/dictate-inline.sh $([[ -f "$DICTATE_CONFIG_DIR/integrations/raycast/dictate-inline.sh" ]] && echo '(ok)' || echo '(missing)')"

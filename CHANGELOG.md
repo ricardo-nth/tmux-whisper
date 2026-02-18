@@ -11,6 +11,13 @@
 
 ## 2026-02-18
 
+- **v0.5.x cleanup (forward-only schema checks)**:
+  - Simplified config schema diagnostics to `ok|mismatch` (removed legacy/future/unknown branching).
+  - `dictate doctor` now treats schema mismatch as a hard issue with a single upgrade path (`./install.sh --force`).
+  - Updated regression coverage and README wording to match strict schema matching behavior.
+
+## 2026-02-18
+
 - **v0.5.x groundwork (config maturity)**:
   - Added explicit config schema tracking via `meta.config_version` in default config.
   - `dictate debug` now prints config schema version/status against the expected schema.

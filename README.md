@@ -174,7 +174,7 @@ This runs:
 
 GitHub Actions runs the same checks on push and pull requests.
 
-`dictate doctor` now includes config schema status (`meta.config_version`) to flag legacy/newer config drift after upgrades.
+`dictate doctor` now includes config schema status (`meta.config_version`) and expects an exact schema match for this binary.
 
 ## Changelog
 
