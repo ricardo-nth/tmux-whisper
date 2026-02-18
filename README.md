@@ -25,6 +25,26 @@ Local-first dictation for macOS using `ffmpeg` + `whisper.cpp` (`whisper-cli`), 
 
 ## Install
 
+Bootstrap install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash
+```
+
+Pinned to a tag:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/v0.2.0/bootstrap.sh | bash
+```
+
+Pass install flags through bootstrap:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash -s -- --force --with-sounds
+```
+
+Or install from a local clone:
+
 ```bash
 git clone https://github.com/ricardo-nth/dictate-cli.git
 cd dictate-cli
@@ -45,6 +65,8 @@ Useful install flags:
 ./install.sh --no-sounds     # skip sample sound install
 ./install.sh --with-sounds   # explicit sound install
 ```
+
+`bootstrap.sh` downloads a repository archive from GitHub and runs `install.sh` from that archive.
 
 ## Quick Start
 

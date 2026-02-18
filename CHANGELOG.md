@@ -2,6 +2,18 @@
 
 All notable public-repo changes are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `bootstrap.sh` for curl-based installation from GitHub archive.
+- `tests/test_bootstrap.sh` smoke test to validate bootstrap flow.
+
+### Changed
+
+- `tests/ci.sh` now validates `bootstrap.sh` and runs bootstrap smoke tests.
+- README install section now documents bootstrap and pinned-tag install commands.
+
 ## [0.2.0] - 2026-02-18
 
 ### Added
