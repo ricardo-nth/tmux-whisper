@@ -160,6 +160,10 @@ This runs:
 
 GitHub Actions runs the same checks on push and pull requests.
 
+## Changelog
+
+`CHANGELOG.md` in this repo mirrors the detailed project history from local development, including the active TODO/next queue.
+
 ## Safety Notes
 
 - Runtime directories (`history`, caches, archives, temp logs) are not tracked.
