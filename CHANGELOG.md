@@ -3,12 +3,19 @@
 ## Current working version
 
 - **Stable release**: `v0.4.1` (tagged on 2026-02-18)
-- **Next target**: `v0.5.x` (performance tuning + UX polish)
-- **Immediate next focus**: tune Whisper decode defaults from benchmark data, then add `dictate bench-matrix`.
+- **Next target**: `v0.5.x` (UX + config maturity)
+- **Completed**: config schema diagnostics hardening (PR #3, merged 2026-02-18)
 - **Primary development branch**: `main` in `ricardo-nth/dictate-cli`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/dictate-cli`
   - Bootstrap/local install (testing): `bootstrap.sh` or `./install.sh --force`
+
+### Planned next (v0.5 queue)
+
+- mode/config UX validation polish (`dictate doctor`, mode checks, clearer fix hints)
+- vocab workflow safety pass (import/export ergonomics, normalize/dedupe guardrails)
+- docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
+- keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
 
 ## 2026-02-18
 
