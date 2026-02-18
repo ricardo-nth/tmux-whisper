@@ -45,15 +45,18 @@ mkdir -p "$CUSTOM_HOME" "$CUSTOM_BIN"
 cp "$ROOT/bin/dictate" "$CUSTOM_BIN/dictate"
 cp "$ROOT/bin/dictate-lib.sh" "$CUSTOM_BIN/dictate-lib.sh"
 chmod +x "$CUSTOM_BIN/dictate" "$CUSTOM_BIN/dictate-lib.sh"
+CUSTOM_DICTATE_CONFIG_DIR="$CUSTOM_HOME/.config/dictate"
+CUSTOM_DICTATE_CONFIG_FILE="$CUSTOM_DICTATE_CONFIG_DIR/config.toml"
 
-custom_debug="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= "$CUSTOM_BIN/dictate" debug)"
+custom_debug="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CUSTOM_DICTATE_CONFIG_DIR" DICTATE_CONFIG_FILE="$CUSTOM_DICTATE_CONFIG_FILE" "$CUSTOM_BIN/dictate" debug)"
 assert_contains "debug_channel_present" "$custom_debug" "channel: "
 assert_contains "debug_paths_section" "$custom_debug" "Paths:"
 assert_contains "debug_install_lib_line" "$custom_debug" "lib:"
 
-custom_doctor="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= "$CUSTOM_BIN/dictate" doctor)"
+custom_doctor="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CUSTOM_DICTATE_CONFIG_DIR" DICTATE_CONFIG_FILE="$CUSTOM_DICTATE_CONFIG_FILE" "$CUSTOM_BIN/dictate" doctor)"
 assert_contains "doctor_install_sanity_section" "$custom_doctor" "Install sanity:"
 assert_contains "doctor_channel_present" "$custom_doctor" "install channel: "
+assert_contains "doctor_schema_ok" "$custom_doctor" "config schema: v1 (expected v1, status=ok)"
 
 # --- Regression 2: install-channel detection should work for local user installs. ---
 LOCAL_HOME="$TMP_ROOT/home-local"
@@ -62,11 +65,32 @@ mkdir -p "$LOCAL_BIN"
 cp "$ROOT/bin/dictate" "$LOCAL_BIN/dictate"
 cp "$ROOT/bin/dictate-lib.sh" "$LOCAL_BIN/dictate-lib.sh"
 chmod +x "$LOCAL_BIN/dictate" "$LOCAL_BIN/dictate-lib.sh"
+LOCAL_DICTATE_CONFIG_DIR="$LOCAL_HOME/.config/dictate"
+LOCAL_DICTATE_CONFIG_FILE="$LOCAL_DICTATE_CONFIG_DIR/config.toml"
 
-local_debug="$(HOME="$LOCAL_HOME" PATH="$LOCAL_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= dictate debug)"
+local_debug="$(HOME="$LOCAL_HOME" PATH="$LOCAL_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOCAL_DICTATE_CONFIG_DIR" DICTATE_CONFIG_FILE="$LOCAL_DICTATE_CONFIG_FILE" dictate debug)"
 assert_contains "debug_local_user_channel" "$local_debug" "channel: local-user"
 
-# --- Regression 3: integration scripts keep PATH-based command resolution. ---
+# --- Regression 3: doctor should warn on legacy config schema versions. ---
+LEGACY_HOME="$TMP_ROOT/home-legacy"
+LEGACY_BIN="$LEGACY_HOME/.local/bin"
+LEGACY_CFG="$LEGACY_HOME/.config/dictate"
+mkdir -p "$LEGACY_BIN" "$LEGACY_CFG"
+cp "$ROOT/bin/dictate" "$LEGACY_BIN/dictate"
+cp "$ROOT/bin/dictate-lib.sh" "$LEGACY_BIN/dictate-lib.sh"
+chmod +x "$LEGACY_BIN/dictate" "$LEGACY_BIN/dictate-lib.sh"
+cat >"$LEGACY_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 0
+
+[audio]
+source = "auto"
+EOF
+legacy_doctor="$(HOME="$LEGACY_HOME" PATH="$LEGACY_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LEGACY_CFG" DICTATE_CONFIG_FILE="$LEGACY_CFG/config.toml" dictate doctor)"
+assert_contains "doctor_schema_legacy_status" "$legacy_doctor" "config schema: v0 (expected v1, status=legacy)"
+assert_contains "doctor_schema_legacy_hint" "$legacy_doctor" "config schema is older than this release"
+
+# --- Regression 4: integration scripts keep PATH-based command resolution. ---
 assert_file_contains "raycast_inline_lib_resolution" "$ROOT/integrations/raycast/dictate-inline.sh" "command -v dictate-lib.sh"
 assert_file_contains "raycast_toggle_dictate_resolution" "$ROOT/integrations/raycast/dictate-toggle.sh" "command -v dictate"
 assert_file_contains "swiftbar_dictate_resolution" "$ROOT/integrations/dictate-status.0.2s.sh" "command -v dictate"
@@ -78,7 +102,7 @@ assert_file_contains "raycast_inline_dependency_notice" "$ROOT/integrations/rayc
 assert_file_contains "raycast_toggle_binary_notice" "$ROOT/integrations/raycast/dictate-toggle.sh" "Dictate binary not found."
 assert_file_contains "swiftbar_missing_binary_notice" "$ROOT/integrations/dictate-status.0.2s.sh" "Dictate binary not found | color=red"
 
-# --- Regression 4: script-level behavior for missing dictate binary is explicit. ---
+# --- Regression 5: script-level behavior for missing dictate binary is explicit. ---
 TOGGLE_HOME="$TMP_ROOT/home-toggle"
 mkdir -p "$TOGGLE_HOME"
 toggle_out="$(HOME="$TOGGLE_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/raycast/dictate-toggle.sh" 2>&1 || true)"

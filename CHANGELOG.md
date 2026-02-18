@@ -11,6 +11,14 @@
 
 ## 2026-02-18
 
+- **v0.5.x groundwork (config maturity)**:
+  - Added explicit config schema tracking via `meta.config_version` in default config.
+  - `dictate debug` now prints config schema version/status against the expected schema.
+  - `dictate doctor` now reports schema drift (`legacy`, `future`, `unknown`) with targeted upgrade hints.
+  - Added regression coverage to prevent schema-status diagnostics from regressing.
+
+## 2026-02-18
+
 - **Release hardening follow-up (CI portability + local test hygiene)**:
   - Installer safety: `--force` no longer overwrites existing sound files; use new `--replace-sounds` when explicit sound replacement is desired.
   - Fixed Linux CI/runtime compatibility for state-file mtime handling in `dictate status`/`dictate doctor` by adding portable `stat` fallbacks.

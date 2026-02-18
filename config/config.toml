@@ -1,6 +1,9 @@
 # Dictate default configuration (TOML)
 # Installed to ~/.config/dictate/config.toml
 
+[meta]
+config_version = 1
+
 [audio]
 source = "auto"
 silence_trim = false

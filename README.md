@@ -56,6 +56,7 @@ First run:
 
 ```bash
 dictate debug
+dictate doctor
 dictate --help
 ```
 
@@ -172,6 +173,8 @@ This runs:
 - `tests/test_bootstrap.sh` (bootstrap flow smoke test)
 
 GitHub Actions runs the same checks on push and pull requests.
+
+`dictate doctor` now includes config schema status (`meta.config_version`) to flag legacy/newer config drift after upgrades.
 
 ## Changelog
 

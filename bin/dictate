@@ -18,6 +18,7 @@ TMUX_JOBS_DIR="${DICTATE_TMUX_JOBS_DIR:-/tmp/dictate-tmux-jobs}"
 
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEFAULT_WHISPER_MODELS_DIR="$XDG_DATA_HOME/whisper/models"
+DICTATE_CONFIG_SCHEMA_VERSION=1
 mkdir -p "$DEFAULT_WHISPER_MODELS_DIR"
 
 usage() {
@@ -335,6 +336,9 @@ os.makedirs(os.path.dirname(path), exist_ok=True)
 
 default = """# Dictate configuration (TOML)
 
+[meta]
+config_version = 1
+
 [audio]
 source = "auto"
 device_name = "MacBook Air Microphone"
@@ -455,6 +459,7 @@ def b(v, default=False):
   return bool(v)
 
 out = {
+  "CFG_META_CONFIG_VERSION": str(get("meta.config_version", "")) if isinstance(get("meta.config_version", ""), int) else "",
   "CFG_AUDIO_SOURCE": str(get("audio.source", "auto")),
   "CFG_AUDIO_DEVICE_NAME": str(get("audio.device_name", "")),
   "CFG_AUDIO_MAC_NAME": str(get("audio.mac_name", "MacBook Air Microphone")),
@@ -542,6 +547,30 @@ PYEOF
 	  WHISPER_MODELS_DIR="${WHISPER_MODELS_DIR:-$DEFAULT_WHISPER_MODELS_DIR}"
 	  mkdir -p "$WHISPER_MODELS_DIR"
 	}
+
+config_schema_status() {
+  local raw="${CFG_META_CONFIG_VERSION:-}"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    if (( raw == DICTATE_CONFIG_SCHEMA_VERSION )); then
+      echo "ok"
+    elif (( raw < DICTATE_CONFIG_SCHEMA_VERSION )); then
+      echo "legacy"
+    else
+      echo "future"
+    fi
+  else
+    echo "unknown"
+  fi
+}
+
+config_schema_version_label() {
+  local raw="${CFG_META_CONFIG_VERSION:-}"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    printf "v%s" "$raw"
+  else
+    printf "unset"
+  fi
+}
 
 expand_sound_path() {
   dictate_lib_expand_sound_path "${1:-}"
@@ -695,6 +724,10 @@ debug() {
   echo "  audio.silence_min_ms=${CFG_AUDIO_SILENCE_MIN_MS:-250}"
   echo "  audio.silence_keep_ms=${CFG_AUDIO_SILENCE_KEEP_MS:-50}"
   echo "  clean.repeats_level=${CFG_CLEAN_REPEATS_LEVEL:-1}"
+  local cfg_schema_status cfg_schema_version
+  cfg_schema_status="$(config_schema_status)"
+  cfg_schema_version="$(config_schema_version_label)"
+  echo "  meta.config_version=${cfg_schema_version} (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=${cfg_schema_status})"
   echo "  whisper.threads=${CFG_WHISPER_THREADS:-5}"
   echo "  whisper.beam_size=${CFG_WHISPER_BEAM_SIZE:-1}"
   echo "  whisper.best_of=${CFG_WHISPER_BEST_OF:-1}"
@@ -806,6 +839,24 @@ doctor() {
   [[ -r "$DICTATE_LIB_PATH" ]] || issues=$((issues + 1))
   echo "  - config file: $DICTATE_CONFIG_FILE $([[ -f "$DICTATE_CONFIG_FILE" ]] && echo '(ok)' || echo '(missing)')"
   [[ -f "$DICTATE_CONFIG_FILE" ]] || warnings=$((warnings + 1))
+  local cfg_schema_status cfg_schema_version
+  cfg_schema_status="$(config_schema_status)"
+  cfg_schema_version="$(config_schema_version_label)"
+  echo "  - config schema: ${cfg_schema_version} (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=${cfg_schema_status})"
+  case "$cfg_schema_status" in
+    legacy)
+      warnings=$((warnings + 1))
+      echo "  - hint: config schema is older than this release. Run ./install.sh --force to refresh defaults (backups are created)."
+      ;;
+    future)
+      warnings=$((warnings + 1))
+      echo "  - hint: config schema is newer than this binary. Upgrade dictate to avoid drift."
+      ;;
+    unknown)
+      warnings=$((warnings + 1))
+      echo "  - hint: add [meta] config_version = ${DICTATE_CONFIG_SCHEMA_VERSION} in config.toml."
+      ;;
+  esac
   echo "  - raycast inline: $DICTATE_CONFIG_DIR/integrations/raycast/dictate-inline.sh $([[ -f "$DICTATE_CONFIG_DIR/integrations/raycast/dictate-inline.sh" ]] && echo '(ok)' || echo '(missing)')"
   echo "  - swiftbar plugin: $HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh $([[ -f "$HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh" ]] && echo '(ok)' || echo '(missing)')"
   echo ""
@@ -1060,6 +1111,7 @@ def fmt(v):
   raise TypeError(type(v))
 
 preferred_table_order = [
+  "meta",
   "audio",
   "clean",
   "whisper",
@@ -1072,6 +1124,7 @@ preferred_table_order = [
 ]
 
 preferred_key_order = {
+  "meta": ["config_version"],
   "audio": ["source", "device_name", "mac_name", "iphone_name", "device_index", "silence_trim", "silence_trim_mode", "silence_threshold_db", "silence_min_ms", "silence_keep_ms"],
   "clean": ["repeats_level"],
   "whisper": ["models_dir", "model", "threads", "beam_size", "best_of", "vad", "vad_threshold", "vad_min_speech_ms", "vad_min_silence_ms", "vad_speech_pad_ms"],
