@@ -215,6 +215,13 @@ now_ms() {
 }
 
 DICTATE_LIB_PATH="${DICTATE_LIB_PATH:-$HOME/.local/bin/dictate-lib.sh}"
+if [[ ! -r "$DICTATE_LIB_PATH" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  FALLBACK_LIB="$SCRIPT_DIR/dictate-lib.sh"
+  if [[ -r "$FALLBACK_LIB" ]]; then
+    DICTATE_LIB_PATH="$FALLBACK_LIB"
+  fi
+fi
 [[ -r "$DICTATE_LIB_PATH" ]] || die "missing shared library: $DICTATE_LIB_PATH"
 # shellcheck disable=SC1090
 source "$DICTATE_LIB_PATH"

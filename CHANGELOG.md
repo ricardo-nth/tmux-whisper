@@ -8,11 +8,15 @@ All notable public-repo changes are documented in this file.
 
 - `bootstrap.sh` for curl-based installation from GitHub archive.
 - `tests/test_bootstrap.sh` smoke test to validate bootstrap flow.
+- `tests/test_cli.sh` relocation smoke test for non-`~/.local/bin` installs.
 
 ### Changed
 
 - `tests/ci.sh` now validates `bootstrap.sh` and runs bootstrap smoke tests.
 - README install section now documents bootstrap and pinned-tag install commands.
+- `bin/dictate` now falls back to a sibling `dictate-lib.sh` when `DICTATE_LIB_PATH` is unset/missing.
+- Raycast/SwiftBar integrations now resolve `dictate`/`dictate-lib.sh` from `PATH` before hardcoded local paths.
+- README now documents Homebrew install and upgrade commands.
 
 ## [0.2.0] - 2026-02-18
 

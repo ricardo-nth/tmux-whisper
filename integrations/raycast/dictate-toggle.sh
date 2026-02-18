@@ -23,6 +23,8 @@ fi
 
 DICTATE_SOUNDS_DIR="${SOUNDS_DIR:-}/dictate"
 CONFIG_TOML="$HOME/.config/dictate/config.toml"
+DICTATE_BIN="${DICTATE_BIN:-$(command -v dictate 2>/dev/null || true)}"
+DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/dictate}"
 
 refresh_swiftbar() {
   /usr/bin/open -g "swiftbar://refreshplugin?plugin=${SWIFTBAR_PLUGIN_ID}" 2>/dev/null || true
@@ -129,12 +131,12 @@ export DICTATE_TARGET_PANE="$PANE"
 
 if [[ -f "$STATE_FILE" ]]; then
   # Stopping - just play sound
-  $HOME/.local/bin/dictate toggle 2>/tmp/dictate-raycast.log
+  "$DICTATE_BIN" toggle 2>/tmp/dictate-raycast.log
   refresh_swiftbar
   # Stop sound is played by Dictate after transcription/paste completes.
 else
   # Starting - just play sound
-  $HOME/.local/bin/dictate toggle 2>/tmp/dictate-raycast.log
+  "$DICTATE_BIN" toggle 2>/tmp/dictate-raycast.log
   refresh_swiftbar
   p="$(sound_path start)"
   # Raycast can terminate background children when the script exits; play synchronously.

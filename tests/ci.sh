@@ -16,6 +16,7 @@ done
 echo "Syntax checks passed."
 
 ./tests/test_lib.sh
+./tests/test_cli.sh
 ./tests/test_install.sh
 ./tests/test_bootstrap.sh
 

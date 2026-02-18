@@ -37,6 +37,18 @@ CONFIG_TOML="$CONFIG_DIR/config.toml"
 DICTATE_LIB_PATH="${DICTATE_LIB_PATH:-$HOME/.local/bin/dictate-lib.sh}"
 
 if [[ ! -r "$DICTATE_LIB_PATH" ]]; then
+  if command -v dictate-lib.sh >/dev/null 2>&1; then
+    DICTATE_LIB_PATH="$(command -v dictate-lib.sh)"
+  else
+    dictate_bin_path="$(command -v dictate 2>/dev/null || true)"
+    if [[ -n "$dictate_bin_path" ]]; then
+      maybe_lib="$(cd "$(dirname "$dictate_bin_path")" && pwd)/dictate-lib.sh"
+      [[ -r "$maybe_lib" ]] && DICTATE_LIB_PATH="$maybe_lib"
+    fi
+  fi
+fi
+
+if [[ ! -r "$DICTATE_LIB_PATH" ]]; then
   echo "dictate-inline: missing shared library: $DICTATE_LIB_PATH"
   exit 1
 fi

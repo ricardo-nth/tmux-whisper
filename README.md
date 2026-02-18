@@ -25,6 +25,26 @@ Local-first dictation for macOS using `ffmpeg` + `whisper.cpp` (`whisper-cli`), 
 
 ## Install
 
+Homebrew (recommended):
+
+```bash
+brew tap ricardo-nth/tap
+brew install ricardo-nth/tap/dictate-cli
+```
+
+Update:
+
+```bash
+brew upgrade dictate-cli
+```
+
+First run:
+
+```bash
+dictate --help
+dictate debug
+```
+
 Bootstrap install:
 
 ```bash

@@ -27,7 +27,8 @@ XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CONFIG_DIR="$XDG_CONFIG_HOME/dictate"
 CONFIG_TOML="$CONFIG_DIR/config.toml"
 MODE_FILE="$CONFIG_DIR/current-mode"
-DICTATE_BIN="$HOME/.local/bin/dictate"
+DICTATE_BIN="${DICTATE_BIN:-$(command -v dictate 2>/dev/null || true)}"
+DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/dictate}"
 
 # SwiftBar may run without interactive shell env; load API key similarly to Raycast path.
 if [[ -z "${CEREBRAS_API_KEY:-}" && -f "${ZDOTDIR:-$HOME}/.zshrc" ]]; then
