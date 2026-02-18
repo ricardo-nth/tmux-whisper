@@ -23,7 +23,7 @@ Local dictation CLI for macOS using `ffmpeg` + `whisper.cpp`, with optional LLM 
 ## Install
 
 ```bash
-git clone https://github.com/<your-username>/dictate-cli.git
+git clone https://github.com/ricardo-nth/dictate-cli.git
 cd dictate-cli
 ./install.sh
 ```
