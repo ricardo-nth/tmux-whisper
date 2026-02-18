@@ -21,6 +21,8 @@
     - `CONTRIBUTING.md`
     - `.github/ISSUE_TEMPLATE/*`
     - `docs/RELEASE_CHECKLIST.md`
+  - Added hardening regression coverage:
+    - `tests/test_regression.sh` for install-channel detection and integration path-resolution guards.
 
 ## 2026-02-18
 

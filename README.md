@@ -164,6 +164,7 @@ This runs:
 - `bash -n` syntax checks across shipped shell scripts
 - `tests/test_lib.sh` (helper behavior)
 - `tests/test_cli.sh` (relocation behavior for brew installs)
+- `tests/test_regression.sh` (diagnostic/integration hardening guards)
 - `tests/test_install.sh` (installer smoke tests)
 - `tests/test_bootstrap.sh` (bootstrap flow smoke test)
 
