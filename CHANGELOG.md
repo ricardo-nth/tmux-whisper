@@ -3,7 +3,8 @@
 ## Current working version
 
 - **Stable release**: `v0.4.1` (tagged on 2026-02-18)
-- **Next target**: `v0.5.x` (UX + config maturity)
+- **Next target**: `v0.5.x` (performance tuning + UX polish)
+- **Immediate next focus**: tune Whisper decode defaults from benchmark data, then add `dictate bench-matrix`.
 - **Primary development branch**: `main` in `ricardo-nth/dictate-cli`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/dictate-cli`
@@ -21,7 +22,7 @@
 - **v0.5.x groundwork (config maturity)**:
   - Added explicit config schema tracking via `meta.config_version` in default config.
   - `dictate debug` now prints config schema version/status against the expected schema.
-  - `dictate doctor` now reports schema drift (`legacy`, `future`, `unknown`) with targeted upgrade hints.
+  - `dictate doctor` added schema diagnostics as groundwork (later tightened to strict exact-match checks in the cleanup entry above).
   - Added regression coverage to prevent schema-status diagnostics from regressing.
 
 ## 2026-02-18
