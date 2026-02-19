@@ -40,6 +40,7 @@
 - **Bench matrix helper**:
   - Added `dictate bench-matrix [N] [phrase_file]` to compare postprocess/vocab-clean combinations on fixed phrases.
   - When `CEREBRAS_API_KEY` is set, bench-matrix also expands postprocess-on runs across configured LLM model candidates.
+  - Bench-matrix now supports optional `label<TAB>phrase` phrase-file lines and a quiet mode (`DICTATE_BENCH_MATRIX_PROGRESS=0`) for summary-only output.
   - Added regression coverage for bench-matrix usage validation and no-key smoke behavior.
 
 ## 2026-02-18

@@ -26,6 +26,18 @@ assert_contains() {
   echo "PASS: $name"
 }
 
+assert_not_contains() {
+  local name="$1"
+  local haystack="$2"
+  local needle="$3"
+  if [[ "$haystack" == *"$needle"* ]]; then
+    echo "FAIL: $name" >&2
+    echo "Expected not to find: $needle" >&2
+    exit 1
+  fi
+  echo "PASS: $name"
+}
+
 assert_file_contains() {
   local name="$1"
   local file="$2"
@@ -238,5 +250,17 @@ assert_contains "bench_matrix_missing_phrase_file" "$bench_missing_phrase_out" "
 bench_matrix_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" CEREBRAS_API_KEY= dictate bench-matrix 1)"
 assert_contains "bench_matrix_smoke_header" "$bench_matrix_out" "Dictate bench-matrix"
 assert_contains "bench_matrix_smoke_skip_note" "$bench_matrix_out" "postprocess=on combos skipped"
+
+BENCH_PHRASES_FILE="$TMP_ROOT/bench-phrases.txt"
+cat >"$BENCH_PHRASES_FILE" <<'EOF'
+# label<TAB>phrase format is supported
+ops-check	please check the current install status
+just a plain phrase line
+EOF
+
+bench_matrix_file_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" CEREBRAS_API_KEY= DICTATE_BENCH_MATRIX_PROGRESS=0 dictate bench-matrix 1 "$BENCH_PHRASES_FILE")"
+assert_contains "bench_matrix_phrase_file_count" "$bench_matrix_file_out" "Phrases: 2"
+assert_contains "bench_matrix_header_llm_model" "$bench_matrix_file_out" "llm_model"
+assert_not_contains "bench_matrix_progress_suppressed" "$bench_matrix_file_out" "bench-matrix: combo"
 
 echo "Regression tests passed."

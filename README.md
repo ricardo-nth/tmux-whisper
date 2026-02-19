@@ -109,6 +109,10 @@ dictate mode short
 dictate postprocess on
 ```
 
+### Bench matrix
+
+`dictate bench-matrix [N] [phrase_file]` runs the cleanup/postprocess pipeline across the in-repo phrase list (or a small file you supply) with the requested number of rounds. Each line in `phrase_file` is trimmed and blank/commented lines (those beginning with `#`) are ignored, so you can customize the set while keeping the defaults for quick comparison. Set `DICTATE_BENCH_MATRIX_MODE` to force which fixed mode (typically `short`) drives the cleanup, postprocess, and vocab helpers. The output table is sorted by postprocess, model, and vocab settings to keep diffs stable, and you still see the warning `postprocess=on combos skipped` if `CEREBRAS_API_KEY` is unset.
+
 ## UX Helpers
 
 - `dictate doctor` now includes a **Suggested fixes** block with copy/paste commands when it finds dependency, install, config, or stale-state issues.
@@ -117,6 +121,8 @@ dictate postprocess on
 - `dictate vocab dedupe` now creates a timestamped backup before rewriting your vocab file.
 - `dictate vocab export <file>` writes a normalized/deduped vocab snapshot you can share or version.
 - `dictate bench-matrix [N] [phrase_file]` runs a quick matrix over postprocess/vocab toggles (and LLM models when API key is set) on fixed phrases.
+  - Phrase file format: one phrase per line (blank lines and `#` comments ignored). Optional `label<TAB>phrase` is supported.
+  - Set `DICTATE_BENCH_MATRIX_PROGRESS=0` for summary-only output (no per-combo progress lines).
 
 ## Troubleshooting
 
