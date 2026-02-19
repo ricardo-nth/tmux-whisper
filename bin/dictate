@@ -53,7 +53,7 @@ DIAGNOSTICS:
   dictate keep-logs          # show persistent log retention setting
   dictate keep-logs on|off   # persist log retention in config
   dictate bench [N]          # summarize recent stage timings (default: 30 runs)
-  dictate bench-matrix [N] [phrase_file] # compare model x postprocess x vocab_clean on fixed phrases
+  dictate bench-matrix [N] [phrase_file] # compare llm_model(post=on) x postprocess x vocab_clean on fixed phrases
   dictate changelog          # show recent Dictate changes
 
 INTEGRATIONS:
@@ -197,6 +197,7 @@ ENV OPTIONS:
   DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
   DICTATE_BENCH_MATRIX_MODE=short # force mode used by bench-matrix cleanup/postprocess
   DICTATE_BENCH_MATRIX_MODELS=fast,smart,qwen,gpt # LLM list for postprocess-on matrix runs
+  DICTATE_BENCH_MATRIX_PROGRESS=1 # show per-combo progress lines (set 0 for summary-only output)
   CEREBRAS_API_KEY=...       # required for postprocess
 
 CONFIG FILES (~/.config/dictate/):
@@ -1836,12 +1837,19 @@ bench_matrix() {
   if [[ -n "$phrase_arg" ]]; then
     phrase_src="$(expand_path "$phrase_arg")"
     [[ -f "$phrase_src" ]] || die "phrase file not found: $phrase_src"
-    local line trimmed
+    local line trimmed phrase_text
     while IFS= read -r line || [[ -n "$line" ]]; do
       trimmed="$(printf "%s" "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
       [[ -z "$trimmed" ]] && continue
       [[ "$trimmed" == \#* ]] && continue
-      phrases+=("$trimmed")
+      phrase_text="$trimmed"
+      if [[ "$trimmed" == *$'\t'* ]]; then
+        # Optional phrase-file format: label<TAB>phrase text
+        phrase_text="${trimmed#*$'\t'}"
+        phrase_text="$(printf "%s" "$phrase_text" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+      fi
+      [[ -n "$phrase_text" ]] || continue
+      phrases+=("$phrase_text")
     done <"$phrase_src"
   else
     phrase_src="<built-in>"
@@ -1894,10 +1902,11 @@ bench_matrix() {
   fi
 
   local results_file
-  results_file="$(mktemp "${TMPDIR:-/tmp}/dictate-bench-matrix.XXXXXX")"
+  results_file="$(mktemp "${TMPDIR:-/tmp}/dictate-bench-matrix.XXXXXX")" || die "failed to create bench-matrix temporary file"
 
   local clean_enabled="${DICTATE_CLEAN:-0}"
   local repeats_level="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}"
+  local progress_enabled="${DICTATE_BENCH_MATRIX_PROGRESS:-1}"
 
   local combo_idx=0
   local post_flag vocab_flag iter model phrase txt
@@ -1920,7 +1929,9 @@ bench_matrix() {
     for vocab_flag in 0 1; do
       for model in "${model_candidates[@]}"; do
         combo_idx=$((combo_idx + 1))
-        echo "bench-matrix: combo $combo_idx/$total_combos (model=$model post=$post_flag vocab=$vocab_flag)"
+        if bool_is_on "$progress_enabled"; then
+          echo "bench-matrix: combo $combo_idx/$total_combos (model=$model post=$post_flag vocab=$vocab_flag)"
+        fi
 
         for ((iter = 1; iter <= rounds; iter++)); do
           for phrase in "${phrases[@]}"; do
@@ -2045,7 +2056,7 @@ print(f"Samples: {len(rows)}")
 if not post_available:
     print("Note: postprocess=on combos skipped (CEREBRAS_API_KEY not set).")
 print("")
-print("model              post vocab n   changed  total(ms) med/p90/max  clean med  post med  vocab med")
+print("llm_model          postproc vocab n   changed(n) total(ms) med/p90/max  clean med  postproc med  vocab med")
 
 for (model, post, vocab), bucket in sorted(groups.items(), key=sort_key):
     totals = [r["total_ms"] for r in bucket]
@@ -2065,8 +2076,8 @@ for (model, post, vocab), bucket in sorted(groups.items(), key=sort_key):
     changed_cell = f"{changed}/{n}"
 
     print(
-        f"{model_label:<18} {post_label:<4} {vocab_label:<5} {n:<3} {changed_cell:<8} "
-        f"{total_cell:<20} {clean_med:<9} {post_med:<8} {vocab_med:<9}"
+        f"{model_label:<18} {post_label:<8} {vocab_label:<5} {n:<3} {changed_cell:<8} "
+        f"{total_cell:<20} {clean_med:<9} {post_med:<12} {vocab_med:<9}"
     )
 PYEOF
 
