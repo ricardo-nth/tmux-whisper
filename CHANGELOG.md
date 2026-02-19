@@ -17,6 +17,27 @@
 - docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
 
+## 2026-02-19
+
+- **UX polish (`dictate doctor`)**:
+  - Added a `Suggested fixes` section with actionable commands for common failures/warnings (missing deps, install/config issues, schema mismatch, stale state/processing markers, optional tmux install).
+  - Added mode/config validation checks for invalid fixed/tmux modes and missing core prompts (`short`/`long`) with explicit fallback behavior and fix commands.
+  - Kept diagnostics concise while making next-step remediation copy/paste friendly.
+- **Vocab safety pass**:
+  - Added `dictate vocab export <file>` to write a normalized + deduped snapshot for sharing/versioning.
+  - `dictate vocab import` and `dictate vocab clipboard` now preview invalid entries with line numbers (first 5) instead of only showing counts.
+  - `dictate vocab dedupe` now creates a timestamped backup before rewriting and reports duplicate/invalid removals.
+  - `dictate vocab` normalization now also accepts ASCII arrow format (`wrong -> right`) in addition to `wrong::right` and `wrong → right`.
+- **Validation**:
+  - Expanded regression coverage for doctor suggestions and vocab import/export/dedupe safety behavior.
+- **Docs refresh**:
+  - Added troubleshooting-focused UX guidance in README.
+  - Added `docs/TROUBLESHOOTING.md` with setup/mode/vocab recovery flows.
+- **SwiftBar runtime toggle**:
+  - Added `dictate swiftbar [show|on|off|toggle]` to control SwiftBar integration at runtime (without reinstall/uninstall).
+  - SwiftBar plugin now respects `integrations.swiftbar.enabled` and shows a compact OFF state with one-click re-enable.
+  - `dictate doctor` now reports SwiftBar plugin presence together with enabled/disabled state.
+
 ## 2026-02-18
 
 - **v0.5.x cleanup (forward-only schema checks)**:
@@ -422,7 +443,7 @@ Attempted to speed up transcription by implementing a persistent daemon that kee
 - [x] Improve vocab workflow: bulk import/batch add and easier correction review from recent history.
 - [ ] Add a lightweight session dashboard/TUI (Bubble Tea candidate) to summarize usage (sessions, words processed, postprocess/tokens, time saved trends) from recent history/bench data.
 - [ ] Package/install polish: bootstrap/update scripts + docs for reproducible setup across machines.
-- [ ] Add explicit “SwiftBar integration on/off” toggle (Dictate should remain fully usable without SwiftBar).
+- [x] Add explicit “SwiftBar integration on/off” toggle (Dictate should remain fully usable without SwiftBar).
 - [ ] When `CHANGELOG.md` gets too long, archive older entries into a single `CHANGELOG.archive.md` (keep current/recent work in `CHANGELOG.md`).
 
 ### Future labs (deferred, separate projects)

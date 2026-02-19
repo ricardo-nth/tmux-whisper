@@ -109,6 +109,42 @@ dictate mode short
 dictate postprocess on
 ```
 
+## UX Helpers
+
+- `dictate doctor` now includes a **Suggested fixes** block with copy/paste commands when it finds dependency, install, config, or stale-state issues.
+- `dictate doctor` now validates fixed/tmux mode values and core mode prompt files (`short`/`long`) and reports explicit fallback behavior when invalid.
+- `dictate vocab import <file>` now shows line-numbered previews for invalid entries (first 5).
+- `dictate vocab dedupe` now creates a timestamped backup before rewriting your vocab file.
+- `dictate vocab export <file>` writes a normalized/deduped vocab snapshot you can share or version.
+
+## Troubleshooting
+
+Start here:
+
+```bash
+dictate debug
+dictate doctor
+dictate status
+```
+
+Common fixes:
+
+- Schema mismatch in `dictate doctor`:
+  - `./install.sh --force`
+- Invalid fixed mode fallback (`mode.current: <name> (invalid, fallback=short)`):
+  - `dictate mode short`
+  - or create it: `dictate mode create "<name>"`
+- Invalid tmux mode fallback (`tmux.mode: <name> (invalid, fallback=short)`):
+  - `dictate tmux mode short`
+- Missing core mode prompts:
+  - `dictate mode edit short`
+  - `dictate mode edit long`
+- Vocab import invalid lines:
+  - use `wrong::right`, `wrong -> right`, or `wrong → right`
+  - export a clean snapshot with `dictate vocab export <file>`
+
+See `docs/TROUBLESHOOTING.md` for a fuller troubleshooting guide.
+
 ## Integrations
 
 ### Raycast
@@ -126,6 +162,14 @@ Use plugin:
 - `~/.config/swiftbar/plugins/dictate-status.0.2s.sh`
 
 If needed, set `DICTATE_INSTALL_SWIFTBAR=0` to skip plugin install.
+
+Runtime toggle (without uninstalling plugin file):
+
+```bash
+dictate swiftbar        # show ON/OFF
+dictate swiftbar off    # keep plugin loaded but show OFF state
+dictate swiftbar on
+```
 
 ## Sounds
 

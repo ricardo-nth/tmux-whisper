@@ -34,6 +34,13 @@ Focus: make day-to-day usage cleaner and safer.
 - Improve vocab workflows (import/export/normalize safety).
 - Refine docs for real-world setup and troubleshooting.
 
+Recent progress (2026-02-19):
+
+- `dictate doctor` now includes mode/config fallback diagnostics plus actionable suggested fixes.
+- Vocab safety flow now includes invalid-line previews, guarded dedupe backups, and export snapshots.
+- Added dedicated troubleshooting guide: `docs/TROUBLESHOOTING.md`.
+- Added runtime SwiftBar integration toggle (`dictate swiftbar on|off|toggle`) so integration can be managed without reinstalling.
+
 Success criteria:
 
 - Fewer setup/support issues caused by config mismatches.
