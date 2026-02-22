@@ -92,12 +92,12 @@ LLM POST-PROCESSING (Cerebras API):
   tmux-whisper llm qwen           # qwen-3-32b (~2600 t/s)
   tmux-whisper llm gpt            # gpt-oss-120b (~3000 t/s, default)
   tmux-whisper llm <mode> <llm>   # per-mode override (e.g., "tmux-whisper llm code smart")
-  tmux-whisper profile            # show short/long postprocess profiles (effective)
-  tmux-whisper profile <mode>     # show one profile (short or long)
-  tmux-whisper profile <mode> llm fast|smart|qwen|gpt|<id>
-  tmux-whisper profile <mode> max_tokens <n>
-  tmux-whisper profile <mode> chunk_words <n>
-  tmux-whisper profile <mode> clear # remove mode-specific overrides
+  tmux-whisper budget             # show short/long budget profiles (effective)
+  tmux-whisper budget <profile>   # show one budget profile (short or long)
+  tmux-whisper budget <profile> llm fast|smart|qwen|gpt|<id>
+  tmux-whisper budget <profile> max_tokens <n>
+  tmux-whisper budget <profile> chunk_words <n>
+  tmux-whisper budget <profile> clear # remove budget-profile overrides
 
 MODES (context-aware prompts):
   tmux-whisper mode               # show current mode + list all
@@ -389,7 +389,9 @@ enabled = true
 llm = "gpt-oss-120b"
 max_tokens = 3000
 chunk_words = 700
+budget_long_words_threshold = 120
 
+# Budget profiles for transcript-length-aware auto sizing (not content modes).
 [postprocess.mode_overrides.short]
 llm = "gpt-oss-120b"
 max_tokens = 2000
@@ -509,6 +511,7 @@ out = {
   "CFG_POSTPROCESS_LLM": str(get("postprocess.llm", "llama3.1-8b")),
   "CFG_POSTPROCESS_MAX_TOKENS": str(get("postprocess.max_tokens", "")),
   "CFG_POSTPROCESS_CHUNK_WORDS": str(get("postprocess.chunk_words", "")),
+  "CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD": str(get("postprocess.budget_long_words_threshold", "120")),
   "CFG_POSTPROCESS_MODE_LLM_OVERRIDES": "",
   "CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES": "",
   "CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES": "",
@@ -749,6 +752,7 @@ debug() {
   echo "  postprocess.llm=${CFG_POSTPROCESS_LLM:-}"
   echo "  postprocess.max_tokens=${CFG_POSTPROCESS_MAX_TOKENS:-}"
   echo "  postprocess.chunk_words=${CFG_POSTPROCESS_CHUNK_WORDS:-}"
+  echo "  postprocess.budget_long_words_threshold=${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
   echo "  inline.autosend=${CFG_INLINE_AUTOSEND:-1}"
       echo "  inline.paste_target=$(inline_paste_target_label "${CFG_INLINE_PASTE_TARGET:-restore}")"
       echo "  inline.send_mode=$(inline_send_mode_label "${CFG_INLINE_SEND_MODE:-enter}")"
@@ -2378,7 +2382,7 @@ postprocess_llm() {
 
   budget_profile_for_input() {
     local text="${1:-}"
-    local threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-120}"
+    local threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}}"
     local word_count
     [[ "$threshold" =~ ^[0-9]+$ ]] || threshold="120"
     word_count="$(printf '%s' "$text" | wc -w | tr -d '[:space:]')"
@@ -3913,8 +3917,9 @@ status() {
   echo "  llm: $llm_model"
   [[ -n "$llm_max_tokens" ]] && echo "  llm.max_tokens: $llm_max_tokens"
   [[ -n "$llm_chunk_words" ]] && echo "  llm.chunk_words: $llm_chunk_words"
-  echo "  profile.short: llm=${profile_short_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_short_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_short_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
-  echo "  profile.long: llm=${profile_long_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_long_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_long_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
+  echo "  budget.auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
+  echo "  budget_profile.short: llm=${profile_short_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_short_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_short_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
+  echo "  budget_profile.long: llm=${profile_long_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_long_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_long_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
   echo "  british_spelling: $(onoff "${DICTATE_BRITISH_SPELLING:-1}")"
   echo "  clean.regex: $(onoff "$clean_enabled")"
   echo "  clean.repeats_level: $repeats_level"
@@ -4510,13 +4515,13 @@ set_llm() {
       echo "  gpt   (gpt-oss-120b)  - ~3000 t/s, fastest + 120B params"
       echo ""
       echo "Per-mode override:"
-      echo "  tmux-whisper llm <mode> <llm>   (e.g., tmux-whisper llm short smart)"
+      echo "  tmux-whisper llm <mode> <llm>   (e.g., tmux-whisper llm code smart)"
       ;;
     *) die "unknown LLM: $name (use: fast, smart, qwen, gpt, or: tmux-whisper llm <mode> <llm>)" ;;
   esac
 }
 
-set_profile() {
+set_budget() {
   local a1="${1:-}"
   local a2="${2:-}"
   local a3="${3:-}"
@@ -4551,92 +4556,110 @@ set_profile() {
     esac
   }
 
-  show_one_profile() {
-    local mode="${1:-short}"
-    local mode_key
-    mode_key="$(mode_override_key "$mode")"
+  show_one_budget_profile() {
+    local profile="${1:-short}"
+    local profile_key
+    profile_key="$(mode_override_key "$profile")"
 
     local llm_override max_override chunk_override
-    llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
-    max_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
-    chunk_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+    llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
+    max_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
+    chunk_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
 
     local llm_effective max_effective chunk_effective
     llm_effective="${llm_override:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}}"
     max_effective="${max_override:-${CFG_POSTPROCESS_MAX_TOKENS:-}}"
     chunk_effective="${chunk_override:-${CFG_POSTPROCESS_CHUNK_WORDS:-}}"
 
-    echo "$mode profile:"
+    echo "$profile budget profile:"
     echo "  llm: ${llm_effective}${llm_override:+ (override)}"
     [[ -n "$max_effective" ]] && echo "  max_tokens: ${max_effective}${max_override:+ (override)}" || echo "  max_tokens: <unset>"
     [[ -n "$chunk_effective" ]] && echo "  chunk_words: ${chunk_effective}${chunk_override:+ (override)}" || echo "  chunk_words: <unset>"
   }
 
   if [[ -z "$a1" ]]; then
-    echo "Postprocess profiles"
+    echo "Postprocess budget profiles"
     echo ""
     echo "Global defaults:"
     echo "  llm: ${CFG_POSTPROCESS_LLM:-llama3.1-8b}"
     [[ -n "${CFG_POSTPROCESS_MAX_TOKENS:-}" ]] && echo "  max_tokens: ${CFG_POSTPROCESS_MAX_TOKENS}" || echo "  max_tokens: <unset>"
     [[ -n "${CFG_POSTPROCESS_CHUNK_WORDS:-}" ]] && echo "  chunk_words: ${CFG_POSTPROCESS_CHUNK_WORDS}" || echo "  chunk_words: <unset>"
+    echo "  auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
     echo ""
-    show_one_profile "short"
+    show_one_budget_profile "short"
     echo ""
-    show_one_profile "long"
+    show_one_budget_profile "long"
     echo ""
     echo "Set overrides:"
-    echo "  tmux-whisper profile short llm gpt"
-    echo "  tmux-whisper profile short max_tokens 2000"
-    echo "  tmux-whisper profile long chunk_words 1000"
+    echo "  tmux-whisper budget short llm gpt"
+    echo "  tmux-whisper budget short max_tokens 2000"
+    echo "  tmux-whisper budget long chunk_words 1000"
+    echo "  tmux-whisper budget threshold 120"
     return 0
   fi
 
-  local mode
-  mode="$(canonical_mode_name "$a1")"
-  case "$mode" in
+  if [[ "$a1" == "threshold" ]]; then
+    if [[ -z "$a2" ]]; then
+      echo "budget auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
+      echo ""
+      echo "Set with:"
+      echo "  tmux-whisper budget threshold <words>"
+      return 0
+    fi
+    [[ "$a2" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper budget threshold <words>"
+    [[ "$a2" -gt 0 ]] || die "threshold must be > 0"
+    config_set "postprocess.budget_long_words_threshold" "int" "$a2"
+    config_load
+    echo "budget auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-$a2}"
+    return 0
+  fi
+
+  local profile
+  profile="$(canonical_mode_name "$a1")"
+  case "$profile" in
     short|long) ;;
-    *) die "usage: tmux-whisper profile [short|long] [llm|max_tokens|chunk_words|clear] [value]" ;;
+    *) die "usage: tmux-whisper budget [short|long|threshold] [llm|max_tokens|chunk_words|clear|<words>] [value]" ;;
   esac
-  local mode_key
-  mode_key="$(mode_override_key "$mode")"
+  local profile_key
+  profile_key="$(mode_override_key "$profile")"
 
   if [[ -z "$a2" ]]; then
-    show_one_profile "$mode"
+    show_one_budget_profile "$profile"
     echo ""
     echo "Set overrides:"
-    echo "  tmux-whisper profile $mode llm gpt|smart|qwen|fast|<model>"
-    echo "  tmux-whisper profile $mode max_tokens <n>"
-    echo "  tmux-whisper profile $mode chunk_words <n>"
-    echo "  tmux-whisper profile $mode clear"
+    echo "  tmux-whisper budget $profile llm gpt|smart|qwen|fast|<model>"
+    echo "  tmux-whisper budget $profile max_tokens <n>"
+    echo "  tmux-whisper budget $profile chunk_words <n>"
+    echo "  tmux-whisper budget $profile clear"
     return 0
   fi
 
   case "$a2" in
     llm)
-      [[ -n "$a3" ]] || die "usage: tmux-whisper profile $mode llm <model|fast|smart|qwen|gpt>"
+      [[ -n "$a3" ]] || die "usage: tmux-whisper budget $profile llm <model|fast|smart|qwen|gpt>"
       local llm_id
       llm_id="$(resolve_llm_alias "$a3")"
-      config_set "postprocess.mode_overrides.${mode_key}.llm" "string" "$llm_id"
+      config_set "postprocess.mode_overrides.${profile_key}.llm" "string" "$llm_id"
       config_load
-      echo "$mode profile llm: $llm_id"
+      echo "$profile budget profile llm: $llm_id"
       ;;
     max_tokens|chunk_words)
-      [[ -n "$a3" ]] || die "usage: tmux-whisper profile $mode $a2 <n>"
+      [[ -n "$a3" ]] || die "usage: tmux-whisper budget $profile $a2 <n>"
       [[ "$a3" =~ ^[0-9]+$ ]] || die "$a2 must be a positive integer"
       [[ "$a3" -gt 0 ]] || die "$a2 must be > 0"
-      config_set "postprocess.mode_overrides.${mode_key}.${a2}" "int" "$a3"
+      config_set "postprocess.mode_overrides.${profile_key}.${a2}" "int" "$a3"
       config_load
-      echo "$mode profile $a2: $a3"
+      echo "$profile budget profile $a2: $a3"
       ;;
     clear|reset)
-      config_set "postprocess.mode_overrides.${mode_key}.llm" "string" ""
-      config_set "postprocess.mode_overrides.${mode_key}.max_tokens" "int" ""
-      config_set "postprocess.mode_overrides.${mode_key}.chunk_words" "int" ""
+      config_set "postprocess.mode_overrides.${profile_key}.llm" "string" ""
+      config_set "postprocess.mode_overrides.${profile_key}.max_tokens" "int" ""
+      config_set "postprocess.mode_overrides.${profile_key}.chunk_words" "int" ""
       config_load
-      echo "$mode profile overrides cleared (now using global defaults)."
+      echo "$profile budget profile overrides cleared (now using global defaults)."
       ;;
     *)
-      die "usage: tmux-whisper profile [short|long] [llm|max_tokens|chunk_words|clear] [value]"
+      die "usage: tmux-whisper budget [short|long|threshold] [llm|max_tokens|chunk_words|clear|<words>] [value]"
       ;;
   esac
 }
@@ -5393,7 +5416,8 @@ case "$cmd" in
   target|paste_target) set_paste_target "${2:-}" ;;
   tmux) manage_tmux "${2:-}" "${3:-}" ;;
   llm) set_llm "${2:-}" "${3:-}" ;;
-  profile) set_profile "${2:-}" "${3:-}" "${4:-}" ;;
+  budget) set_budget "${2:-}" "${3:-}" "${4:-}" ;;
+  profile) set_budget "${2:-}" "${3:-}" "${4:-}" ;;
   vocab) manage_vocab "${2:-}" "${@:3}" ;;
   mode) manage_mode "${2:-}" "${@:3}" ;;
   keybind) manage_keybind "${2:-}" "${3:-}" ;;

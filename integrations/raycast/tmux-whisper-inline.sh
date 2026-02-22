@@ -199,6 +199,7 @@ print(f"CFG_POSTPROCESS_ENABLED={shlex.quote('1' if b(get('postprocess.enabled',
 print(f"CFG_POSTPROCESS_LLM={shlex.quote(str(get('postprocess.llm', 'llama3.1-8b')))}")
 print(f"CFG_POSTPROCESS_MAX_TOKENS={shlex.quote(str(get('postprocess.max_tokens', '')))}")
 print(f"CFG_POSTPROCESS_CHUNK_WORDS={shlex.quote(str(get('postprocess.chunk_words', '')))}")
+print(f"CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD={shlex.quote(str(get('postprocess.budget_long_words_threshold', '120')))}")
 
 mode_overrides = get("postprocess.mode_overrides", {}) or {}
 llm_parts = []
@@ -773,7 +774,7 @@ postprocess_llm() {
 
   budget_profile_for_input() {
     local text="${1:-}"
-    local threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-120}"
+    local threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}}"
     local word_count
     [[ "$threshold" =~ ^[0-9]+$ ]] || threshold="120"
     word_count="$(printf '%s' "$text" | wc -w | tr -d '[:space:]')"
