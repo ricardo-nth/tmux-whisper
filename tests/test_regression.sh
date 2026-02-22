@@ -504,4 +504,10 @@ assert_contains "bench_matrix_phrase_file_count" "$bench_matrix_file_out" "Phras
 assert_contains "bench_matrix_header_llm_model" "$bench_matrix_file_out" "llm_model"
 assert_not_contains "bench_matrix_progress_suppressed" "$bench_matrix_file_out" "bench-matrix: combo"
 
+bench_matrix_obs_out="$(HOME="$BENCH_HOME" PATH="$BUDGET_STUBS:$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" CEREBRAS_API_KEY=test-key DICTATE_BENCH_MATRIX_MODELS=gpt DICTATE_BENCH_MATRIX_PROGRESS=0 DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD=20 tmux-whisper bench-matrix 1 "$BENCH_PHRASES_FILE")"
+assert_contains "bench_matrix_budget_obs_section" "$bench_matrix_obs_out" "Budget auto observability (postprocess rows)"
+assert_contains "bench_matrix_budget_obs_profiles" "$bench_matrix_obs_out" "profile counts:"
+assert_contains "bench_matrix_budget_obs_max_tokens" "$bench_matrix_obs_out" "max_tokens: n="
+assert_contains "bench_matrix_budget_obs_chunk_count" "$bench_matrix_obs_out" "chunk_count: n="
+
 echo "Regression tests passed."
