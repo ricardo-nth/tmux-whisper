@@ -392,12 +392,12 @@ chunk_words = 700
 budget_long_words_threshold = 120
 
 # Budget profiles for transcript-length-aware auto sizing (not content modes).
-[postprocess.mode_overrides.short]
+[postprocess.budget_profiles.short]
 llm = "gpt-oss-120b"
 max_tokens = 2000
 chunk_words = 700
 
-[postprocess.mode_overrides.long]
+[postprocess.budget_profiles.long]
 llm = "gpt-oss-120b"
 max_tokens = 5200
 chunk_words = 1000
@@ -513,8 +513,9 @@ out = {
   "CFG_POSTPROCESS_CHUNK_WORDS": str(get("postprocess.chunk_words", "")),
   "CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD": str(get("postprocess.budget_long_words_threshold", "120")),
   "CFG_POSTPROCESS_MODE_LLM_OVERRIDES": "",
-  "CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES": "",
-  "CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES": "",
+  "CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES": "",
+  "CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES": "",
+  "CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES": "",
   "CFG_INLINE_AUTOSEND": "1" if b(get("inline.autosend", True), True) else "0",
   "CFG_INLINE_PASTE_TARGET": str(get("inline.paste_target", "restore")),
   "CFG_INLINE_SEND_MODE": str(get("inline.send_mode", "enter")),
@@ -532,26 +533,34 @@ out = {
   "CFG_CLEAN_REPEATS_LEVEL": str(get("clean.repeats_level", "1")),
 }
 
-mode_overrides = get("postprocess.mode_overrides", {}) or {}
-if isinstance(mode_overrides, dict):
-  llm_parts = []
-  max_parts = []
-  chunk_parts = []
-  for mode, d in mode_overrides.items():
+mode_llm_overrides = get("postprocess.mode_llm_overrides", {}) or {}
+if isinstance(mode_llm_overrides, dict):
+  mode_llm_parts = []
+  for mode, llm in mode_llm_overrides.items():
+    if isinstance(llm, str) and llm.strip():
+      mode_llm_parts.append(f"{mode}={llm.strip()}")
+  out["CFG_POSTPROCESS_MODE_LLM_OVERRIDES"] = ";".join(sorted(mode_llm_parts))
+
+budget_profiles = get("postprocess.budget_profiles", {}) or {}
+if isinstance(budget_profiles, dict):
+  budget_llm_parts = []
+  budget_max_parts = []
+  budget_chunk_parts = []
+  for profile, d in budget_profiles.items():
     if not isinstance(d, dict):
       continue
     llm = d.get("llm")
     if isinstance(llm, str) and llm.strip():
-      llm_parts.append(f"{mode}={llm.strip()}")
+      budget_llm_parts.append(f"{profile}={llm.strip()}")
     mt = d.get("max_tokens")
     if isinstance(mt, int):
-      max_parts.append(f"{mode}={mt}")
+      budget_max_parts.append(f"{profile}={mt}")
     cw = d.get("chunk_words")
     if isinstance(cw, int):
-      chunk_parts.append(f"{mode}={cw}")
-  out["CFG_POSTPROCESS_MODE_LLM_OVERRIDES"] = ";".join(sorted(llm_parts))
-  out["CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES"] = ";".join(sorted(max_parts))
-  out["CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES"] = ";".join(sorted(chunk_parts))
+      budget_chunk_parts.append(f"{profile}={cw}")
+  out["CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES"] = ";".join(sorted(budget_llm_parts))
+  out["CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES"] = ";".join(sorted(budget_max_parts))
+  out["CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES"] = ";".join(sorted(budget_chunk_parts))
 
 for k, v in out.items():
   print(f"{k}={shlex.quote(v)}")
@@ -2360,6 +2369,7 @@ postprocess_llm() {
   current_mode="$(get_current_mode "$target_app")"
   local current_mode_key
   current_mode_key="$(mode_override_key "$current_mode")"
+  local budget_profile_key
   
   lookup_override() {
     local list="${1:-}"
@@ -2409,11 +2419,15 @@ postprocess_llm() {
 
   local llm_model="llama3.1-8b"
   [[ -n "${CFG_POSTPROCESS_LLM:-}" ]] && llm_model="$CFG_POSTPROCESS_LLM"
+  budget_profile_key="$(budget_profile_for_input "$input")"
   if [[ -n "${DICTATE_LLM_MODEL:-}" ]]; then
     llm_model="$DICTATE_LLM_MODEL"
   else
     local llm_override=""
     llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$current_mode_key" 2>/dev/null || true)"
+    if [[ -z "$llm_override" ]]; then
+      llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "$budget_profile_key" 2>/dev/null || true)"
+    fi
     [[ -n "$llm_override" ]] && llm_model="$llm_override"
   fi
 
@@ -2422,19 +2436,17 @@ postprocess_llm() {
 
   local max_tokens=""
   local chunk_words=""
-  local budget_profile_key
-  budget_profile_key="$(budget_profile_for_input "$input")"
   if [[ -n "${DICTATE_LLM_MAX_TOKENS:-}" ]]; then
     max_tokens="$DICTATE_LLM_MAX_TOKENS"
   else
-    max_tokens="$(resolve_budget_override "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$current_mode_key" "$budget_profile_key" 2>/dev/null || true)"
+    max_tokens="$(resolve_budget_override "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "$current_mode_key" "$budget_profile_key" 2>/dev/null || true)"
     [[ -z "$max_tokens" ]] && max_tokens="${CFG_POSTPROCESS_MAX_TOKENS:-}"
   fi
 
   if [[ -n "${DICTATE_LLM_CHUNK_WORDS:-}" ]]; then
     chunk_words="$DICTATE_LLM_CHUNK_WORDS"
   else
-    chunk_words="$(resolve_budget_override "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$current_mode_key" "$budget_profile_key" 2>/dev/null || true)"
+    chunk_words="$(resolve_budget_override "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "$current_mode_key" "$budget_profile_key" 2>/dev/null || true)"
     [[ -z "$chunk_words" ]] && chunk_words="${CFG_POSTPROCESS_CHUNK_WORDS:-}"
   fi
   [[ -z "$chunk_words" ]] && chunk_words="0"
@@ -3842,14 +3854,14 @@ status() {
     [[ -n "$value" ]] && echo "$value"
   }
 
-  local profile_short_llm profile_short_max profile_short_chunk
-  local profile_long_llm profile_long_max profile_long_chunk
-  profile_short_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "short" 2>/dev/null || true)"
-  profile_short_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "short" 2>/dev/null || true)"
-  profile_short_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "short" 2>/dev/null || true)"
-  profile_long_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "long" 2>/dev/null || true)"
-  profile_long_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "long" 2>/dev/null || true)"
-  profile_long_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "long" 2>/dev/null || true)"
+  local budget_short_llm budget_short_max budget_short_chunk
+  local budget_long_llm budget_long_max budget_long_chunk
+  budget_short_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  budget_short_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  budget_short_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  budget_long_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "long" 2>/dev/null || true)"
+  budget_long_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "long" 2>/dev/null || true)"
+  budget_long_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "long" 2>/dev/null || true)"
 
   local audio_name audio_idx audio_src audio_source_mode
   audio_source_mode="$(normalize_audio_source "${DICTATE_AUDIO_SOURCE:-${CFG_AUDIO_SOURCE:-auto}}")"
@@ -3918,8 +3930,8 @@ status() {
   [[ -n "$llm_max_tokens" ]] && echo "  llm.max_tokens: $llm_max_tokens"
   [[ -n "$llm_chunk_words" ]] && echo "  llm.chunk_words: $llm_chunk_words"
   echo "  budget.auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
-  echo "  budget_profile.short: llm=${profile_short_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_short_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_short_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
-  echo "  budget_profile.long: llm=${profile_long_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_long_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_long_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
+  echo "  budget_profile.short: llm=${budget_short_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${budget_short_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${budget_short_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
+  echo "  budget_profile.long: llm=${budget_long_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${budget_long_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${budget_long_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
   echo "  british_spelling: $(onoff "${DICTATE_BRITISH_SPELLING:-1}")"
   echo "  clean.regex: $(onoff "$clean_enabled")"
   echo "  clean.repeats_level: $repeats_level"
@@ -4491,7 +4503,7 @@ set_llm() {
     mode_key="$(mode_override_key "$mode")"
     local model_id
     model_id="$(resolve_llm_alias "$a2")"
-    config_set "postprocess.mode_overrides.${mode_key}.llm" "string" "$model_id"
+    config_set "postprocess.mode_llm_overrides.${mode_key}" "string" "$model_id"
     config_load
     echo "LLM override set for mode '$mode': $model_id"
     return 0
@@ -4562,9 +4574,9 @@ set_budget() {
     profile_key="$(mode_override_key "$profile")"
 
     local llm_override max_override chunk_override
-    llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
-    max_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
-    chunk_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
+    llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
+    max_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
+    chunk_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
 
     local llm_effective max_effective chunk_effective
     llm_effective="${llm_override:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}}"
@@ -4639,7 +4651,7 @@ set_budget() {
       [[ -n "$a3" ]] || die "usage: tmux-whisper budget $profile llm <model|fast|smart|qwen|gpt>"
       local llm_id
       llm_id="$(resolve_llm_alias "$a3")"
-      config_set "postprocess.mode_overrides.${profile_key}.llm" "string" "$llm_id"
+      config_set "postprocess.budget_profiles.${profile_key}.llm" "string" "$llm_id"
       config_load
       echo "$profile budget profile llm: $llm_id"
       ;;
@@ -4647,14 +4659,14 @@ set_budget() {
       [[ -n "$a3" ]] || die "usage: tmux-whisper budget $profile $a2 <n>"
       [[ "$a3" =~ ^[0-9]+$ ]] || die "$a2 must be a positive integer"
       [[ "$a3" -gt 0 ]] || die "$a2 must be > 0"
-      config_set "postprocess.mode_overrides.${profile_key}.${a2}" "int" "$a3"
+      config_set "postprocess.budget_profiles.${profile_key}.${a2}" "int" "$a3"
       config_load
       echo "$profile budget profile $a2: $a3"
       ;;
     clear|reset)
-      config_set "postprocess.mode_overrides.${profile_key}.llm" "string" ""
-      config_set "postprocess.mode_overrides.${profile_key}.max_tokens" "int" ""
-      config_set "postprocess.mode_overrides.${profile_key}.chunk_words" "int" ""
+      config_set "postprocess.budget_profiles.${profile_key}.llm" "string" ""
+      config_set "postprocess.budget_profiles.${profile_key}.max_tokens" "int" ""
+      config_set "postprocess.budget_profiles.${profile_key}.chunk_words" "int" ""
       config_load
       echo "$profile budget profile overrides cleared (now using global defaults)."
       ;;
@@ -5417,7 +5429,6 @@ case "$cmd" in
   tmux) manage_tmux "${2:-}" "${3:-}" ;;
   llm) set_llm "${2:-}" "${3:-}" ;;
   budget) set_budget "${2:-}" "${3:-}" "${4:-}" ;;
-  profile) set_budget "${2:-}" "${3:-}" "${4:-}" ;;
   vocab) manage_vocab "${2:-}" "${@:3}" ;;
   mode) manage_mode "${2:-}" "${@:3}" ;;
   keybind) manage_keybind "${2:-}" "${3:-}" ;;

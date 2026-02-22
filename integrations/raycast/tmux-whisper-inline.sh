@@ -201,26 +201,34 @@ print(f"CFG_POSTPROCESS_MAX_TOKENS={shlex.quote(str(get('postprocess.max_tokens'
 print(f"CFG_POSTPROCESS_CHUNK_WORDS={shlex.quote(str(get('postprocess.chunk_words', '')))}")
 print(f"CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD={shlex.quote(str(get('postprocess.budget_long_words_threshold', '120')))}")
 
-mode_overrides = get("postprocess.mode_overrides", {}) or {}
-llm_parts = []
-max_parts = []
-chunk_parts = []
-if isinstance(mode_overrides, dict):
-  for mode, d in mode_overrides.items():
+mode_llm_overrides = get("postprocess.mode_llm_overrides", {}) or {}
+mode_llm_parts = []
+if isinstance(mode_llm_overrides, dict):
+  for mode, llm in mode_llm_overrides.items():
+    if isinstance(llm, str) and llm.strip():
+      mode_llm_parts.append(f"{mode}={llm.strip()}")
+print(f"CFG_POSTPROCESS_MODE_LLM_OVERRIDES={shlex.quote(';'.join(sorted(mode_llm_parts)))}")
+
+budget_profiles = get("postprocess.budget_profiles", {}) or {}
+budget_llm_parts = []
+budget_max_parts = []
+budget_chunk_parts = []
+if isinstance(budget_profiles, dict):
+  for profile, d in budget_profiles.items():
     if not isinstance(d, dict):
       continue
     llm = d.get("llm")
     if isinstance(llm, str) and llm.strip():
-      llm_parts.append(f"{mode}={llm.strip()}")
+      budget_llm_parts.append(f"{profile}={llm.strip()}")
     mt = d.get("max_tokens")
     if isinstance(mt, int):
-      max_parts.append(f"{mode}={mt}")
+      budget_max_parts.append(f"{profile}={mt}")
     cw = d.get("chunk_words")
     if isinstance(cw, int):
-      chunk_parts.append(f"{mode}={cw}")
-print(f"CFG_POSTPROCESS_MODE_LLM_OVERRIDES={shlex.quote(';'.join(sorted(llm_parts)))}")
-print(f"CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES={shlex.quote(';'.join(sorted(max_parts)))}")
-print(f"CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES={shlex.quote(';'.join(sorted(chunk_parts)))}")
+      budget_chunk_parts.append(f"{profile}={cw}")
+print(f"CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES={shlex.quote(';'.join(sorted(budget_llm_parts)))}")
+print(f"CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES={shlex.quote(';'.join(sorted(budget_max_parts)))}")
+print(f"CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES={shlex.quote(';'.join(sorted(budget_chunk_parts)))}")
 print(f"CFG_INLINE_AUTOSEND={shlex.quote('1' if b(get('inline.autosend', True), True) else '0')}")
 print(f"CFG_INLINE_PASTE_TARGET={shlex.quote(str(get('inline.paste_target', 'restore')))}")
 print(f"CFG_INLINE_SEND_MODE={shlex.quote(str(get('inline.send_mode', 'enter')))}")
@@ -800,11 +808,16 @@ postprocess_llm() {
 
   local llm_model="llama3.1-8b"
   [[ -n "${CFG_POSTPROCESS_LLM:-}" ]] && llm_model="$CFG_POSTPROCESS_LLM"
+  local budget_profile_key
+  budget_profile_key="$(budget_profile_for_input "$input")"
   if [[ -n "${DICTATE_LLM_MODEL:-}" ]]; then
     llm_model="$DICTATE_LLM_MODEL"
   else
     local llm_override=""
     llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+    if [[ -z "$llm_override" ]]; then
+      llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "$budget_profile_key" 2>/dev/null || true)"
+    fi
     [[ -n "$llm_override" ]] && llm_model="$llm_override"
   fi
 
@@ -813,19 +826,17 @@ postprocess_llm() {
 
   local max_tokens=""
   local chunk_words=""
-  local budget_profile_key
-  budget_profile_key="$(budget_profile_for_input "$input")"
   if [[ -n "${DICTATE_LLM_MAX_TOKENS:-}" ]]; then
     max_tokens="$DICTATE_LLM_MAX_TOKENS"
   else
-    max_tokens="$(resolve_budget_override "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" "$budget_profile_key" 2>/dev/null || true)"
+    max_tokens="$(resolve_budget_override "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" "$budget_profile_key" 2>/dev/null || true)"
     [[ -z "$max_tokens" ]] && max_tokens="${CFG_POSTPROCESS_MAX_TOKENS:-}"
   fi
 
   if [[ -n "${DICTATE_LLM_CHUNK_WORDS:-}" ]]; then
     chunk_words="$DICTATE_LLM_CHUNK_WORDS"
   else
-    chunk_words="$(resolve_budget_override "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" "$budget_profile_key" 2>/dev/null || true)"
+    chunk_words="$(resolve_budget_override "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" "$budget_profile_key" 2>/dev/null || true)"
     [[ -z "$chunk_words" ]] && chunk_words="${CFG_POSTPROCESS_CHUNK_WORDS:-}"
   fi
   [[ -z "$chunk_words" ]] && chunk_words="0"

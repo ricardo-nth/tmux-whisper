@@ -84,12 +84,12 @@ start_enabled = true
 stop = "~/.local/share/sounds/dictate/stop.wav"
 stop_enabled = true
 
-[postprocess.mode_overrides.long]
+[postprocess.budget_profiles.long]
 chunk_words = 1000
 llm = "gpt-oss-120b"
 max_tokens = 5200
 
-[postprocess.mode_overrides.short]
+[postprocess.budget_profiles.short]
 chunk_words = 700
 llm = "gpt-oss-120b"
 max_tokens = 2000

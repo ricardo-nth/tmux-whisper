@@ -235,11 +235,11 @@ llm = "gpt-oss-120b"
 max_tokens = 1111
 chunk_words = 0
 
-[postprocess.mode_overrides.short]
+[postprocess.budget_profiles.short]
 max_tokens = 2222
 chunk_words = 0
 
-[postprocess.mode_overrides.long]
+[postprocess.budget_profiles.long]
 max_tokens = 5555
 chunk_words = 0
 EOF
