@@ -228,7 +228,17 @@ load_audio_resolution_cache() {
 canonical_mode_name() {
   local m="${1:-}"
   case "$m" in
+    code) echo "short" ;;
     "") echo "short" ;;
+    *) echo "$m" ;;
+  esac
+}
+
+mode_display_name() {
+  local m
+  m="$(canonical_mode_name "${1:-}")"
+  case "$m" in
+    short) echo "code" ;;
     *) echo "$m" ;;
   esac
 }
@@ -267,10 +277,12 @@ mode_exists() {
 emit_inline_modes_menu() {
   local current_mode
   current_mode="$(normalize_mode_name "${1:-short}")"
+  local current_mode_display
+  current_mode_display="$(mode_display_name "$current_mode")"
   local mode_name
-  for mode_name in short long; do
+  for mode_name in code long; do
     mode_exists "$mode_name" || continue
-    if [[ "$mode_name" == "$current_mode" ]]; then
+    if [[ "$mode_name" == "$current_mode_display" ]]; then
       echo "-- ✓ $mode_name | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
     else
       echo "-- $mode_name | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
@@ -281,14 +293,16 @@ emit_inline_modes_menu() {
 emit_tmux_modes_menu() {
   local current_mode
   current_mode="$(normalize_mode_name "${1:-short}")"
+  local current_mode_display
+  current_mode_display="$(mode_display_name "$current_mode")"
   case "$current_mode" in
     short|long) ;;
     *) current_mode="short" ;;
   esac
   local mode_name
-  for mode_name in short long; do
+  for mode_name in code long; do
     mode_exists "$mode_name" || continue
-    if [[ "$mode_name" == "$current_mode" ]]; then
+    if [[ "$mode_name" == "$current_mode_display" ]]; then
       echo "-- ✓ $mode_name | bash=$DICTATE_BIN param1=tmux param2=mode param3=$mode_name terminal=false refresh=true"
     else
       echo "-- $mode_name | bash=$DICTATE_BIN param1=tmux param2=mode param3=$mode_name terminal=false refresh=true"
@@ -472,7 +486,7 @@ saved_mode="$(read_saved_mode)"
 
 # Determine mode icon display
 current_mode_icon="$(mode_icon "$saved_mode")"
-mode_display="$saved_mode"
+mode_display="$(mode_display_name "$saved_mode")"
 
 # Check if recording (either tmux or inline mode)
 if [[ -f "$STATE_FILE" ]] || [[ -f "$INLINE_STATE" ]]; then

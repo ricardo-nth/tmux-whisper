@@ -643,6 +643,7 @@ fi
 canonical_mode_name() {
   local m="${1:-}"
   case "$m" in
+    code) echo "short" ;;
     "") echo "short" ;;
     *) echo "$m" ;;
   esac

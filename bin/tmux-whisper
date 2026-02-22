@@ -91,7 +91,7 @@ LLM POST-PROCESSING (Cerebras API):
   tmux-whisper llm smart          # llama-3.3-70b (~2100 t/s)
   tmux-whisper llm qwen           # qwen-3-32b (~2600 t/s)
   tmux-whisper llm gpt            # gpt-oss-120b (~3000 t/s, default)
-  tmux-whisper llm <mode> <llm>   # per-mode override (e.g., "tmux-whisper llm short smart")
+  tmux-whisper llm <mode> <llm>   # per-mode override (e.g., "tmux-whisper llm code smart")
   tmux-whisper profile            # show short/long postprocess profiles (effective)
   tmux-whisper profile <mode>     # show one profile (short or long)
   tmux-whisper profile <mode> llm fast|smart|qwen|gpt|<id>
@@ -101,7 +101,7 @@ LLM POST-PROCESSING (Cerebras API):
 
 MODES (context-aware prompts):
   tmux-whisper mode               # show current mode + list all
-  tmux-whisper mode short         # short cleanup mode (default)
+  tmux-whisper mode code          # coding cleanup mode (default)
   tmux-whisper mode long          # long-form cleanup mode
   tmux-whisper mode email         # email mode (formal, professional)
   tmux-whisper mode chat          # chat mode (casual, minimal intervention)
@@ -141,7 +141,7 @@ TMUX OPTIONS:
   tmux-whisper tmux postprocess on|off # tmux: LLM cleanup toggle
   tmux-whisper tmux process-sound on|off # tmux: play processing SFX before transcribe
   tmux-whisper tmux send-mode auto|enter|codex # tmux autosend strategy
-  tmux-whisper tmux mode <name>   # tmux: force mode for postprocess (default: short)
+  tmux-whisper tmux mode <name>   # tmux: force mode for postprocess (default: code)
   tmux-whisper tmux model <name>  # tmux: whisper model (default: base)
 
 KEYBINDS (reference for display in SwiftBar):
@@ -917,44 +917,45 @@ doctor() {
     if [[ -z "$fixed_mode_raw" ]]; then
       fixed_mode="short"
       warnings=$((warnings + 1))
-      echo "  - mode.current: <empty> (invalid, fallback=short)"
-      add_suggestion "Set a valid fixed mode: tmux-whisper mode short"
+      echo "  - mode.current: <empty> (invalid, fallback=code)"
+      add_suggestion "Set a valid fixed mode: tmux-whisper mode code"
     elif [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$fixed_mode_raw")" ]]; then
       fixed_mode="$(canonical_mode_name "$fixed_mode_raw")"
-      echo "  - mode.current: $fixed_mode (fixed)"
+      echo "  - mode.current: $(mode_display_name "$fixed_mode") (fixed)"
     else
       fixed_mode="short"
       warnings=$((warnings + 1))
-      echo "  - mode.current: $fixed_mode_raw (invalid, fallback=short)"
-      add_suggestion "Set a valid fixed mode: tmux-whisper mode short"
+      echo "  - mode.current: $fixed_mode_raw (invalid, fallback=code)"
+      add_suggestion "Set a valid fixed mode: tmux-whisper mode code"
       add_suggestion "Or create the missing mode: tmux-whisper mode create \"$fixed_mode_raw\""
     fi
   else
     fixed_mode="$(get_current_mode 2>/dev/null || true)"
     [[ -n "$fixed_mode" ]] || fixed_mode="short"
-    echo "  - mode.current: $fixed_mode (auto-detect)"
+    echo "  - mode.current: $(mode_display_name "$fixed_mode") (auto-detect)"
   fi
 
   local tmux_mode_raw tmux_mode
   tmux_mode_raw="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
   tmux_mode="$(canonical_mode_name "$tmux_mode_raw")"
   if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$tmux_mode")" ]]; then
-    echo "  - tmux.mode: $tmux_mode (ok)"
+    echo "  - tmux.mode: $(mode_display_name "$tmux_mode") (ok)"
   else
     warnings=$((warnings + 1))
-    echo "  - tmux.mode: $tmux_mode_raw (invalid, fallback=short)"
-    add_suggestion "Set tmux mode to a valid mode: tmux-whisper tmux mode short"
+    echo "  - tmux.mode: $tmux_mode_raw (invalid, fallback=code)"
+    add_suggestion "Set tmux mode to a valid mode: tmux-whisper tmux mode code"
   fi
 
-  local required_mode required_prompt
+  local required_mode required_prompt required_mode_label
   for required_mode in short long; do
     required_prompt="$DICTATE_CONFIG_DIR/modes/$required_mode/prompt"
+    required_mode_label="$(mode_display_name "$required_mode")"
     if [[ -s "$required_prompt" ]]; then
       echo "  - mode.$required_mode.prompt: ok"
     elif [[ -f "$required_prompt" ]]; then
       warnings=$((warnings + 1))
       echo "  - mode.$required_mode.prompt: empty"
-      add_suggestion "Populate $required_mode prompt: tmux-whisper mode edit $required_mode"
+      add_suggestion "Populate $required_mode_label prompt: tmux-whisper mode edit $required_mode_label"
     else
       warnings=$((warnings + 1))
       echo "  - mode.$required_mode.prompt: missing"
@@ -1456,7 +1457,17 @@ config_load
 canonical_mode_name() {
   local m="${1:-}"
   case "$m" in
+    code) echo "short" ;;
     "") echo "short" ;;
+    *) echo "$m" ;;
+  esac
+}
+
+mode_display_name() {
+  local m
+  m="$(canonical_mode_name "${1:-}")"
+  case "$m" in
+    short) echo "code" ;;
     *) echo "$m" ;;
   esac
 }
@@ -3849,8 +3860,8 @@ status() {
 
   echo ""
   echo "Effective settings:"
-  echo "  mode.inline: $mode_inline"
-  echo "  mode.tmux: $mode_tmux"
+  echo "  mode.inline: $(mode_display_name "$mode_inline")"
+  echo "  mode.tmux: $(mode_display_name "$mode_tmux")"
   echo "  model.inline: $model_inline_id ($model_inline_label)"
   echo "  model.tmux: $model_tmux_id ($model_tmux_label)"
   echo "  whisper.threads/beam/best_of: ${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}/${DICTATE_BEAM_SIZE:-${CFG_WHISPER_BEAM_SIZE:-1}}/${DICTATE_BEST_OF:-${CFG_WHISPER_BEST_OF:-1}}"
@@ -4218,7 +4229,7 @@ manage_tmux() {
       [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]] && echo "  postprocess: ON" || echo "  postprocess: OFF"
       [[ "${CFG_TMUX_PROCESS_SOUND:-0}" == "1" ]] && echo "  process_sound: ON" || echo "  process_sound: OFF"
       echo "  send_mode: $tmux_send_mode_current"
-      echo "  mode: $tmux_mode_current"
+      echo "  mode: $(mode_display_name "$tmux_mode_current")"
       ;;
     autosend)
       case "$val" in
@@ -4298,21 +4309,21 @@ manage_tmux() {
       ;;
     mode)
       if [[ -z "$val" ]]; then
-        echo "tmux mode: $tmux_mode_current"
+        echo "tmux mode: $(mode_display_name "$tmux_mode_current")"
         echo ""
         echo "Available:"
-        echo "  short"
+        echo "  code"
         echo "  long"
       else
         local canonical
         canonical="$(canonical_mode_name "$val")"
         case "$canonical" in
           short|long) ;;
-          *) die "unknown tmux mode: $val (use: short, long)" ;;
+          *) die "unknown tmux mode: $val (use: code, long)" ;;
         esac
         config_set "tmux.mode" "string" "$canonical"
         config_load
-        echo "tmux mode: $canonical"
+        echo "tmux mode: $(mode_display_name "$canonical")"
       fi
       ;;
     model)
@@ -4977,11 +4988,11 @@ manage_mode() {
   mkdir -p "$DICTATE_CONFIG_DIR/modes"
   
   case "$subcmd" in
-    short|long|base|email|chat)
+    code|short|long|base|email|chat)
       local canonical
       canonical="$(canonical_mode_name "$subcmd")"
       echo "$canonical" > "$MODE_FILE"
-      echo "Mode set: $canonical (fixed)"
+      echo "Mode set: $(mode_display_name "$canonical") (fixed)"
       ;;
     apps)
       local apps_subcmd="${1:-}"
@@ -5001,10 +5012,10 @@ manage_mode() {
           fi
           mkdir -p "$(dirname "$apps_file")"
           echo "$app_name" >> "$apps_file"
-          echo "Added '$app_name' to $current_mode mode"
+          echo "Added '$app_name' to $(mode_display_name "$current_mode") mode"
           ;;
         "")
-          echo "Apps for $current_mode mode:"
+          echo "Apps for $(mode_display_name "$current_mode") mode:"
           if [[ -f "$apps_file" ]]; then
             cat "$apps_file" | sed 's/^/  /'
           else
@@ -5050,7 +5061,7 @@ manage_mode() {
       local current="short"
       [[ -f "$MODE_FILE" ]] && current="$(cat "$MODE_FILE")"
       current="$(canonical_mode_name "$current")"
-      echo "Current mode: $current (fixed)"
+      echo "Current mode: $(mode_display_name "$current") (fixed)"
       
       echo ""
       echo "Available modes:"
@@ -5058,7 +5069,7 @@ manage_mode() {
       local app_count_long=0
       [[ -f "$DICTATE_CONFIG_DIR/modes/short/apps" ]] && app_count_short="$(wc -l < "$DICTATE_CONFIG_DIR/modes/short/apps" | tr -d ' ')"
       [[ -f "$DICTATE_CONFIG_DIR/modes/long/apps" ]] && app_count_long="$(wc -l < "$DICTATE_CONFIG_DIR/modes/long/apps" | tr -d ' ')"
-      echo "  short ($app_count_short apps)"
+      echo "  code ($app_count_short apps)"
       echo "  long ($app_count_long apps)"
       for mode_dir in "$DICTATE_CONFIG_DIR/modes"/*/; do
         local mode_name
@@ -5072,7 +5083,7 @@ manage_mode() {
       done
       echo ""
       echo "Commands:"
-      echo "  tmux-whisper mode <name>     - set fixed mode"
+      echo "  tmux-whisper mode <name>     - set fixed mode (e.g. code)"
       echo "  tmux-whisper mode apps       - list apps for current mode"
       echo "  tmux-whisper mode apps add X - add app to current mode"
       echo "  tmux-whisper mode create X   - create new mode"
@@ -5084,7 +5095,7 @@ manage_mode() {
       canonical="$(canonical_mode_name "$subcmd")"
       if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$canonical")" ]]; then
         echo "$canonical" > "$MODE_FILE"
-        echo "Mode set: $canonical (fixed)"
+        echo "Mode set: $(mode_display_name "$canonical") (fixed)"
       else
         die "unknown mode: $subcmd"
       fi
