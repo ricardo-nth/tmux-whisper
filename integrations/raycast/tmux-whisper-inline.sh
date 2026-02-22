@@ -807,13 +807,20 @@ postprocess_llm() {
     lookup_override "$list" "$key" 2>/dev/null || true
   }
 
+  budget_word_count_for_input() {
+    local text="${1:-}"
+    local word_count
+    word_count="$(printf '%s' "$text" | wc -w | tr -d '[:space:]')"
+    [[ "$word_count" =~ ^[0-9]+$ ]] || word_count="0"
+    echo "$word_count"
+  }
+
   budget_profile_for_input() {
     local text="${1:-}"
     local threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}}"
     local word_count
     [[ "$threshold" =~ ^[0-9]+$ ]] || threshold="120"
-    word_count="$(printf '%s' "$text" | wc -w | tr -d '[:space:]')"
-    [[ "$word_count" =~ ^[0-9]+$ ]] || word_count="0"
+    word_count="$(budget_word_count_for_input "$text")"
     if [[ "$word_count" -ge "$threshold" ]]; then
       echo "long"
     else
@@ -831,6 +838,59 @@ postprocess_llm() {
       [[ -n "$val" ]] && { echo "$val"; return 0; }
     fi
     lookup_override_for_mode "$list" "$budget_key" 2>/dev/null || true
+  }
+
+  resolve_budget_numeric_auto() {
+    local list="${1:-}"
+    local mode_key="${2:-}"
+    local global_val="${3:-}"
+    local text="${4:-}"
+    local threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}}"
+    local mode_val short_val long_val fallback_key fallback_val
+    local word_count delta scaled min_val max_val
+
+    if [[ -n "$mode_key" && "$mode_key" != "short" && "$mode_key" != "long" ]]; then
+      mode_val="$(lookup_override_for_mode "$list" "$mode_key" 2>/dev/null || true)"
+      if [[ -n "$mode_val" ]]; then
+        echo "$mode_val"
+        return 0
+      fi
+    fi
+
+    short_val="$(lookup_override_for_mode "$list" "short" 2>/dev/null || true)"
+    long_val="$(lookup_override_for_mode "$list" "long" 2>/dev/null || true)"
+    [[ "$threshold" =~ ^[0-9]+$ ]] || threshold="120"
+    word_count="$(budget_word_count_for_input "$text")"
+
+    if [[ "$short_val" =~ ^[0-9]+$ && "$long_val" =~ ^[0-9]+$ && "$threshold" -gt 0 ]]; then
+      if [[ "$word_count" -ge "$threshold" ]]; then
+        echo "$long_val"
+        return 0
+      fi
+      if [[ "$word_count" -le 0 ]]; then
+        echo "$short_val"
+        return 0
+      fi
+      delta=$(( long_val - short_val ))
+      scaled=$(( short_val + (delta * word_count) / threshold ))
+      if [[ "$short_val" -le "$long_val" ]]; then
+        min_val="$short_val"; max_val="$long_val"
+      else
+        min_val="$long_val"; max_val="$short_val"
+      fi
+      [[ "$scaled" -lt "$min_val" ]] && scaled="$min_val"
+      [[ "$scaled" -gt "$max_val" ]] && scaled="$max_val"
+      echo "$scaled"
+      return 0
+    fi
+
+    if [[ "$word_count" -ge "$threshold" ]]; then
+      fallback_key="long"
+    else
+      fallback_key="short"
+    fi
+    fallback_val="$(lookup_override_for_mode "$list" "$fallback_key" 2>/dev/null || true)"
+    [[ -n "$fallback_val" ]] && echo "$fallback_val" || echo "$global_val"
   }
 
   local llm_model="llama3.1-8b"
@@ -856,14 +916,14 @@ postprocess_llm() {
   if [[ -n "${DICTATE_LLM_MAX_TOKENS:-}" ]]; then
     max_tokens="$DICTATE_LLM_MAX_TOKENS"
   else
-    max_tokens="$(resolve_budget_override "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" "$budget_profile_key" 2>/dev/null || true)"
+    max_tokens="$(resolve_budget_numeric_auto "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" "${CFG_POSTPROCESS_MAX_TOKENS:-}" "$input" 2>/dev/null || true)"
     [[ -z "$max_tokens" ]] && max_tokens="${CFG_POSTPROCESS_MAX_TOKENS:-}"
   fi
 
   if [[ -n "${DICTATE_LLM_CHUNK_WORDS:-}" ]]; then
     chunk_words="$DICTATE_LLM_CHUNK_WORDS"
   else
-    chunk_words="$(resolve_budget_override "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" "$budget_profile_key" 2>/dev/null || true)"
+    chunk_words="$(resolve_budget_numeric_auto "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" "${CFG_POSTPROCESS_CHUNK_WORDS:-}" "$input" 2>/dev/null || true)"
     [[ -z "$chunk_words" ]] && chunk_words="${CFG_POSTPROCESS_CHUNK_WORDS:-}"
   fi
   [[ -z "$chunk_words" ]] && chunk_words="0"
