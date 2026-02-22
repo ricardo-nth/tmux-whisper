@@ -138,12 +138,27 @@ printf '%s\n' "Context: short mode." >"$MODECHECK_CFG/modes/short/prompt"
 printf '%s\n' "Context: long mode." >"$MODECHECK_CFG/modes/long/prompt"
 modecheck_doctor="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper doctor)"
 assert_contains "doctor_modecheck_section" "$modecheck_doctor" "Mode/config:"
-assert_contains "doctor_modecheck_fixed_invalid" "$modecheck_doctor" "mode.current: ghost (invalid, fallback=short)"
-assert_contains "doctor_modecheck_tmux_invalid" "$modecheck_doctor" "tmux.mode: ghost (invalid, fallback=short)"
-assert_contains "doctor_modecheck_fix_mode" "$modecheck_doctor" "Set a valid fixed mode: tmux-whisper mode short"
-assert_contains "doctor_modecheck_fix_tmux" "$modecheck_doctor" "Set tmux mode to a valid mode: tmux-whisper tmux mode short"
+assert_contains "doctor_modecheck_fixed_invalid" "$modecheck_doctor" "mode.current: ghost (invalid, fallback=code)"
+assert_contains "doctor_modecheck_tmux_invalid" "$modecheck_doctor" "tmux.mode: ghost (invalid, fallback=code)"
+assert_contains "doctor_modecheck_fix_mode" "$modecheck_doctor" "Set a valid fixed mode: tmux-whisper mode code"
+assert_contains "doctor_modecheck_fix_tmux" "$modecheck_doctor" "Set tmux mode to a valid mode: tmux-whisper tmux mode code"
 
-# --- Regression 5: integration scripts keep PATH-based command resolution. ---
+# --- Regression 5: postprocess commands clarify mode prompt inactivity when OFF. ---
+modecheck_postprocess_off="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper postprocess off)"
+assert_contains "postprocess_off_prompt_note" "$modecheck_postprocess_off" "Mode prompt: inactive (postprocess OFF)"
+
+modecheck_tmux_postprocess_off="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper tmux postprocess off)"
+assert_contains "tmux_postprocess_off_prompt_note" "$modecheck_tmux_postprocess_off" "tmux mode prompt: inactive (tmux postprocess OFF)"
+
+# --- Regression 6: budget command UX uses budget profile naming. ---
+modecheck_budget_show="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper budget)"
+assert_contains "budget_show_header" "$modecheck_budget_show" "Postprocess budget profiles"
+assert_contains "budget_show_threshold" "$modecheck_budget_show" "auto_long_words_threshold:"
+
+modecheck_budget_threshold="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper budget threshold 42)"
+assert_contains "budget_threshold_set" "$modecheck_budget_threshold" "budget auto_long_words_threshold: 42"
+
+# --- Regression 7: integration scripts keep PATH-based command resolution. ---
 assert_file_contains "raycast_inline_lib_resolution" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" "command -v dictate-lib.sh"
 assert_file_contains "raycast_toggle_dictate_resolution" "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" "command -v tmux-whisper"
 assert_file_contains "swiftbar_dictate_resolution" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "command -v tmux-whisper"
@@ -156,7 +171,7 @@ assert_file_contains "raycast_toggle_binary_notice" "$ROOT/integrations/raycast/
 assert_file_contains "swiftbar_missing_binary_notice" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "Tmux Whisper binary not found | color=red"
 assert_file_contains "swiftbar_enabled_config_parse" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "integrations.swiftbar.enabled"
 
-# --- Regression 6: script-level behavior for missing tmux-whisper binary is explicit. ---
+# --- Regression 8: script-level behavior for missing tmux-whisper binary is explicit. ---
 TOGGLE_HOME="$TMP_ROOT/home-toggle"
 mkdir -p "$TOGGLE_HOME"
 toggle_out="$(HOME="$TOGGLE_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" 2>&1 || true)"
@@ -167,7 +182,7 @@ mkdir -p "$SWIFTBAR_HOME"
 swiftbar_out="$(HOME="$SWIFTBAR_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_missing_binary_runtime" "$swiftbar_out" "Tmux Whisper binary not found"
 
-# --- Regression 7: SwiftBar runtime integration toggle works end-to-end. ---
+# --- Regression 9: SwiftBar runtime integration toggle works end-to-end. ---
 SWIFTBAR_TOGGLE_HOME="$TMP_ROOT/home-swiftbar-toggle"
 SWIFTBAR_TOGGLE_BIN="$SWIFTBAR_TOGGLE_HOME/.local/bin"
 SWIFTBAR_TOGGLE_CFG="$SWIFTBAR_TOGGLE_HOME/.config/dictate"
@@ -199,7 +214,155 @@ swiftbar_toggle_out="$(HOME="$SWIFTBAR_TOGGLE_HOME" XDG_CONFIG_HOME="$SWIFTBAR_T
 assert_contains "swiftbar_plugin_off_state" "$swiftbar_toggle_out" "SwiftBar integration: OFF"
 assert_contains "swiftbar_plugin_off_enable_action" "$swiftbar_toggle_out" "Enable SwiftBar integration"
 
-# --- Regression 8: vocab import/export/dedupe safety behavior remains stable. ---
+# --- Regression 10: SwiftBar mode menus are folder-driven and respect flow filters. ---
+SWIFTBAR_MODES_HOME="$TMP_ROOT/home-swiftbar-modes"
+SWIFTBAR_MODES_BIN="$SWIFTBAR_MODES_HOME/.local/bin"
+SWIFTBAR_MODES_CFG="$SWIFTBAR_MODES_HOME/.config/dictate"
+mkdir -p "$SWIFTBAR_MODES_BIN" "$SWIFTBAR_MODES_CFG/modes/short" "$SWIFTBAR_MODES_CFG/modes/email" "$SWIFTBAR_MODES_CFG/modes/long"
+cp "$ROOT/bin/tmux-whisper" "$SWIFTBAR_MODES_BIN/tmux-whisper"
+cp "$ROOT/bin/dictate-lib.sh" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
+chmod +x "$SWIFTBAR_MODES_BIN/tmux-whisper" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
+cat >"$SWIFTBAR_MODES_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[integrations.swiftbar]
+enabled = true
+EOF
+printf '%s\n' "short" >"$SWIFTBAR_MODES_CFG/current-mode"
+printf '%s\n' "Context: code mode." >"$SWIFTBAR_MODES_CFG/modes/short/prompt"
+printf '%s\n' "tmux" "inline" >"$SWIFTBAR_MODES_CFG/modes/short/flows"
+printf '%s\n' "Context: email mode." >"$SWIFTBAR_MODES_CFG/modes/email/prompt"
+printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/email/flows"
+printf '%s\n' "Context: long mode." >"$SWIFTBAR_MODES_CFG/modes/long/prompt"
+printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/long/flows"
+
+swiftbar_modes_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_inline_menu_email" "$swiftbar_modes_out" "param1=mode param2=email"
+assert_contains "swiftbar_tmux_menu_code" "$swiftbar_modes_out" "param1=tmux param2=mode param3=code"
+assert_not_contains "swiftbar_tmux_menu_email_hidden" "$swiftbar_modes_out" "param1=tmux param2=mode param3=email"
+assert_not_contains "swiftbar_tmux_menu_long_hidden" "$swiftbar_modes_out" "param1=tmux param2=mode param3=long"
+
+# --- Regression 11: budget profile auto-selection is based on transcript length, not mode name. ---
+BUDGET_HOME="$TMP_ROOT/home-budget"
+BUDGET_BIN="$BUDGET_HOME/.local/bin"
+BUDGET_CFG="$BUDGET_HOME/.config/dictate"
+BUDGET_STUBS="$TMP_ROOT/budget-stubs"
+mkdir -p "$BUDGET_BIN" "$BUDGET_CFG/modes/short" "$BUDGET_CFG/modes/long" "$BUDGET_STUBS"
+cp "$ROOT/bin/tmux-whisper" "$BUDGET_BIN/tmux-whisper"
+cp "$ROOT/bin/dictate-lib.sh" "$BUDGET_BIN/dictate-lib.sh"
+chmod +x "$BUDGET_BIN/tmux-whisper" "$BUDGET_BIN/dictate-lib.sh"
+cat >"$BUDGET_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[postprocess]
+llm = "gpt-oss-120b"
+max_tokens = 1111
+chunk_words = 0
+
+[postprocess.budget_profiles.short]
+max_tokens = 2222
+chunk_words = 0
+
+[postprocess.budget_profiles.long]
+max_tokens = 5555
+chunk_words = 0
+EOF
+printf '%s\n' "Context: code mode." >"$BUDGET_CFG/modes/short/prompt"
+printf '%s\n' "Context: long mode." >"$BUDGET_CFG/modes/long/prompt"
+
+cat >"$BUDGET_STUBS/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+payload=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d)
+      payload="${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [[ -n "${DICTATE_TEST_CURL_DUMP:-}" ]]; then
+  printf '%s' "$payload" >"$DICTATE_TEST_CURL_DUMP"
+fi
+printf '%s\n' '{"choices":[{"message":{"content":"processed"}}]}'
+EOF
+chmod +x "$BUDGET_STUBS/curl"
+
+cat >"$BUDGET_STUBS/jq" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "-Rs" && "${2:-}" == "." ]]; then
+  python3 - <<'PY'
+import json, sys
+print(json.dumps(sys.stdin.read()))
+PY
+  exit 0
+fi
+if [[ "${1:-}" == "-r" ]]; then
+  filter="${2:-}"
+  python3 - "$filter" <<'PY'
+import json, sys
+flt = sys.argv[1]
+raw = sys.stdin.read().strip()
+if not raw:
+    print("")
+    raise SystemExit(0)
+try:
+    data = json.loads(raw)
+except Exception:
+    print("")
+    raise SystemExit(0)
+if flt == '.choices[0].message.content // empty':
+    out = ""
+    try:
+        out = data["choices"][0]["message"]["content"] or ""
+    except Exception:
+        out = ""
+    print(out)
+    raise SystemExit(0)
+if flt == '.error.message // .error // empty':
+    err = data.get("error", "")
+    if isinstance(err, dict):
+        print(err.get("message", "") or "")
+    elif isinstance(err, str):
+        print(err)
+    else:
+        print("")
+    raise SystemExit(0)
+print("")
+PY
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$BUDGET_STUBS/jq"
+
+cat >"$BUDGET_STUBS/pbcopy" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+EOF
+chmod +x "$BUDGET_STUBS/pbcopy"
+
+BUDGET_CURL_DUMP="$TMP_ROOT/budget-curl.json"
+long_text="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour twentyfive twentysix twentyseven twentyeight twentynine thirty"
+budget_replay_out="$(HOME="$BUDGET_HOME" PATH="$BUDGET_STUBS:$BUDGET_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BUDGET_CFG" DICTATE_CONFIG_FILE="$BUDGET_CFG/config.toml" CEREBRAS_API_KEY=test-key DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD=20 DICTATE_TEST_CURL_DUMP="$BUDGET_CURL_DUMP" tmux-whisper replay code "$long_text")"
+assert_contains "budget_replay_runs" "$budget_replay_out" "Re-processing with short mode"
+assert_file_contains "budget_profile_auto_long_max_tokens" "$BUDGET_CURL_DUMP" '"max_tokens": 5555'
+
+# --- Regression 12: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"
 VOCAB_BIN="$VOCAB_HOME/.local/bin"
 VOCAB_CFG="$VOCAB_HOME/.config/dictate"
@@ -232,7 +395,7 @@ assert_contains "vocab_dedupe_backup_line" "$dedupe_out" "Backup: "
 dedupe_backup="$(printf "%s\n" "$dedupe_out" | sed -n 's/^Backup: //p' | head -n 1)"
 assert_file_exists "vocab_dedupe_backup_exists" "$dedupe_backup"
 
-# --- Regression 9: bench-matrix UX checks are stable. ---
+# --- Regression 13: bench-matrix UX checks are stable. ---
 BENCH_HOME="$TMP_ROOT/home-bench"
 BENCH_BIN="$BENCH_HOME/.local/bin"
 BENCH_CFG="$BENCH_HOME/.config/dictate"

@@ -228,7 +228,17 @@ load_audio_resolution_cache() {
 canonical_mode_name() {
   local m="${1:-}"
   case "$m" in
+    code) echo "short" ;;
     "") echo "short" ;;
+    *) echo "$m" ;;
+  esac
+}
+
+mode_display_name() {
+  local m
+  m="$(canonical_mode_name "${1:-}")"
+  case "$m" in
+    short) echo "code" ;;
     *) echo "$m" ;;
   esac
 }
@@ -237,6 +247,46 @@ mode_to_dir_name() {
   local m
   m="$(canonical_mode_name "${1:-}")"
   echo "$m"
+}
+
+mode_allows_flow() {
+  local mode flow flows_file line saw_entries
+  mode="$(canonical_mode_name "${1:-}")"
+  flow="${2:-}"
+  [[ -n "$mode" ]] || return 1
+  [[ -z "$flow" ]] && return 0
+
+  flows_file="$CONFIG_DIR/modes/$(mode_to_dir_name "$mode")/flows"
+  [[ -f "$flows_file" ]] || return 0
+
+  saw_entries="0"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [[ -n "$line" ]] || continue
+    saw_entries="1"
+    case "$line" in
+      all|both) return 0 ;;
+      tmux|inline)
+        [[ "$line" == "$flow" ]] && return 0
+        ;;
+    esac
+  done < "$flows_file"
+
+  [[ "$saw_entries" == "0" ]]
+}
+
+list_modes_for_flow() {
+  local flow="${1:-}"
+  local mode_dir mode_name
+  for mode_dir in "$CONFIG_DIR/modes"/*/; do
+    [[ -d "$mode_dir" ]] || continue
+    mode_name="$(basename "$mode_dir")"
+    mode_name="$(canonical_mode_name "$mode_name")"
+    [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode_name")" ]] || continue
+    mode_allows_flow "$mode_name" "$flow" || continue
+    printf '%s\n' "$mode_name"
+  done | sort -u
 }
 
 normalize_mode_name() {
@@ -267,33 +317,35 @@ mode_exists() {
 emit_inline_modes_menu() {
   local current_mode
   current_mode="$(normalize_mode_name "${1:-short}")"
+  local current_mode_display
+  current_mode_display="$(mode_display_name "$current_mode")"
   local mode_name
-  for mode_name in short long; do
-    mode_exists "$mode_name" || continue
-    if [[ "$mode_name" == "$current_mode" ]]; then
+  while IFS= read -r mode_name; do
+    [[ -n "$mode_name" ]] || continue
+    mode_name="$(mode_display_name "$mode_name")"
+    if [[ "$mode_name" == "$current_mode_display" ]]; then
       echo "-- ✓ $mode_name | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
     else
       echo "-- $mode_name | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
     fi
-  done
+  done < <(list_modes_for_flow "inline")
 }
 
 emit_tmux_modes_menu() {
   local current_mode
   current_mode="$(normalize_mode_name "${1:-short}")"
-  case "$current_mode" in
-    short|long) ;;
-    *) current_mode="short" ;;
-  esac
+  local current_mode_display
+  current_mode_display="$(mode_display_name "$current_mode")"
   local mode_name
-  for mode_name in short long; do
-    mode_exists "$mode_name" || continue
-    if [[ "$mode_name" == "$current_mode" ]]; then
+  while IFS= read -r mode_name; do
+    [[ -n "$mode_name" ]] || continue
+    mode_name="$(mode_display_name "$mode_name")"
+    if [[ "$mode_name" == "$current_mode_display" ]]; then
       echo "-- ✓ $mode_name | bash=$DICTATE_BIN param1=tmux param2=mode param3=$mode_name terminal=false refresh=true"
     else
       echo "-- $mode_name | bash=$DICTATE_BIN param1=tmux param2=mode param3=$mode_name terminal=false refresh=true"
     fi
-  done
+  done < <(list_modes_for_flow "tmux")
 }
 
 # Count active processing jobs
@@ -472,7 +524,7 @@ saved_mode="$(read_saved_mode)"
 
 # Determine mode icon display
 current_mode_icon="$(mode_icon "$saved_mode")"
-mode_display="$saved_mode"
+mode_display="$(mode_display_name "$saved_mode")"
 
 # Check if recording (either tmux or inline mode)
 if [[ -f "$STATE_FILE" ]] || [[ -f "$INLINE_STATE" ]]; then

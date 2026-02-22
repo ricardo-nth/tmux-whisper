@@ -445,6 +445,7 @@ Attempted to speed up transcription by implementing a persistent daemon that kee
 - [ ] Tune whisper decode defaults (`threads` / `beam_size` / `best_of`) using benchmark data, not intuition.
 - [x] Add a `dictate bench-matrix` command (`model × postprocess × vocab_clean`) to compare speed + output quality on a fixed phrase set.
 - [x] Add explicit `short` vs `long` postprocess profiles (mode-specific LLM/token/chunk defaults).
+- [ ] Evolve budget handling to `budget auto` (dynamic transcript-length-aware sizing for `max_tokens` / `chunk_words`), with `short` / `long` budget profiles kept as internal guardrails/presets.
 - [x] Improve vocab workflow: bulk import/batch add and easier correction review from recent history.
 - [ ] Add a lightweight session dashboard/TUI (Bubble Tea candidate) to summarize usage (sessions, words processed, postprocess/tokens, time saved trends) from recent history/bench data.
 - [ ] Package/install polish: bootstrap/update scripts + docs for reproducible setup across machines.

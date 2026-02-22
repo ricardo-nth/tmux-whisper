@@ -91,17 +91,17 @@ LLM POST-PROCESSING (Cerebras API):
   tmux-whisper llm smart          # llama-3.3-70b (~2100 t/s)
   tmux-whisper llm qwen           # qwen-3-32b (~2600 t/s)
   tmux-whisper llm gpt            # gpt-oss-120b (~3000 t/s, default)
-  tmux-whisper llm <mode> <llm>   # per-mode override (e.g., "tmux-whisper llm short smart")
-  tmux-whisper profile            # show short/long postprocess profiles (effective)
-  tmux-whisper profile <mode>     # show one profile (short or long)
-  tmux-whisper profile <mode> llm fast|smart|qwen|gpt|<id>
-  tmux-whisper profile <mode> max_tokens <n>
-  tmux-whisper profile <mode> chunk_words <n>
-  tmux-whisper profile <mode> clear # remove mode-specific overrides
+  tmux-whisper llm <mode> <llm>   # per-mode override (e.g., "tmux-whisper llm code smart")
+  tmux-whisper budget             # show short/long budget profiles (effective)
+  tmux-whisper budget <profile>   # show one budget profile (short or long)
+  tmux-whisper budget <profile> llm fast|smart|qwen|gpt|<id>
+  tmux-whisper budget <profile> max_tokens <n>
+  tmux-whisper budget <profile> chunk_words <n>
+  tmux-whisper budget <profile> clear # remove budget-profile overrides
 
 MODES (context-aware prompts):
   tmux-whisper mode               # show current mode + list all
-  tmux-whisper mode short         # short cleanup mode (default)
+  tmux-whisper mode code          # coding cleanup mode (default)
   tmux-whisper mode long          # long-form cleanup mode
   tmux-whisper mode email         # email mode (formal, professional)
   tmux-whisper mode chat          # chat mode (casual, minimal intervention)
@@ -141,7 +141,7 @@ TMUX OPTIONS:
   tmux-whisper tmux postprocess on|off # tmux: LLM cleanup toggle
   tmux-whisper tmux process-sound on|off # tmux: play processing SFX before transcribe
   tmux-whisper tmux send-mode auto|enter|codex # tmux autosend strategy
-  tmux-whisper tmux mode <name>   # tmux: force mode for postprocess (default: short)
+  tmux-whisper tmux mode <name>   # tmux: force mode for postprocess (default: code)
   tmux-whisper tmux model <name>  # tmux: whisper model (default: base)
 
 KEYBINDS (reference for display in SwiftBar):
@@ -389,13 +389,15 @@ enabled = true
 llm = "gpt-oss-120b"
 max_tokens = 3000
 chunk_words = 700
+budget_long_words_threshold = 120
 
-[postprocess.mode_overrides.short]
+# Budget profiles for transcript-length-aware auto sizing (not content modes).
+[postprocess.budget_profiles.short]
 llm = "gpt-oss-120b"
 max_tokens = 2000
 chunk_words = 700
 
-[postprocess.mode_overrides.long]
+[postprocess.budget_profiles.long]
 llm = "gpt-oss-120b"
 max_tokens = 5200
 chunk_words = 1000
@@ -509,9 +511,11 @@ out = {
   "CFG_POSTPROCESS_LLM": str(get("postprocess.llm", "llama3.1-8b")),
   "CFG_POSTPROCESS_MAX_TOKENS": str(get("postprocess.max_tokens", "")),
   "CFG_POSTPROCESS_CHUNK_WORDS": str(get("postprocess.chunk_words", "")),
+  "CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD": str(get("postprocess.budget_long_words_threshold", "120")),
   "CFG_POSTPROCESS_MODE_LLM_OVERRIDES": "",
-  "CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES": "",
-  "CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES": "",
+  "CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES": "",
+  "CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES": "",
+  "CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES": "",
   "CFG_INLINE_AUTOSEND": "1" if b(get("inline.autosend", True), True) else "0",
   "CFG_INLINE_PASTE_TARGET": str(get("inline.paste_target", "restore")),
   "CFG_INLINE_SEND_MODE": str(get("inline.send_mode", "enter")),
@@ -529,26 +533,34 @@ out = {
   "CFG_CLEAN_REPEATS_LEVEL": str(get("clean.repeats_level", "1")),
 }
 
-mode_overrides = get("postprocess.mode_overrides", {}) or {}
-if isinstance(mode_overrides, dict):
-  llm_parts = []
-  max_parts = []
-  chunk_parts = []
-  for mode, d in mode_overrides.items():
+mode_llm_overrides = get("postprocess.mode_llm_overrides", {}) or {}
+if isinstance(mode_llm_overrides, dict):
+  mode_llm_parts = []
+  for mode, llm in mode_llm_overrides.items():
+    if isinstance(llm, str) and llm.strip():
+      mode_llm_parts.append(f"{mode}={llm.strip()}")
+  out["CFG_POSTPROCESS_MODE_LLM_OVERRIDES"] = ";".join(sorted(mode_llm_parts))
+
+budget_profiles = get("postprocess.budget_profiles", {}) or {}
+if isinstance(budget_profiles, dict):
+  budget_llm_parts = []
+  budget_max_parts = []
+  budget_chunk_parts = []
+  for profile, d in budget_profiles.items():
     if not isinstance(d, dict):
       continue
     llm = d.get("llm")
     if isinstance(llm, str) and llm.strip():
-      llm_parts.append(f"{mode}={llm.strip()}")
+      budget_llm_parts.append(f"{profile}={llm.strip()}")
     mt = d.get("max_tokens")
     if isinstance(mt, int):
-      max_parts.append(f"{mode}={mt}")
+      budget_max_parts.append(f"{profile}={mt}")
     cw = d.get("chunk_words")
     if isinstance(cw, int):
-      chunk_parts.append(f"{mode}={cw}")
-  out["CFG_POSTPROCESS_MODE_LLM_OVERRIDES"] = ";".join(sorted(llm_parts))
-  out["CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES"] = ";".join(sorted(max_parts))
-  out["CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES"] = ";".join(sorted(chunk_parts))
+      budget_chunk_parts.append(f"{profile}={cw}")
+  out["CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES"] = ";".join(sorted(budget_llm_parts))
+  out["CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES"] = ";".join(sorted(budget_max_parts))
+  out["CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES"] = ";".join(sorted(budget_chunk_parts))
 
 for k, v in out.items():
   print(f"{k}={shlex.quote(v)}")
@@ -749,6 +761,7 @@ debug() {
   echo "  postprocess.llm=${CFG_POSTPROCESS_LLM:-}"
   echo "  postprocess.max_tokens=${CFG_POSTPROCESS_MAX_TOKENS:-}"
   echo "  postprocess.chunk_words=${CFG_POSTPROCESS_CHUNK_WORDS:-}"
+  echo "  postprocess.budget_long_words_threshold=${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
   echo "  inline.autosend=${CFG_INLINE_AUTOSEND:-1}"
       echo "  inline.paste_target=$(inline_paste_target_label "${CFG_INLINE_PASTE_TARGET:-restore}")"
       echo "  inline.send_mode=$(inline_send_mode_label "${CFG_INLINE_SEND_MODE:-enter}")"
@@ -917,50 +930,59 @@ doctor() {
     if [[ -z "$fixed_mode_raw" ]]; then
       fixed_mode="short"
       warnings=$((warnings + 1))
-      echo "  - mode.current: <empty> (invalid, fallback=short)"
-      add_suggestion "Set a valid fixed mode: tmux-whisper mode short"
+      echo "  - mode.current: <empty> (invalid, fallback=code)"
+      add_suggestion "Set a valid fixed mode: tmux-whisper mode code"
     elif [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$fixed_mode_raw")" ]]; then
       fixed_mode="$(canonical_mode_name "$fixed_mode_raw")"
-      echo "  - mode.current: $fixed_mode (fixed)"
+      echo "  - mode.current: $(mode_display_name "$fixed_mode") (fixed)"
     else
       fixed_mode="short"
       warnings=$((warnings + 1))
-      echo "  - mode.current: $fixed_mode_raw (invalid, fallback=short)"
-      add_suggestion "Set a valid fixed mode: tmux-whisper mode short"
+      echo "  - mode.current: $fixed_mode_raw (invalid, fallback=code)"
+      add_suggestion "Set a valid fixed mode: tmux-whisper mode code"
       add_suggestion "Or create the missing mode: tmux-whisper mode create \"$fixed_mode_raw\""
     fi
   else
     fixed_mode="$(get_current_mode 2>/dev/null || true)"
     [[ -n "$fixed_mode" ]] || fixed_mode="short"
-    echo "  - mode.current: $fixed_mode (auto-detect)"
+    echo "  - mode.current: $(mode_display_name "$fixed_mode") (auto-detect)"
   fi
 
   local tmux_mode_raw tmux_mode
   tmux_mode_raw="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
   tmux_mode="$(canonical_mode_name "$tmux_mode_raw")"
   if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$tmux_mode")" ]]; then
-    echo "  - tmux.mode: $tmux_mode (ok)"
+    echo "  - tmux.mode: $(mode_display_name "$tmux_mode") (ok)"
   else
     warnings=$((warnings + 1))
-    echo "  - tmux.mode: $tmux_mode_raw (invalid, fallback=short)"
-    add_suggestion "Set tmux mode to a valid mode: tmux-whisper tmux mode short"
+    echo "  - tmux.mode: $tmux_mode_raw (invalid, fallback=code)"
+    add_suggestion "Set tmux mode to a valid mode: tmux-whisper tmux mode code"
   fi
 
-  local required_mode required_prompt
-  for required_mode in short long; do
-    required_prompt="$DICTATE_CONFIG_DIR/modes/$required_mode/prompt"
+  local required_mode required_prompt required_mode_label any_modes_present
+  any_modes_present="0"
+  while IFS= read -r required_mode; do
+    [[ -n "$required_mode" ]] || continue
+    any_modes_present="1"
+    required_prompt="$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$required_mode")/prompt"
+    required_mode_label="$(mode_display_name "$required_mode")"
     if [[ -s "$required_prompt" ]]; then
       echo "  - mode.$required_mode.prompt: ok"
     elif [[ -f "$required_prompt" ]]; then
       warnings=$((warnings + 1))
       echo "  - mode.$required_mode.prompt: empty"
-      add_suggestion "Populate $required_mode prompt: tmux-whisper mode edit $required_mode"
+      add_suggestion "Populate $required_mode_label prompt: tmux-whisper mode edit $required_mode_label"
     else
       warnings=$((warnings + 1))
       echo "  - mode.$required_mode.prompt: missing"
       add_suggestion "Repair mode defaults: ./install.sh --force"
     fi
-  done
+  done < <(list_modes "")
+  if [[ "$any_modes_present" != "1" ]]; then
+    warnings=$((warnings + 1))
+    echo "  - modes: none found in $DICTATE_CONFIG_DIR/modes"
+    add_suggestion "Repair mode defaults: ./install.sh --force"
+  fi
   echo ""
 
   echo "Models:"
@@ -1456,7 +1478,17 @@ config_load
 canonical_mode_name() {
   local m="${1:-}"
   case "$m" in
+    code) echo "short" ;;
     "") echo "short" ;;
+    *) echo "$m" ;;
+  esac
+}
+
+mode_display_name() {
+  local m
+  m="$(canonical_mode_name "${1:-}")"
+  case "$m" in
+    short) echo "code" ;;
     *) echo "$m" ;;
   esac
 }
@@ -1473,14 +1505,73 @@ mode_override_key() {
   echo "$m"
 }
 
+mode_exists() {
+  local mode
+  mode="$(canonical_mode_name "${1:-}")"
+  [[ -n "$mode" ]] || return 1
+  [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]
+}
+
+mode_allows_flow() {
+  local mode flow flows_file line saw_entries
+  mode="$(canonical_mode_name "${1:-}")"
+  flow="${2:-}"
+  [[ -n "$mode" ]] || return 1
+  [[ -z "$flow" ]] && return 0
+
+  flows_file="$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode")/flows"
+  [[ -f "$flows_file" ]] || return 0
+
+  saw_entries="0"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [[ -n "$line" ]] || continue
+    saw_entries="1"
+    case "$line" in
+      all|both) return 0 ;;
+      tmux|inline)
+        [[ "$line" == "$flow" ]] && return 0
+        ;;
+    esac
+  done < "$flows_file"
+
+  # Empty/comment-only flows files behave like "all" for portability.
+  [[ "$saw_entries" == "0" ]]
+}
+
+list_modes() {
+  local flow="${1:-}"
+  local mode_dir mode_name
+  for mode_dir in "$DICTATE_CONFIG_DIR/modes"/*/; do
+    [[ -d "$mode_dir" ]] || continue
+    mode_name="$(basename "$mode_dir")"
+    mode_name="$(canonical_mode_name "$mode_name")"
+    mode_exists "$mode_name" || continue
+    mode_allows_flow "$mode_name" "$flow" || continue
+    printf '%s\n' "$mode_name"
+  done | sort -u
+}
+
+first_mode_for_flow() {
+  local flow="${1:-}"
+  if mode_exists "short" && mode_allows_flow "short" "$flow"; then
+    echo "short"
+    return 0
+  fi
+  local first
+  first="$(list_modes "$flow" | head -n 1)"
+  [[ -n "$first" ]] && echo "$first" || echo "short"
+}
+
 normalize_mode_name() {
   local mode
   mode="$(canonical_mode_name "${1:-}")"
   [[ -z "$mode" ]] && mode="short"
-  if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]; then
+  if mode_exists "$mode"; then
     echo "$mode"
   else
-    echo "short"
+    first_mode_for_flow ""
   fi
 }
 
@@ -1499,6 +1590,7 @@ detect_mode() {
     local mode_name="$(basename "$mode_dir")"
     local apps_file="$mode_dir/apps"
     [[ -f "$apps_file" ]] || continue
+    mode_allows_flow "$mode_name" "inline" || continue
     
     # Check if app matches any line in the apps file (case-insensitive)
     if grep -iq "^${app}$" "$apps_file" 2>/dev/null; then
@@ -1508,7 +1600,7 @@ detect_mode() {
   done
   
   # Default to short mode
-  echo "short"
+  first_mode_for_flow "inline"
 }
 
 # Get current mode (from file, then app-detect fallback)
@@ -2345,6 +2437,7 @@ postprocess_llm() {
   current_mode="$(get_current_mode "$target_app")"
   local current_mode_key
   current_mode_key="$(mode_override_key "$current_mode")"
+  local budget_profile_key
   
   lookup_override() {
     local list="${1:-}"
@@ -2365,13 +2458,44 @@ postprocess_llm() {
     lookup_override "$list" "$key" 2>/dev/null || true
   }
 
+  budget_profile_for_input() {
+    local text="${1:-}"
+    local threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}}"
+    local word_count
+    [[ "$threshold" =~ ^[0-9]+$ ]] || threshold="120"
+    word_count="$(printf '%s' "$text" | wc -w | tr -d '[:space:]')"
+    [[ "$word_count" =~ ^[0-9]+$ ]] || word_count="0"
+    if [[ "$word_count" -ge "$threshold" ]]; then
+      echo "long"
+    else
+      echo "short"
+    fi
+  }
+
+  resolve_budget_override() {
+    local list="${1:-}"
+    local mode_key="${2:-}"
+    local budget_key="${3:-}"
+    local val=""
+    # Preserve custom mode-specific budget overrides if users define them.
+    if [[ -n "$mode_key" && "$mode_key" != "short" && "$mode_key" != "long" ]]; then
+      val="$(lookup_override_for_mode "$list" "$mode_key" 2>/dev/null || true)"
+      [[ -n "$val" ]] && { echo "$val"; return 0; }
+    fi
+    lookup_override_for_mode "$list" "$budget_key" 2>/dev/null || true
+  }
+
   local llm_model="llama3.1-8b"
   [[ -n "${CFG_POSTPROCESS_LLM:-}" ]] && llm_model="$CFG_POSTPROCESS_LLM"
+  budget_profile_key="$(budget_profile_for_input "$input")"
   if [[ -n "${DICTATE_LLM_MODEL:-}" ]]; then
     llm_model="$DICTATE_LLM_MODEL"
   else
     local llm_override=""
     llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$current_mode_key" 2>/dev/null || true)"
+    if [[ -z "$llm_override" ]]; then
+      llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "$budget_profile_key" 2>/dev/null || true)"
+    fi
     [[ -n "$llm_override" ]] && llm_model="$llm_override"
   fi
 
@@ -2383,14 +2507,14 @@ postprocess_llm() {
   if [[ -n "${DICTATE_LLM_MAX_TOKENS:-}" ]]; then
     max_tokens="$DICTATE_LLM_MAX_TOKENS"
   else
-    max_tokens="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$current_mode_key" 2>/dev/null || true)"
+    max_tokens="$(resolve_budget_override "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "$current_mode_key" "$budget_profile_key" 2>/dev/null || true)"
     [[ -z "$max_tokens" ]] && max_tokens="${CFG_POSTPROCESS_MAX_TOKENS:-}"
   fi
 
   if [[ -n "${DICTATE_LLM_CHUNK_WORDS:-}" ]]; then
     chunk_words="$DICTATE_LLM_CHUNK_WORDS"
   else
-    chunk_words="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$current_mode_key" 2>/dev/null || true)"
+    chunk_words="$(resolve_budget_override "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "$current_mode_key" "$budget_profile_key" 2>/dev/null || true)"
     [[ -z "$chunk_words" ]] && chunk_words="${CFG_POSTPROCESS_CHUNK_WORDS:-}"
   fi
   [[ -z "$chunk_words" ]] && chunk_words="0"
@@ -3112,14 +3236,8 @@ stop() {
     do_postprocess="$(resolve_tmux_postprocess_effective)"
     local tmux_mode="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
     tmux_mode="$(canonical_mode_name "$tmux_mode")"
-    case "$tmux_mode" in
-      short|long) ;;
-      *)
-        tmux_mode="short"
-        ;;
-    esac
-    if [[ ! -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$tmux_mode")" ]]; then
-      tmux_mode="short"
+    if ! mode_exists "$tmux_mode" || ! mode_allows_flow "$tmux_mode" "tmux"; then
+      tmux_mode="$(first_mode_for_flow "tmux")"
     fi
 
     local txt
@@ -3707,18 +3825,16 @@ status() {
 
   local mode_inline
   mode_inline="$(canonical_mode_name "$(get_current_mode)")"
-  case "$mode_inline" in
-    short|long|base|email|chat|linkedin|twitter) ;;
-    *) mode_inline="short" ;;
-  esac
+  if ! mode_exists "$mode_inline"; then
+    mode_inline="$(first_mode_for_flow "inline")"
+  fi
 
   local mode_tmux_raw mode_tmux
   mode_tmux_raw="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
   mode_tmux="$(canonical_mode_name "$mode_tmux_raw")"
-  case "$mode_tmux" in
-    short|long) ;;
-    *) mode_tmux="short" ;;
-  esac
+  if ! mode_exists "$mode_tmux" || ! mode_allows_flow "$mode_tmux" "tmux"; then
+    mode_tmux="$(first_mode_for_flow "tmux")"
+  fi
 
   local model_inline_id model_inline_label
   model_inline_id="${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-base}}"
@@ -3798,14 +3914,14 @@ status() {
     [[ -n "$value" ]] && echo "$value"
   }
 
-  local profile_short_llm profile_short_max profile_short_chunk
-  local profile_long_llm profile_long_max profile_long_chunk
-  profile_short_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "short" 2>/dev/null || true)"
-  profile_short_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "short" 2>/dev/null || true)"
-  profile_short_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "short" 2>/dev/null || true)"
-  profile_long_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "long" 2>/dev/null || true)"
-  profile_long_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "long" 2>/dev/null || true)"
-  profile_long_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "long" 2>/dev/null || true)"
+  local budget_short_llm budget_short_max budget_short_chunk
+  local budget_long_llm budget_long_max budget_long_chunk
+  budget_short_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  budget_short_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  budget_short_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "short" 2>/dev/null || true)"
+  budget_long_llm="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "long" 2>/dev/null || true)"
+  budget_long_max="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "long" 2>/dev/null || true)"
+  budget_long_chunk="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "long" 2>/dev/null || true)"
 
   local audio_name audio_idx audio_src audio_source_mode
   audio_source_mode="$(normalize_audio_source "${DICTATE_AUDIO_SOURCE:-${CFG_AUDIO_SOURCE:-auto}}")"
@@ -3849,22 +3965,33 @@ status() {
 
   echo ""
   echo "Effective settings:"
-  echo "  mode.inline: $mode_inline"
-  echo "  mode.tmux: $mode_tmux"
+  echo "  mode.inline: $(mode_display_name "$mode_inline")"
+  echo "  mode.tmux: $(mode_display_name "$mode_tmux")"
   echo "  model.inline: $model_inline_id ($model_inline_label)"
   echo "  model.tmux: $model_tmux_id ($model_tmux_label)"
   echo "  whisper.threads/beam/best_of: ${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}/${DICTATE_BEAM_SIZE:-${CFG_WHISPER_BEAM_SIZE:-1}}/${DICTATE_BEST_OF:-${CFG_WHISPER_BEST_OF:-1}}"
   echo "  language: ${DICTATE_LANGUAGE:-en}"
   echo "  postprocess.inline: $(onoff "$post_inline")"
   echo "  postprocess.tmux: $(onoff "$post_tmux")"
+  if [[ "$post_inline" == "1" ]]; then
+    echo "  mode_prompt.inline: active"
+  else
+    echo "  mode_prompt.inline: inactive (postprocess not active)"
+  fi
+  if [[ "$post_tmux" == "1" ]]; then
+    echo "  mode_prompt.tmux: active"
+  else
+    echo "  mode_prompt.tmux: inactive (postprocess not active)"
+  fi
   if [[ "$cerebras_key_set" != "1" && ( "$post_inline_requested" == "1" || "$post_tmux_requested" == "1" ) ]]; then
     echo "  postprocess.note: disabled at runtime (CEREBRAS_API_KEY missing)"
   fi
   echo "  llm: $llm_model"
   [[ -n "$llm_max_tokens" ]] && echo "  llm.max_tokens: $llm_max_tokens"
   [[ -n "$llm_chunk_words" ]] && echo "  llm.chunk_words: $llm_chunk_words"
-  echo "  profile.short: llm=${profile_short_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_short_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_short_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
-  echo "  profile.long: llm=${profile_long_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${profile_long_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${profile_long_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
+  echo "  budget.auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
+  echo "  budget_profile.short: llm=${budget_short_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${budget_short_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${budget_short_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
+  echo "  budget_profile.long: llm=${budget_long_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}} max_tokens=${budget_long_max:-${CFG_POSTPROCESS_MAX_TOKENS:-<unset>}} chunk_words=${budget_long_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-<unset>}}"
   echo "  british_spelling: $(onoff "${DICTATE_BRITISH_SPELLING:-1}")"
   echo "  clean.regex: $(onoff "$clean_enabled")"
   echo "  clean.repeats_level: $repeats_level"
@@ -3969,10 +4096,26 @@ set_model() {
 set_postprocess() {
   local val="${1:-}"
   case "$val" in
-    on|1)  config_set "postprocess.enabled" "bool" "true";  config_load; echo "Post-processing: ON (Cerebras)" ;;
-    off|0) config_set "postprocess.enabled" "bool" "false"; config_load; echo "Post-processing: OFF" ;;
+    on|1)
+      config_set "postprocess.enabled" "bool" "true"
+      config_load
+      echo "Post-processing: ON (Cerebras)"
+      echo "Mode prompt: active when postprocess runs"
+      ;;
+    off|0)
+      config_set "postprocess.enabled" "bool" "false"
+      config_load
+      echo "Post-processing: OFF"
+      echo "Mode prompt: inactive (postprocess OFF)"
+      ;;
     "")
-      [[ "${CFG_POSTPROCESS_ENABLED:-0}" == "1" ]] && echo "Post-processing: ON" || echo "Post-processing: OFF"
+      if [[ "${CFG_POSTPROCESS_ENABLED:-0}" == "1" ]]; then
+        echo "Post-processing: ON"
+        echo "Mode prompt: active when postprocess runs"
+      else
+        echo "Post-processing: OFF"
+        echo "Mode prompt: inactive (postprocess OFF)"
+      fi
       ;;
     *) die "unknown value: $val (use: on, off)" ;;
   esac
@@ -4200,10 +4343,9 @@ manage_tmux() {
   local tmux_mode_current
   local tmux_send_mode_current
   tmux_mode_current="$(canonical_mode_name "${CFG_TMUX_MODE:-short}")"
-  case "$tmux_mode_current" in
-    short|long) ;;
-    *) tmux_mode_current="short" ;;
-  esac
+  if ! mode_exists "$tmux_mode_current" || ! mode_allows_flow "$tmux_mode_current" "tmux"; then
+    tmux_mode_current="$(first_mode_for_flow "tmux")"
+  fi
   tmux_send_mode_current="${CFG_TMUX_SEND_MODE:-auto}"
   case "$tmux_send_mode_current" in
     auto|enter|codex) ;;
@@ -4218,7 +4360,12 @@ manage_tmux() {
       [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]] && echo "  postprocess: ON" || echo "  postprocess: OFF"
       [[ "${CFG_TMUX_PROCESS_SOUND:-0}" == "1" ]] && echo "  process_sound: ON" || echo "  process_sound: OFF"
       echo "  send_mode: $tmux_send_mode_current"
-      echo "  mode: $tmux_mode_current"
+      echo "  mode: $(mode_display_name "$tmux_mode_current")"
+      if [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]]; then
+        echo "  mode_prompt: active when tmux postprocess runs"
+      else
+        echo "  mode_prompt: inactive (tmux postprocess OFF)"
+      fi
       ;;
     autosend)
       case "$val" in
@@ -4255,10 +4402,26 @@ manage_tmux() {
       ;;
     postprocess)
       case "$val" in
-        on|1)  config_set "tmux.postprocess" "bool" "true";  config_load; echo "tmux postprocess: ON" ;;
-        off|0) config_set "tmux.postprocess" "bool" "false"; config_load; echo "tmux postprocess: OFF" ;;
+        on|1)
+          config_set "tmux.postprocess" "bool" "true"
+          config_load
+          echo "tmux postprocess: ON"
+          echo "tmux mode prompt: active when postprocess runs"
+          ;;
+        off|0)
+          config_set "tmux.postprocess" "bool" "false"
+          config_load
+          echo "tmux postprocess: OFF"
+          echo "tmux mode prompt: inactive (tmux postprocess OFF)"
+          ;;
         "")
-          [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]] && echo "tmux postprocess: ON" || echo "tmux postprocess: OFF"
+          if [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]]; then
+            echo "tmux postprocess: ON"
+            echo "tmux mode prompt: active when postprocess runs"
+          else
+            echo "tmux postprocess: OFF"
+            echo "tmux mode prompt: inactive (tmux postprocess OFF)"
+          fi
           ;;
         *) die "unknown value: $val (use: on, off)" ;;
       esac
@@ -4298,21 +4461,24 @@ manage_tmux() {
       ;;
     mode)
       if [[ -z "$val" ]]; then
-        echo "tmux mode: $tmux_mode_current"
+        echo "tmux mode: $(mode_display_name "$tmux_mode_current")"
         echo ""
         echo "Available:"
-        echo "  short"
-        echo "  long"
+        local mode_name listed_any="0"
+        while IFS= read -r mode_name; do
+          [[ -n "$mode_name" ]] || continue
+          listed_any="1"
+          echo "  $(mode_display_name "$mode_name")"
+        done < <(list_modes "tmux")
+        [[ "$listed_any" == "1" ]] || echo "  (none)"
       else
         local canonical
         canonical="$(canonical_mode_name "$val")"
-        case "$canonical" in
-          short|long) ;;
-          *) die "unknown tmux mode: $val (use: short, long)" ;;
-        esac
+        mode_exists "$canonical" || die "unknown tmux mode: $val"
+        mode_allows_flow "$canonical" "tmux" || die "mode '$val' is not enabled for tmux flow"
         config_set "tmux.mode" "string" "$canonical"
         config_load
-        echo "tmux mode: $canonical"
+        echo "tmux mode: $(mode_display_name "$canonical")"
       fi
       ;;
     model)
@@ -4399,7 +4565,7 @@ set_llm() {
     mode_key="$(mode_override_key "$mode")"
     local model_id
     model_id="$(resolve_llm_alias "$a2")"
-    config_set "postprocess.mode_overrides.${mode_key}.llm" "string" "$model_id"
+    config_set "postprocess.mode_llm_overrides.${mode_key}" "string" "$model_id"
     config_load
     echo "LLM override set for mode '$mode': $model_id"
     return 0
@@ -4423,13 +4589,13 @@ set_llm() {
       echo "  gpt   (gpt-oss-120b)  - ~3000 t/s, fastest + 120B params"
       echo ""
       echo "Per-mode override:"
-      echo "  tmux-whisper llm <mode> <llm>   (e.g., tmux-whisper llm short smart)"
+      echo "  tmux-whisper llm <mode> <llm>   (e.g., tmux-whisper llm code smart)"
       ;;
     *) die "unknown LLM: $name (use: fast, smart, qwen, gpt, or: tmux-whisper llm <mode> <llm>)" ;;
   esac
 }
 
-set_profile() {
+set_budget() {
   local a1="${1:-}"
   local a2="${2:-}"
   local a3="${3:-}"
@@ -4464,92 +4630,110 @@ set_profile() {
     esac
   }
 
-  show_one_profile() {
-    local mode="${1:-short}"
-    local mode_key
-    mode_key="$(mode_override_key "$mode")"
+  show_one_budget_profile() {
+    local profile="${1:-short}"
+    local profile_key
+    profile_key="$(mode_override_key "$profile")"
 
     local llm_override max_override chunk_override
-    llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_LLM_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
-    max_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
-    chunk_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+    llm_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_LLM_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
+    max_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
+    chunk_override="$(lookup_override_for_mode "${CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES:-}" "$profile_key" 2>/dev/null || true)"
 
     local llm_effective max_effective chunk_effective
     llm_effective="${llm_override:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}}"
     max_effective="${max_override:-${CFG_POSTPROCESS_MAX_TOKENS:-}}"
     chunk_effective="${chunk_override:-${CFG_POSTPROCESS_CHUNK_WORDS:-}}"
 
-    echo "$mode profile:"
+    echo "$profile budget profile:"
     echo "  llm: ${llm_effective}${llm_override:+ (override)}"
     [[ -n "$max_effective" ]] && echo "  max_tokens: ${max_effective}${max_override:+ (override)}" || echo "  max_tokens: <unset>"
     [[ -n "$chunk_effective" ]] && echo "  chunk_words: ${chunk_effective}${chunk_override:+ (override)}" || echo "  chunk_words: <unset>"
   }
 
   if [[ -z "$a1" ]]; then
-    echo "Postprocess profiles"
+    echo "Postprocess budget profiles"
     echo ""
     echo "Global defaults:"
     echo "  llm: ${CFG_POSTPROCESS_LLM:-llama3.1-8b}"
     [[ -n "${CFG_POSTPROCESS_MAX_TOKENS:-}" ]] && echo "  max_tokens: ${CFG_POSTPROCESS_MAX_TOKENS}" || echo "  max_tokens: <unset>"
     [[ -n "${CFG_POSTPROCESS_CHUNK_WORDS:-}" ]] && echo "  chunk_words: ${CFG_POSTPROCESS_CHUNK_WORDS}" || echo "  chunk_words: <unset>"
+    echo "  auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
     echo ""
-    show_one_profile "short"
+    show_one_budget_profile "short"
     echo ""
-    show_one_profile "long"
+    show_one_budget_profile "long"
     echo ""
     echo "Set overrides:"
-    echo "  tmux-whisper profile short llm gpt"
-    echo "  tmux-whisper profile short max_tokens 2000"
-    echo "  tmux-whisper profile long chunk_words 1000"
+    echo "  tmux-whisper budget short llm gpt"
+    echo "  tmux-whisper budget short max_tokens 2000"
+    echo "  tmux-whisper budget long chunk_words 1000"
+    echo "  tmux-whisper budget threshold 120"
     return 0
   fi
 
-  local mode
-  mode="$(canonical_mode_name "$a1")"
-  case "$mode" in
+  if [[ "$a1" == "threshold" ]]; then
+    if [[ -z "$a2" ]]; then
+      echo "budget auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
+      echo ""
+      echo "Set with:"
+      echo "  tmux-whisper budget threshold <words>"
+      return 0
+    fi
+    [[ "$a2" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper budget threshold <words>"
+    [[ "$a2" -gt 0 ]] || die "threshold must be > 0"
+    config_set "postprocess.budget_long_words_threshold" "int" "$a2"
+    config_load
+    echo "budget auto_long_words_threshold: ${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-$a2}"
+    return 0
+  fi
+
+  local profile
+  profile="$(canonical_mode_name "$a1")"
+  case "$profile" in
     short|long) ;;
-    *) die "usage: tmux-whisper profile [short|long] [llm|max_tokens|chunk_words|clear] [value]" ;;
+    *) die "usage: tmux-whisper budget [short|long|threshold] [llm|max_tokens|chunk_words|clear|<words>] [value]" ;;
   esac
-  local mode_key
-  mode_key="$(mode_override_key "$mode")"
+  local profile_key
+  profile_key="$(mode_override_key "$profile")"
 
   if [[ -z "$a2" ]]; then
-    show_one_profile "$mode"
+    show_one_budget_profile "$profile"
     echo ""
     echo "Set overrides:"
-    echo "  tmux-whisper profile $mode llm gpt|smart|qwen|fast|<model>"
-    echo "  tmux-whisper profile $mode max_tokens <n>"
-    echo "  tmux-whisper profile $mode chunk_words <n>"
-    echo "  tmux-whisper profile $mode clear"
+    echo "  tmux-whisper budget $profile llm gpt|smart|qwen|fast|<model>"
+    echo "  tmux-whisper budget $profile max_tokens <n>"
+    echo "  tmux-whisper budget $profile chunk_words <n>"
+    echo "  tmux-whisper budget $profile clear"
     return 0
   fi
 
   case "$a2" in
     llm)
-      [[ -n "$a3" ]] || die "usage: tmux-whisper profile $mode llm <model|fast|smart|qwen|gpt>"
+      [[ -n "$a3" ]] || die "usage: tmux-whisper budget $profile llm <model|fast|smart|qwen|gpt>"
       local llm_id
       llm_id="$(resolve_llm_alias "$a3")"
-      config_set "postprocess.mode_overrides.${mode_key}.llm" "string" "$llm_id"
+      config_set "postprocess.budget_profiles.${profile_key}.llm" "string" "$llm_id"
       config_load
-      echo "$mode profile llm: $llm_id"
+      echo "$profile budget profile llm: $llm_id"
       ;;
     max_tokens|chunk_words)
-      [[ -n "$a3" ]] || die "usage: tmux-whisper profile $mode $a2 <n>"
+      [[ -n "$a3" ]] || die "usage: tmux-whisper budget $profile $a2 <n>"
       [[ "$a3" =~ ^[0-9]+$ ]] || die "$a2 must be a positive integer"
       [[ "$a3" -gt 0 ]] || die "$a2 must be > 0"
-      config_set "postprocess.mode_overrides.${mode_key}.${a2}" "int" "$a3"
+      config_set "postprocess.budget_profiles.${profile_key}.${a2}" "int" "$a3"
       config_load
-      echo "$mode profile $a2: $a3"
+      echo "$profile budget profile $a2: $a3"
       ;;
     clear|reset)
-      config_set "postprocess.mode_overrides.${mode_key}.llm" "string" ""
-      config_set "postprocess.mode_overrides.${mode_key}.max_tokens" "int" ""
-      config_set "postprocess.mode_overrides.${mode_key}.chunk_words" "int" ""
+      config_set "postprocess.budget_profiles.${profile_key}.llm" "string" ""
+      config_set "postprocess.budget_profiles.${profile_key}.max_tokens" "int" ""
+      config_set "postprocess.budget_profiles.${profile_key}.chunk_words" "int" ""
       config_load
-      echo "$mode profile overrides cleared (now using global defaults)."
+      echo "$profile budget profile overrides cleared (now using global defaults)."
       ;;
     *)
-      die "usage: tmux-whisper profile [short|long] [llm|max_tokens|chunk_words|clear] [value]"
+      die "usage: tmux-whisper budget [short|long|threshold] [llm|max_tokens|chunk_words|clear|<words>] [value]"
       ;;
   esac
 }
@@ -4977,12 +5161,6 @@ manage_mode() {
   mkdir -p "$DICTATE_CONFIG_DIR/modes"
   
   case "$subcmd" in
-    short|long|base|email|chat)
-      local canonical
-      canonical="$(canonical_mode_name "$subcmd")"
-      echo "$canonical" > "$MODE_FILE"
-      echo "Mode set: $canonical (fixed)"
-      ;;
     apps)
       local apps_subcmd="${1:-}"
       shift 2>/dev/null || true
@@ -5001,10 +5179,10 @@ manage_mode() {
           fi
           mkdir -p "$(dirname "$apps_file")"
           echo "$app_name" >> "$apps_file"
-          echo "Added '$app_name' to $current_mode mode"
+          echo "Added '$app_name' to $(mode_display_name "$current_mode") mode"
           ;;
         "")
-          echo "Apps for $current_mode mode:"
+          echo "Apps for $(mode_display_name "$current_mode") mode:"
           if [[ -f "$apps_file" ]]; then
             cat "$apps_file" | sed 's/^/  /'
           else
@@ -5030,6 +5208,7 @@ manage_mode() {
       echo "Created mode: $new_mode"
       echo "  Edit apps: tmux-whisper mode apps add \"AppName\""
       echo "  Edit prompt: \$EDITOR $new_dir/prompt"
+      echo "  Optional flow filter: $new_dir/flows (lines: tmux, inline)"
       ;;
     edit)
       local mode_to_edit="${1:-}"
@@ -5050,33 +5229,42 @@ manage_mode() {
       local current="short"
       [[ -f "$MODE_FILE" ]] && current="$(cat "$MODE_FILE")"
       current="$(canonical_mode_name "$current")"
-      echo "Current mode: $current (fixed)"
+      echo "Current mode: $(mode_display_name "$current") (fixed)"
+      if [[ "${CFG_POSTPROCESS_ENABLED:-0}" == "1" ]]; then
+        echo "Mode prompt (inline): active when postprocess runs"
+      else
+        echo "Mode prompt (inline): inactive (postprocess OFF)"
+      fi
       
       echo ""
       echo "Available modes:"
-      local app_count_short=0
-      local app_count_long=0
-      [[ -f "$DICTATE_CONFIG_DIR/modes/short/apps" ]] && app_count_short="$(wc -l < "$DICTATE_CONFIG_DIR/modes/short/apps" | tr -d ' ')"
-      [[ -f "$DICTATE_CONFIG_DIR/modes/long/apps" ]] && app_count_long="$(wc -l < "$DICTATE_CONFIG_DIR/modes/long/apps" | tr -d ' ')"
-      echo "  short ($app_count_short apps)"
-      echo "  long ($app_count_long apps)"
-      for mode_dir in "$DICTATE_CONFIG_DIR/modes"/*/; do
-        local mode_name
-        mode_name="$(basename "$mode_dir")"
-        case "$mode_name" in
-          short|long) continue ;;
-        esac
-        local app_count=0
+      local mode_name mode_dir app_count flows_desc listed_any="0"
+      while IFS= read -r mode_name; do
+        [[ -n "$mode_name" ]] || continue
+        listed_any="1"
+        mode_dir="$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode_name")"
+        app_count=0
         [[ -f "$mode_dir/apps" ]] && app_count="$(wc -l < "$mode_dir/apps" | tr -d ' ')"
-        echo "  $mode_name ($app_count apps)"
-      done
+        if mode_allows_flow "$mode_name" "tmux" && mode_allows_flow "$mode_name" "inline"; then
+          flows_desc="tmux+inline"
+        elif mode_allows_flow "$mode_name" "tmux"; then
+          flows_desc="tmux"
+        elif mode_allows_flow "$mode_name" "inline"; then
+          flows_desc="inline"
+        else
+          flows_desc="hidden"
+        fi
+        echo "  $(mode_display_name "$mode_name") ($app_count apps, flows: $flows_desc)"
+      done < <(list_modes "")
+      [[ "$listed_any" == "1" ]] || echo "  (none)"
       echo ""
       echo "Commands:"
-      echo "  tmux-whisper mode <name>     - set fixed mode"
+      echo "  tmux-whisper mode <name>     - set fixed mode (e.g. code)"
       echo "  tmux-whisper mode apps       - list apps for current mode"
       echo "  tmux-whisper mode apps add X - add app to current mode"
       echo "  tmux-whisper mode create X   - create new mode"
       echo "  tmux-whisper mode edit [X]   - edit mode prompt"
+      echo "  Optional per-mode flow filter: <mode>/flows (lines: tmux, inline)"
       ;;
     *)
       # Check if it's a custom mode name
@@ -5084,7 +5272,7 @@ manage_mode() {
       canonical="$(canonical_mode_name "$subcmd")"
       if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$canonical")" ]]; then
         echo "$canonical" > "$MODE_FILE"
-        echo "Mode set: $canonical (fixed)"
+        echo "Mode set: $(mode_display_name "$canonical") (fixed)"
       else
         die "unknown mode: $subcmd"
       fi
@@ -5301,7 +5489,7 @@ case "$cmd" in
   target|paste_target) set_paste_target "${2:-}" ;;
   tmux) manage_tmux "${2:-}" "${3:-}" ;;
   llm) set_llm "${2:-}" "${3:-}" ;;
-  profile) set_profile "${2:-}" "${3:-}" "${4:-}" ;;
+  budget) set_budget "${2:-}" "${3:-}" "${4:-}" ;;
   vocab) manage_vocab "${2:-}" "${@:3}" ;;
   mode) manage_mode "${2:-}" "${@:3}" ;;
   keybind) manage_keybind "${2:-}" "${3:-}" ;;

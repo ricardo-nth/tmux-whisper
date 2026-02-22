@@ -340,6 +340,10 @@ run_status_postprocess_round() {
   out="$("$DICTATE_BIN" status)"
   assert_contains "status_post_inline_off" "$out" "postprocess.inline: OFF"
   assert_contains "status_post_tmux_off" "$out" "postprocess.tmux: OFF"
+  assert_contains "status_mode_prompt_inline_inactive" "$out" "mode_prompt.inline: inactive"
+  assert_contains "status_mode_prompt_tmux_inactive" "$out" "mode_prompt.tmux: inactive"
+  assert_contains "status_budget_profile_short" "$out" "budget_profile.short:"
+  assert_contains "status_budget_auto_threshold" "$out" "budget.auto_long_words_threshold:"
   assert_contains "status_post_note" "$out" "postprocess.note: disabled at runtime (CEREBRAS_API_KEY missing)"
 }
 
