@@ -154,6 +154,7 @@ assert_contains "tmux_postprocess_off_prompt_note" "$modecheck_tmux_postprocess_
 modecheck_budget_show="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper budget)"
 assert_contains "budget_show_header" "$modecheck_budget_show" "Postprocess budget profiles"
 assert_contains "budget_show_threshold" "$modecheck_budget_show" "auto_long_words_threshold:"
+assert_contains "budget_show_dynamic_note" "$modecheck_budget_show" "auto_numeric_sizing: dynamic"
 
 modecheck_budget_threshold="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper budget threshold 42)"
 assert_contains "budget_threshold_set" "$modecheck_budget_threshold" "budget auto_long_words_threshold: 42"
@@ -357,10 +358,15 @@ EOF
 chmod +x "$BUDGET_STUBS/pbcopy"
 
 BUDGET_CURL_DUMP="$TMP_ROOT/budget-curl.json"
+BUDGET_CURL_DUMP_SHORT="$TMP_ROOT/budget-curl-short.json"
 long_text="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour twentyfive twentysix twentyseven twentyeight twentynine thirty"
+short_text="one two three four five six seven eight nine ten"
 budget_replay_out="$(HOME="$BUDGET_HOME" PATH="$BUDGET_STUBS:$BUDGET_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BUDGET_CFG" DICTATE_CONFIG_FILE="$BUDGET_CFG/config.toml" CEREBRAS_API_KEY=test-key DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD=20 DICTATE_TEST_CURL_DUMP="$BUDGET_CURL_DUMP" tmux-whisper replay code "$long_text")"
 assert_contains "budget_replay_runs" "$budget_replay_out" "Re-processing with code mode"
 assert_file_contains "budget_profile_auto_long_max_tokens" "$BUDGET_CURL_DUMP" '"max_tokens": 5555'
+budget_replay_short_out="$(HOME="$BUDGET_HOME" PATH="$BUDGET_STUBS:$BUDGET_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BUDGET_CFG" DICTATE_CONFIG_FILE="$BUDGET_CFG/config.toml" CEREBRAS_API_KEY=test-key DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD=20 DICTATE_TEST_CURL_DUMP="$BUDGET_CURL_DUMP_SHORT" tmux-whisper replay code "$short_text")"
+assert_contains "budget_replay_short_runs" "$budget_replay_short_out" "Re-processing with code mode"
+assert_file_contains "budget_profile_auto_short_scaled_max_tokens" "$BUDGET_CURL_DUMP_SHORT" '"max_tokens": 3888'
 
 # --- Regression 12: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"
