@@ -432,6 +432,13 @@ assert_contains "history_stats_budget_threshold" "$histobs_stats" "budget_thresh
 assert_contains "history_stats_budget_max_tokens_line" "$histobs_stats" "budget.max_tokens: n=2"
 assert_contains "history_stats_budget_chunk_count_line" "$histobs_stats" "budget.chunk_count: n=2"
 assert_contains "history_stats_budget_postprocess_ms_line" "$histobs_stats" "metrics.postprocess_ms: n=2"
+histobs_show_latest="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history 1)"
+assert_contains "history_show_metrics_section" "$histobs_show_latest" "--- Metrics ---"
+assert_contains "history_show_metrics_postprocess_ms" "$histobs_show_latest" "postprocess_ms : 620"
+assert_contains "history_show_budget_section" "$histobs_show_latest" "--- Postprocess Budget ---"
+assert_contains "history_show_budget_profile" "$histobs_show_latest" "profile : long"
+assert_contains "history_show_budget_max_tokens" "$histobs_show_latest" "max_tokens : 5555"
+assert_contains "history_show_budget_chunk_count" "$histobs_show_latest" "chunk_count : 2"
 
 # --- Regression 13: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"

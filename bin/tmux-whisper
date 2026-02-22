@@ -2320,15 +2320,44 @@ show_history() {
   fi
   
   local mode app raw processed
+  local metrics_lines budget_lines
   mode="$(jq -r '.mode // "?"' "$file")"
   app="$(jq -r '.app // "?"' "$file")"
   raw="$(jq -r '.raw // ""' "$file")"
   processed="$(jq -r '.processed // ""' "$file")"
+  metrics_lines="$(jq -r '
+    (.metrics // {}) as $m
+    | ["record_ms","transcribe_ms","clean_ms","postprocess_ms","paste_ms","total_ms"][]
+    | select($m[.] != null)
+    | "\(.) : \($m[.])"
+  ' "$file" 2>/dev/null || true)"
+  budget_lines="$(jq -r '
+    (.postprocess_budget // {}) as $b
+    | ["numeric_sizing","profile","threshold_words","word_count","max_tokens","chunk_words","chunk_count","llm"][]
+    | select($b[.] != null)
+    | "\(.) : \($b[.])"
+  ' "$file" 2>/dev/null || true)"
   
   echo "=== Entry $n ==="
   echo "File: $(basename "$file")"
   echo "Mode: $mode"
   echo "App: $app"
+  if [[ -n "${metrics_lines//[[:space:]]/}" ]]; then
+    echo ""
+    echo "--- Metrics ---"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      echo "$line"
+    done <<< "$metrics_lines"
+  fi
+  if [[ -n "${budget_lines//[[:space:]]/}" ]]; then
+    echo ""
+    echo "--- Postprocess Budget ---"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      echo "$line"
+    done <<< "$budget_lines"
+  fi
   echo ""
   echo "--- Raw transcript ---"
   echo "$raw"
