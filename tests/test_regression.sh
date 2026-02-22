@@ -143,7 +143,14 @@ assert_contains "doctor_modecheck_tmux_invalid" "$modecheck_doctor" "tmux.mode: 
 assert_contains "doctor_modecheck_fix_mode" "$modecheck_doctor" "Set a valid fixed mode: tmux-whisper mode code"
 assert_contains "doctor_modecheck_fix_tmux" "$modecheck_doctor" "Set tmux mode to a valid mode: tmux-whisper tmux mode code"
 
-# --- Regression 5: integration scripts keep PATH-based command resolution. ---
+# --- Regression 5: postprocess commands clarify mode prompt inactivity when OFF. ---
+modecheck_postprocess_off="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper postprocess off)"
+assert_contains "postprocess_off_prompt_note" "$modecheck_postprocess_off" "Mode prompt: inactive (postprocess OFF)"
+
+modecheck_tmux_postprocess_off="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper tmux postprocess off)"
+assert_contains "tmux_postprocess_off_prompt_note" "$modecheck_tmux_postprocess_off" "tmux mode prompt: inactive (tmux postprocess OFF)"
+
+# --- Regression 6: integration scripts keep PATH-based command resolution. ---
 assert_file_contains "raycast_inline_lib_resolution" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" "command -v dictate-lib.sh"
 assert_file_contains "raycast_toggle_dictate_resolution" "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" "command -v tmux-whisper"
 assert_file_contains "swiftbar_dictate_resolution" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "command -v tmux-whisper"
@@ -156,7 +163,7 @@ assert_file_contains "raycast_toggle_binary_notice" "$ROOT/integrations/raycast/
 assert_file_contains "swiftbar_missing_binary_notice" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "Tmux Whisper binary not found | color=red"
 assert_file_contains "swiftbar_enabled_config_parse" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "integrations.swiftbar.enabled"
 
-# --- Regression 6: script-level behavior for missing tmux-whisper binary is explicit. ---
+# --- Regression 7: script-level behavior for missing tmux-whisper binary is explicit. ---
 TOGGLE_HOME="$TMP_ROOT/home-toggle"
 mkdir -p "$TOGGLE_HOME"
 toggle_out="$(HOME="$TOGGLE_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" 2>&1 || true)"
@@ -167,7 +174,7 @@ mkdir -p "$SWIFTBAR_HOME"
 swiftbar_out="$(HOME="$SWIFTBAR_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_missing_binary_runtime" "$swiftbar_out" "Tmux Whisper binary not found"
 
-# --- Regression 7: SwiftBar runtime integration toggle works end-to-end. ---
+# --- Regression 8: SwiftBar runtime integration toggle works end-to-end. ---
 SWIFTBAR_TOGGLE_HOME="$TMP_ROOT/home-swiftbar-toggle"
 SWIFTBAR_TOGGLE_BIN="$SWIFTBAR_TOGGLE_HOME/.local/bin"
 SWIFTBAR_TOGGLE_CFG="$SWIFTBAR_TOGGLE_HOME/.config/dictate"
@@ -199,7 +206,7 @@ swiftbar_toggle_out="$(HOME="$SWIFTBAR_TOGGLE_HOME" XDG_CONFIG_HOME="$SWIFTBAR_T
 assert_contains "swiftbar_plugin_off_state" "$swiftbar_toggle_out" "SwiftBar integration: OFF"
 assert_contains "swiftbar_plugin_off_enable_action" "$swiftbar_toggle_out" "Enable SwiftBar integration"
 
-# --- Regression 8: budget profile auto-selection is based on transcript length, not mode name. ---
+# --- Regression 9: budget profile auto-selection is based on transcript length, not mode name. ---
 BUDGET_HOME="$TMP_ROOT/home-budget"
 BUDGET_BIN="$BUDGET_HOME/.local/bin"
 BUDGET_CFG="$BUDGET_HOME/.config/dictate"
@@ -315,7 +322,7 @@ budget_replay_out="$(HOME="$BUDGET_HOME" PATH="$BUDGET_STUBS:$BUDGET_BIN:/usr/bi
 assert_contains "budget_replay_runs" "$budget_replay_out" "Re-processing with short mode"
 assert_file_contains "budget_profile_auto_long_max_tokens" "$BUDGET_CURL_DUMP" '"max_tokens": 5555'
 
-# --- Regression 9: vocab import/export/dedupe safety behavior remains stable. ---
+# --- Regression 10: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"
 VOCAB_BIN="$VOCAB_HOME/.local/bin"
 VOCAB_CFG="$VOCAB_HOME/.config/dictate"
@@ -348,7 +355,7 @@ assert_contains "vocab_dedupe_backup_line" "$dedupe_out" "Backup: "
 dedupe_backup="$(printf "%s\n" "$dedupe_out" | sed -n 's/^Backup: //p' | head -n 1)"
 assert_file_exists "vocab_dedupe_backup_exists" "$dedupe_backup"
 
-# --- Regression 10: bench-matrix UX checks are stable. ---
+# --- Regression 11: bench-matrix UX checks are stable. ---
 BENCH_HOME="$TMP_ROOT/home-bench"
 BENCH_BIN="$BENCH_HOME/.local/bin"
 BENCH_CFG="$BENCH_HOME/.config/dictate"

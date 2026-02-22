@@ -3897,6 +3897,16 @@ status() {
   echo "  language: ${DICTATE_LANGUAGE:-en}"
   echo "  postprocess.inline: $(onoff "$post_inline")"
   echo "  postprocess.tmux: $(onoff "$post_tmux")"
+  if [[ "$post_inline" == "1" ]]; then
+    echo "  mode_prompt.inline: active"
+  else
+    echo "  mode_prompt.inline: inactive (postprocess not active)"
+  fi
+  if [[ "$post_tmux" == "1" ]]; then
+    echo "  mode_prompt.tmux: active"
+  else
+    echo "  mode_prompt.tmux: inactive (postprocess not active)"
+  fi
   if [[ "$cerebras_key_set" != "1" && ( "$post_inline_requested" == "1" || "$post_tmux_requested" == "1" ) ]]; then
     echo "  postprocess.note: disabled at runtime (CEREBRAS_API_KEY missing)"
   fi
@@ -4009,10 +4019,26 @@ set_model() {
 set_postprocess() {
   local val="${1:-}"
   case "$val" in
-    on|1)  config_set "postprocess.enabled" "bool" "true";  config_load; echo "Post-processing: ON (Cerebras)" ;;
-    off|0) config_set "postprocess.enabled" "bool" "false"; config_load; echo "Post-processing: OFF" ;;
+    on|1)
+      config_set "postprocess.enabled" "bool" "true"
+      config_load
+      echo "Post-processing: ON (Cerebras)"
+      echo "Mode prompt: active when postprocess runs"
+      ;;
+    off|0)
+      config_set "postprocess.enabled" "bool" "false"
+      config_load
+      echo "Post-processing: OFF"
+      echo "Mode prompt: inactive (postprocess OFF)"
+      ;;
     "")
-      [[ "${CFG_POSTPROCESS_ENABLED:-0}" == "1" ]] && echo "Post-processing: ON" || echo "Post-processing: OFF"
+      if [[ "${CFG_POSTPROCESS_ENABLED:-0}" == "1" ]]; then
+        echo "Post-processing: ON"
+        echo "Mode prompt: active when postprocess runs"
+      else
+        echo "Post-processing: OFF"
+        echo "Mode prompt: inactive (postprocess OFF)"
+      fi
       ;;
     *) die "unknown value: $val (use: on, off)" ;;
   esac
@@ -4259,6 +4285,11 @@ manage_tmux() {
       [[ "${CFG_TMUX_PROCESS_SOUND:-0}" == "1" ]] && echo "  process_sound: ON" || echo "  process_sound: OFF"
       echo "  send_mode: $tmux_send_mode_current"
       echo "  mode: $(mode_display_name "$tmux_mode_current")"
+      if [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]]; then
+        echo "  mode_prompt: active when tmux postprocess runs"
+      else
+        echo "  mode_prompt: inactive (tmux postprocess OFF)"
+      fi
       ;;
     autosend)
       case "$val" in
@@ -4295,10 +4326,26 @@ manage_tmux() {
       ;;
     postprocess)
       case "$val" in
-        on|1)  config_set "tmux.postprocess" "bool" "true";  config_load; echo "tmux postprocess: ON" ;;
-        off|0) config_set "tmux.postprocess" "bool" "false"; config_load; echo "tmux postprocess: OFF" ;;
+        on|1)
+          config_set "tmux.postprocess" "bool" "true"
+          config_load
+          echo "tmux postprocess: ON"
+          echo "tmux mode prompt: active when postprocess runs"
+          ;;
+        off|0)
+          config_set "tmux.postprocess" "bool" "false"
+          config_load
+          echo "tmux postprocess: OFF"
+          echo "tmux mode prompt: inactive (tmux postprocess OFF)"
+          ;;
         "")
-          [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]] && echo "tmux postprocess: ON" || echo "tmux postprocess: OFF"
+          if [[ "${CFG_TMUX_POSTPROCESS:-0}" == "1" ]]; then
+            echo "tmux postprocess: ON"
+            echo "tmux mode prompt: active when postprocess runs"
+          else
+            echo "tmux postprocess: OFF"
+            echo "tmux mode prompt: inactive (tmux postprocess OFF)"
+          fi
           ;;
         *) die "unknown value: $val (use: on, off)" ;;
       esac
@@ -5091,6 +5138,11 @@ manage_mode() {
       [[ -f "$MODE_FILE" ]] && current="$(cat "$MODE_FILE")"
       current="$(canonical_mode_name "$current")"
       echo "Current mode: $(mode_display_name "$current") (fixed)"
+      if [[ "${CFG_POSTPROCESS_ENABLED:-0}" == "1" ]]; then
+        echo "Mode prompt (inline): active when postprocess runs"
+      else
+        echo "Mode prompt (inline): inactive (postprocess OFF)"
+      fi
       
       echo ""
       echo "Available modes:"
