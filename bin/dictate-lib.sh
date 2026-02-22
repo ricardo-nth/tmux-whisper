@@ -117,7 +117,7 @@ dictate_lib_normalize_british_spelling() {
   '
 }
 
-# Insert a single paragraph break for long short/long mode outputs when the LLM
+# Insert a single paragraph break for long code/long mode outputs when the LLM
 # returns one dense block. This only adds structure; it does not rewrite wording.
 # Usage: printf "%s" "$text" | dictate_lib_auto_paragraphs <mode> [min_words]
 dictate_lib_auto_paragraphs() {
@@ -132,8 +132,8 @@ dictate_lib_auto_paragraphs() {
       $min = 80 if $min <= 0;
     }
 
-    # Only apply to short/long cleanup modes.
-    if ($mode ne "short" && $mode ne "long") {
+    # Only apply to code/long cleanup modes.
+    if ($mode ne "code" && $mode ne "long") {
       $_ = $_;
       next;
     }

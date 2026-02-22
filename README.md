@@ -91,7 +91,7 @@ Install behavior:
 Useful install flags:
 
 ```bash
-./install.sh --force            # refresh config defaults (creates backups)
+./install.sh --force            # reinstall scripts and seed missing defaults (preserves local config)
 ./install.sh --no-sounds        # skip sample sound install
 ./install.sh --with-sounds      # explicit sound install
 ./install.sh --replace-sounds   # overwrite existing sound files with bundled samples
@@ -106,18 +106,18 @@ tmux-whisper debug
 tmux-whisper            # tmux-first toggle mode
 tmux-whisper devices
 tmux-whisper inline
-tmux-whisper mode short
+tmux-whisper mode code
 tmux-whisper postprocess on
 ```
 
 ### Bench matrix
 
-`tmux-whisper bench-matrix [N] [phrase_file]` runs the cleanup/postprocess pipeline across the in-repo phrase list (or a small file you supply) with the requested number of rounds. Each line in `phrase_file` is trimmed and blank/commented lines (those beginning with `#`) are ignored, so you can customize the set while keeping the defaults for quick comparison. Set `DICTATE_BENCH_MATRIX_MODE` to force which fixed mode (typically `short`) drives the cleanup, postprocess, and vocab helpers. The output table is sorted by postprocess, model, and vocab settings to keep diffs stable, and you still see the warning `postprocess=on combos skipped` if `CEREBRAS_API_KEY` is unset.
+`tmux-whisper bench-matrix [N] [phrase_file]` runs the cleanup/postprocess pipeline across the in-repo phrase list (or a small file you supply) with the requested number of rounds. Each line in `phrase_file` is trimmed and blank/commented lines (those beginning with `#`) are ignored, so you can customize the set while keeping the defaults for quick comparison. Set `DICTATE_BENCH_MATRIX_MODE` to force which fixed mode (typically `code`) drives the cleanup, postprocess, and vocab helpers. The output table is sorted by postprocess, model, and vocab settings to keep diffs stable, and you still see the warning `postprocess=on combos skipped` if `CEREBRAS_API_KEY` is unset.
 
 ## UX Helpers
 
 - `tmux-whisper doctor` now includes a **Suggested fixes** block with copy/paste commands when it finds dependency, install, config, or stale-state issues.
-- `tmux-whisper doctor` now validates fixed/tmux mode values and core mode prompt files (`short`/`long`) and reports explicit fallback behavior when invalid.
+- `tmux-whisper doctor` now validates fixed/tmux mode values and core mode prompt files (`code`/`long`) and reports explicit fallback behavior when invalid.
 - `tmux-whisper vocab import <file>` now shows line-numbered previews for invalid entries (first 5).
 - `tmux-whisper vocab dedupe` now creates a timestamped backup before rewriting your vocab file.
 - `tmux-whisper vocab export <file>` writes a normalized/deduped vocab snapshot you can share or version.
@@ -139,13 +139,13 @@ Common fixes:
 
 - Schema mismatch in `tmux-whisper doctor`:
   - `./install.sh --force`
-- Invalid fixed mode fallback (`mode.current: <name> (invalid, fallback=short)`):
-  - `tmux-whisper mode short`
+- Invalid fixed mode fallback (`mode.current: <name> (invalid, fallback=code)`):
+  - `tmux-whisper mode code`
   - or create it: `tmux-whisper mode create "<name>"`
-- Invalid tmux mode fallback (`tmux.mode: <name> (invalid, fallback=short)`):
-  - `tmux-whisper tmux mode short`
+- Invalid tmux mode fallback (`tmux.mode: <name> (invalid, fallback=code)`):
+  - `tmux-whisper tmux mode code`
 - Missing core mode prompts:
-  - `tmux-whisper mode edit short`
+  - `tmux-whisper mode edit code`
   - `tmux-whisper mode edit long`
 - Vocab import invalid lines:
   - use `wrong::right`, `wrong -> right`, or `wrong → right`

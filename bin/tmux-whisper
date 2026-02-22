@@ -177,7 +177,7 @@ ENV OPTIONS:
   DICTATE_INLINE_SEND_DELAY_MS=35 # inline: delay between Cmd+V and send key when autosend=on
   DICTATE_INLINE_SEND_MODE=enter|ctrl_j|cmd_enter # inline autosend key strategy (default: enter)
   DICTATE_TMUX_PROCESS_SOUND=1 # tmux-only processing sound toggle
-  DICTATE_TMUX_MODE=short    # tmux-only forced mode
+  DICTATE_TMUX_MODE=code     # tmux-only forced mode
   DICTATE_TMUX_MODEL=base    # tmux-only whisper model
   DICTATE_LLM_MODEL=...      # override Cerebras model id (one-off)
   DICTATE_LLM_MAX_TOKENS=3000 # cap postprocess output tokens
@@ -195,7 +195,7 @@ ENV OPTIONS:
   DICTATE_VAD=1              # whisper-cli voice activity detection (skip silences)
   DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
   DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
-  DICTATE_BENCH_MATRIX_MODE=short # force mode used by bench-matrix cleanup/postprocess
+  DICTATE_BENCH_MATRIX_MODE=code # force mode used by bench-matrix cleanup/postprocess
   DICTATE_BENCH_MATRIX_MODELS=fast,smart,qwen,gpt # LLM list for postprocess-on matrix runs
   DICTATE_BENCH_MATRIX_PROGRESS=1 # show per-combo progress lines (set 0 for summary-only output)
   CEREBRAS_API_KEY=...       # required for postprocess
@@ -203,7 +203,7 @@ ENV OPTIONS:
 CONFIG FILES (~/.config/dictate/):
   config.toml                # main settings (model, postprocess, autosend, keybind refs, icons)
   vocab                      # global corrections (one per line: wrong → right)
-  current-mode               # mode selection (short/long/etc)
+  current-mode               # mode selection (code/email/etc)
   modes/<mode>/apps          # apps that trigger this mode (one per line)
   modes/<mode>/prompt        # mode-specific LLM prompt
   modes/<mode>/vocab         # mode-specific corrections
@@ -415,7 +415,7 @@ autosend = true
 paste_target = "origin"
 postprocess = false
 process_sound = false
-mode = "short"
+mode = "code"
 model = "base"
 send_mode = "auto"
 
@@ -436,7 +436,7 @@ ready = "🎙️"
 error = "⚠️"
 
 base = "⚪"
-short = "💻"
+code = "💻"
 long = "📝"
 email = "📧"
 chat = "💬"
@@ -523,7 +523,7 @@ out = {
   "CFG_TMUX_PASTE_TARGET": str(get("tmux.paste_target", "origin")),
   "CFG_TMUX_POSTPROCESS": "1" if b(get("tmux.postprocess", False), False) else "0",
   "CFG_TMUX_PROCESS_SOUND": "1" if b(get("tmux.process_sound", False), False) else "0",
-  "CFG_TMUX_MODE": str(get("tmux.mode", "short")),
+  "CFG_TMUX_MODE": str(get("tmux.mode", "code")),
   "CFG_TMUX_MODEL": str(get("tmux.model", "base")),
   "CFG_TMUX_SEND_MODE": str(get("tmux.send_mode", "auto")),
   "CFG_DEBUG_KEEP_LOGS": "1" if b(get("debug.keep_logs", False), False) else "0",
@@ -769,7 +769,7 @@ debug() {
       echo "  tmux.paste_target=${CFG_TMUX_PASTE_TARGET:-origin}"
       echo "  tmux.postprocess=${CFG_TMUX_POSTPROCESS:-0}"
       echo "  tmux.process_sound=${CFG_TMUX_PROCESS_SOUND:-0}"
-      echo "  tmux.mode=${CFG_TMUX_MODE:-short}"
+      echo "  tmux.mode=${CFG_TMUX_MODE:-code}"
       echo "  tmux.model=${CFG_TMUX_MODEL:-base}"
       echo "  tmux.send_mode=${CFG_TMUX_SEND_MODE:-auto}"
       echo "  integrations.swiftbar.enabled=${CFG_SWIFTBAR_ENABLED:-1}"
@@ -895,8 +895,8 @@ doctor() {
   case "$cfg_schema_status" in
     mismatch)
       issues=$((issues + 1))
-      echo "  - hint: this build requires config schema v${DICTATE_CONFIG_SCHEMA_VERSION}. Run ./install.sh --force to refresh defaults (backups are created)."
-      add_suggestion "Refresh defaults from repo: ./install.sh --force"
+      echo "  - hint: this build requires config schema v${DICTATE_CONFIG_SCHEMA_VERSION}. Update or replace ~/.config/dictate/config.toml, then run ./install.sh --force to reinstall scripts."
+      add_suggestion "Replace config with repo defaults (manual): cp config/config.toml ~/.config/dictate/config.toml"
       add_suggestion "Or refresh via bootstrap: curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force"
       ;;
   esac
@@ -928,7 +928,7 @@ doctor() {
   if [[ -f "$MODE_FILE" ]]; then
     fixed_mode_raw="$(head -n 1 "$MODE_FILE" 2>/dev/null | tr -d '\r' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
     if [[ -z "$fixed_mode_raw" ]]; then
-      fixed_mode="short"
+      fixed_mode="code"
       warnings=$((warnings + 1))
       echo "  - mode.current: <empty> (invalid, fallback=code)"
       add_suggestion "Set a valid fixed mode: tmux-whisper mode code"
@@ -936,7 +936,7 @@ doctor() {
       fixed_mode="$(canonical_mode_name "$fixed_mode_raw")"
       echo "  - mode.current: $(mode_display_name "$fixed_mode") (fixed)"
     else
-      fixed_mode="short"
+      fixed_mode="code"
       warnings=$((warnings + 1))
       echo "  - mode.current: $fixed_mode_raw (invalid, fallback=code)"
       add_suggestion "Set a valid fixed mode: tmux-whisper mode code"
@@ -944,12 +944,12 @@ doctor() {
     fi
   else
     fixed_mode="$(get_current_mode 2>/dev/null || true)"
-    [[ -n "$fixed_mode" ]] || fixed_mode="short"
+    [[ -n "$fixed_mode" ]] || fixed_mode="code"
     echo "  - mode.current: $(mode_display_name "$fixed_mode") (auto-detect)"
   fi
 
   local tmux_mode_raw tmux_mode
-  tmux_mode_raw="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
+  tmux_mode_raw="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-code}}"
   tmux_mode="$(canonical_mode_name "$tmux_mode_raw")"
   if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$tmux_mode")" ]]; then
     echo "  - tmux.mode: $(mode_display_name "$tmux_mode") (ok)"
@@ -1274,7 +1274,7 @@ preferred_key_order = {
   "ui.keybinds": ["tmux", "inline"],
   "ui.icons": [
     "recording","processing","ready","error",
-    "base","short","long","email","chat","linkedin","twitter",
+    "base","code","long","email","chat","linkedin","twitter",
   ],
 }
 
@@ -1478,8 +1478,7 @@ config_load
 canonical_mode_name() {
   local m="${1:-}"
   case "$m" in
-    code) echo "short" ;;
-    "") echo "short" ;;
+    "") echo "code" ;;
     *) echo "$m" ;;
   esac
 }
@@ -1487,10 +1486,7 @@ canonical_mode_name() {
 mode_display_name() {
   local m
   m="$(canonical_mode_name "${1:-}")"
-  case "$m" in
-    short) echo "code" ;;
-    *) echo "$m" ;;
-  esac
+  echo "$m"
 }
 
 mode_to_dir_name() {
@@ -1555,19 +1551,19 @@ list_modes() {
 
 first_mode_for_flow() {
   local flow="${1:-}"
-  if mode_exists "short" && mode_allows_flow "short" "$flow"; then
-    echo "short"
+  if mode_exists "code" && mode_allows_flow "code" "$flow"; then
+    echo "code"
     return 0
   fi
   local first
   first="$(list_modes "$flow" | head -n 1)"
-  [[ -n "$first" ]] && echo "$first" || echo "short"
+  [[ -n "$first" ]] && echo "$first" || echo "code"
 }
 
 normalize_mode_name() {
   local mode
   mode="$(canonical_mode_name "${1:-}")"
-  [[ -z "$mode" ]] && mode="short"
+  [[ -z "$mode" ]] && mode="code"
   if mode_exists "$mode"; then
     echo "$mode"
   else
@@ -1583,7 +1579,7 @@ detect_mode() {
     app="$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null || echo "")"
   fi
   
-  [[ -z "$app" ]] && echo "short" && return 0
+  [[ -z "$app" ]] && echo "code" && return 0
   
   # Check each mode's apps file
   for mode_dir in "$DICTATE_CONFIG_DIR/modes"/*/; do
@@ -1599,7 +1595,7 @@ detect_mode() {
     fi
   done
   
-  # Default to short mode
+  # Default to code mode
   first_mode_for_flow "inline"
 }
 
@@ -1918,10 +1914,10 @@ bench_matrix() {
     rounds="$rounds_arg"
   fi
 
-  local mode="${DICTATE_BENCH_MATRIX_MODE:-short}"
+  local mode="${DICTATE_BENCH_MATRIX_MODE:-code}"
   mode="$(canonical_mode_name "$mode")"
   if [[ ! -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]; then
-    mode="short"
+    mode="code"
   fi
 
   local phrase_src=""
@@ -2329,7 +2325,7 @@ reprocess_history() {
     fi
   fi
   
-  echo "🔄 Reprocessing entry $n with $target_mode mode..."
+  echo "🔄 Reprocessing entry $n with $(mode_display_name "$target_mode") mode..."
   
   local result
   result="$(DICTATE_FORCE_MODE="$target_mode" postprocess_llm "$raw" "")"
@@ -2529,8 +2525,8 @@ postprocess_llm() {
     out_trim="$(printf '%s' "$output_text" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
 
     case "$(mode_override_key "$mode")" in
-      short)
-        # Guardrail: in short mode, we want cleaned instructions, not generated artefacts.
+      code)
+        # Guardrail: in code mode, we want cleaned instructions, not generated artefacts.
         if [[ ! "$in_trim" =~ ^[\\{\\[] ]] && [[ "$out_trim" =~ ^[\\{\\[] ]]; then
           if printf '%s' "$out_trim" | grep -Eq '"prompt"[[:space:]]*:'; then
             echo "$input_chunk"
@@ -3231,10 +3227,10 @@ stop() {
     fi
 
     # LLM post-processing if enabled (Cerebras API)
-    # Tmux mode defaults to short mode unless explicitly configured.
+    # Tmux mode defaults to code mode unless explicitly configured.
     local do_postprocess
     do_postprocess="$(resolve_tmux_postprocess_effective)"
-    local tmux_mode="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
+    local tmux_mode="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-code}}"
     tmux_mode="$(canonical_mode_name "$tmux_mode")"
     if ! mode_exists "$tmux_mode" || ! mode_allows_flow "$tmux_mode" "tmux"; then
       tmux_mode="$(first_mode_for_flow "tmux")"
@@ -3288,7 +3284,7 @@ stop() {
       mkdir -p /tmp/dictate-processing
       touch "$proc_file"
 
-      # Force tmux mode (default: short)
+      # Force tmux mode (default: code)
       txt="$(DICTATE_FORCE_MODE="$tmux_mode" postprocess_llm "$txt" "Ghostty")"
       txt="$(printf "%s" "$txt" | auto_paragraphs "$tmux_mode")"
 
@@ -3830,7 +3826,7 @@ status() {
   fi
 
   local mode_tmux_raw mode_tmux
-  mode_tmux_raw="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-short}}"
+  mode_tmux_raw="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-code}}"
   mode_tmux="$(canonical_mode_name "$mode_tmux_raw")"
   if ! mode_exists "$mode_tmux" || ! mode_allows_flow "$mode_tmux" "tmux"; then
     mode_tmux="$(first_mode_for_flow "tmux")"
@@ -4342,7 +4338,7 @@ manage_tmux() {
   local val="${2:-}"
   local tmux_mode_current
   local tmux_send_mode_current
-  tmux_mode_current="$(canonical_mode_name "${CFG_TMUX_MODE:-short}")"
+  tmux_mode_current="$(canonical_mode_name "${CFG_TMUX_MODE:-code}")"
   if ! mode_exists "$tmux_mode_current" || ! mode_allows_flow "$tmux_mode_current" "tmux"; then
     tmux_mode_current="$(first_mode_for_flow "tmux")"
   fi
@@ -5226,7 +5222,7 @@ manage_mode() {
       ;;
     "")
       # Show current mode and list all
-      local current="short"
+      local current="code"
       [[ -f "$MODE_FILE" ]] && current="$(cat "$MODE_FILE")"
       current="$(canonical_mode_name "$current")"
       echo "Current mode: $(mode_display_name "$current") (fixed)"
@@ -5320,7 +5316,7 @@ replay() {
   fi
   
   echo "📋 Clipboard: ${input:0:50}..."
-  echo "🔄 Re-processing with $mode_to_use mode..."
+  echo "🔄 Re-processing with $(mode_display_name "$mode_to_use") mode..."
   
   # Force the mode and run post-processing
   local result

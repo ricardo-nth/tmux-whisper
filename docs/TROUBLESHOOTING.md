@@ -38,28 +38,28 @@ brew install python ffmpeg whisper-cpp
 
 Invalid fixed mode fallback:
 
-- Symptom: `mode.current: <name> (invalid, fallback=short)`
+- Symptom: `mode.current: <name> (invalid, fallback=code)`
 - Fix either:
-  - reset to built-in mode: `tmux-whisper mode short`
+  - reset to built-in mode: `tmux-whisper mode code`
   - create missing custom mode: `tmux-whisper mode create "<name>"`
 
 Invalid tmux mode fallback:
 
-- Symptom: `tmux.mode: <name> (invalid, fallback=short)`
+- Symptom: `tmux.mode: <name> (invalid, fallback=code)`
 - Fix:
-  - `tmux-whisper tmux mode short`
+  - `tmux-whisper tmux mode code`
 
 Missing prompt files:
 
-- Symptom: `mode.short.prompt: missing/empty` or `mode.long.prompt: missing/empty`
+- Symptom: `mode.code.prompt: missing/empty` or `mode.long.prompt: missing/empty`
 - Fix:
 
 ```bash
-tmux-whisper mode edit short
+tmux-whisper mode edit code
 tmux-whisper mode edit long
 ```
 
-If both are missing after install drift, refresh defaults:
+If both are missing after install drift, reinstall and seed missing defaults:
 
 ```bash
 ./install.sh --force

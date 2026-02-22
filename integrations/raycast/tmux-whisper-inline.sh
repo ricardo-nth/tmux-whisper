@@ -652,8 +652,7 @@ fi
 canonical_mode_name() {
   local m="${1:-}"
   case "$m" in
-    code) echo "short" ;;
-    "") echo "short" ;;
+    "") echo "code" ;;
     *) echo "$m" ;;
   esac
 }
@@ -700,11 +699,11 @@ mode_allows_flow() {
 normalize_mode_name() {
   local mode
   mode="$(canonical_mode_name "${1:-}")"
-  [[ -z "$mode" ]] && mode="short"
+  [[ -z "$mode" ]] && mode="code"
   if [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]; then
     echo "$mode"
   else
-    echo "short"
+    echo "code"
   fi
 }
 
@@ -712,7 +711,7 @@ normalize_mode_name() {
 detect_mode() {
   local app
   app="$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null || echo "")"
-  [[ -z "$app" ]] && echo "short" && return 0
+  [[ -z "$app" ]] && echo "code" && return 0
 
   for mode_dir in "$CONFIG_DIR/modes"/*/; do
     local mode_name
@@ -725,7 +724,7 @@ detect_mode() {
       return 0
     fi
   done
-  echo "short"
+  echo "code"
 }
 
 get_current_mode() {
@@ -879,7 +878,7 @@ postprocess_llm() {
     out_trim="$(printf '%s' "$output_text" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
 
     case "$(mode_override_key "$mode")" in
-      short)
+      code)
         if [[ ! "$in_trim" =~ ^[\\{\\[] ]] && [[ "$out_trim" =~ ^[\\{\\[] ]]; then
           if printf '%s' "$out_trim" | grep -Eq '"prompt"[[:space:]]*:'; then
             echo "$input_chunk"

@@ -113,13 +113,13 @@ mismatch_doctor="$(HOME="$MISMATCH_HOME" PATH="$MISMATCH_BIN:/usr/bin:/bin" DICT
 assert_contains "doctor_schema_mismatch_status" "$mismatch_doctor" "config schema: v0 (expected v1, status=mismatch)"
 assert_contains "doctor_schema_mismatch_hint" "$mismatch_doctor" "this build requires config schema v1"
 assert_contains "doctor_schema_suggested_fixes" "$mismatch_doctor" "Suggested fixes:"
-assert_contains "doctor_schema_suggested_install" "$mismatch_doctor" "Refresh defaults from repo: ./install.sh --force"
+assert_contains "doctor_schema_suggested_install" "$mismatch_doctor" "Replace config with repo defaults (manual): cp config/config.toml ~/.config/dictate/config.toml"
 
 # --- Regression 4: doctor mode checks should show clear fallbacks + fixes. ---
 MODECHECK_HOME="$TMP_ROOT/home-modecheck"
 MODECHECK_BIN="$MODECHECK_HOME/.local/bin"
 MODECHECK_CFG="$MODECHECK_HOME/.config/dictate"
-mkdir -p "$MODECHECK_BIN" "$MODECHECK_CFG/modes/short" "$MODECHECK_CFG/modes/long"
+mkdir -p "$MODECHECK_BIN" "$MODECHECK_CFG/modes/code" "$MODECHECK_CFG/modes/long"
 cp "$ROOT/bin/tmux-whisper" "$MODECHECK_BIN/tmux-whisper"
 cp "$ROOT/bin/dictate-lib.sh" "$MODECHECK_BIN/dictate-lib.sh"
 chmod +x "$MODECHECK_BIN/tmux-whisper" "$MODECHECK_BIN/dictate-lib.sh"
@@ -134,7 +134,7 @@ source = "auto"
 mode = "ghost"
 EOF
 printf '%s\n' "ghost" >"$MODECHECK_CFG/current-mode"
-printf '%s\n' "Context: short mode." >"$MODECHECK_CFG/modes/short/prompt"
+printf '%s\n' "Context: code mode." >"$MODECHECK_CFG/modes/code/prompt"
 printf '%s\n' "Context: long mode." >"$MODECHECK_CFG/modes/long/prompt"
 modecheck_doctor="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper doctor)"
 assert_contains "doctor_modecheck_section" "$modecheck_doctor" "Mode/config:"
@@ -218,7 +218,7 @@ assert_contains "swiftbar_plugin_off_enable_action" "$swiftbar_toggle_out" "Enab
 SWIFTBAR_MODES_HOME="$TMP_ROOT/home-swiftbar-modes"
 SWIFTBAR_MODES_BIN="$SWIFTBAR_MODES_HOME/.local/bin"
 SWIFTBAR_MODES_CFG="$SWIFTBAR_MODES_HOME/.config/dictate"
-mkdir -p "$SWIFTBAR_MODES_BIN" "$SWIFTBAR_MODES_CFG/modes/short" "$SWIFTBAR_MODES_CFG/modes/email" "$SWIFTBAR_MODES_CFG/modes/long"
+mkdir -p "$SWIFTBAR_MODES_BIN" "$SWIFTBAR_MODES_CFG/modes/code" "$SWIFTBAR_MODES_CFG/modes/email" "$SWIFTBAR_MODES_CFG/modes/long"
 cp "$ROOT/bin/tmux-whisper" "$SWIFTBAR_MODES_BIN/tmux-whisper"
 cp "$ROOT/bin/dictate-lib.sh" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
 chmod +x "$SWIFTBAR_MODES_BIN/tmux-whisper" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
@@ -232,9 +232,9 @@ source = "auto"
 [integrations.swiftbar]
 enabled = true
 EOF
-printf '%s\n' "short" >"$SWIFTBAR_MODES_CFG/current-mode"
-printf '%s\n' "Context: code mode." >"$SWIFTBAR_MODES_CFG/modes/short/prompt"
-printf '%s\n' "tmux" "inline" >"$SWIFTBAR_MODES_CFG/modes/short/flows"
+printf '%s\n' "code" >"$SWIFTBAR_MODES_CFG/current-mode"
+printf '%s\n' "Context: code mode." >"$SWIFTBAR_MODES_CFG/modes/code/prompt"
+printf '%s\n' "tmux" "inline" >"$SWIFTBAR_MODES_CFG/modes/code/flows"
 printf '%s\n' "Context: email mode." >"$SWIFTBAR_MODES_CFG/modes/email/prompt"
 printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/email/flows"
 printf '%s\n' "Context: long mode." >"$SWIFTBAR_MODES_CFG/modes/long/prompt"
@@ -251,7 +251,7 @@ BUDGET_HOME="$TMP_ROOT/home-budget"
 BUDGET_BIN="$BUDGET_HOME/.local/bin"
 BUDGET_CFG="$BUDGET_HOME/.config/dictate"
 BUDGET_STUBS="$TMP_ROOT/budget-stubs"
-mkdir -p "$BUDGET_BIN" "$BUDGET_CFG/modes/short" "$BUDGET_CFG/modes/long" "$BUDGET_STUBS"
+mkdir -p "$BUDGET_BIN" "$BUDGET_CFG/modes/code" "$BUDGET_CFG/modes/long" "$BUDGET_STUBS"
 cp "$ROOT/bin/tmux-whisper" "$BUDGET_BIN/tmux-whisper"
 cp "$ROOT/bin/dictate-lib.sh" "$BUDGET_BIN/dictate-lib.sh"
 chmod +x "$BUDGET_BIN/tmux-whisper" "$BUDGET_BIN/dictate-lib.sh"
@@ -275,7 +275,7 @@ chunk_words = 0
 max_tokens = 5555
 chunk_words = 0
 EOF
-printf '%s\n' "Context: code mode." >"$BUDGET_CFG/modes/short/prompt"
+printf '%s\n' "Context: code mode." >"$BUDGET_CFG/modes/code/prompt"
 printf '%s\n' "Context: long mode." >"$BUDGET_CFG/modes/long/prompt"
 
 cat >"$BUDGET_STUBS/curl" <<'EOF'
@@ -359,7 +359,7 @@ chmod +x "$BUDGET_STUBS/pbcopy"
 BUDGET_CURL_DUMP="$TMP_ROOT/budget-curl.json"
 long_text="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour twentyfive twentysix twentyseven twentyeight twentynine thirty"
 budget_replay_out="$(HOME="$BUDGET_HOME" PATH="$BUDGET_STUBS:$BUDGET_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BUDGET_CFG" DICTATE_CONFIG_FILE="$BUDGET_CFG/config.toml" CEREBRAS_API_KEY=test-key DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD=20 DICTATE_TEST_CURL_DUMP="$BUDGET_CURL_DUMP" tmux-whisper replay code "$long_text")"
-assert_contains "budget_replay_runs" "$budget_replay_out" "Re-processing with short mode"
+assert_contains "budget_replay_runs" "$budget_replay_out" "Re-processing with code mode"
 assert_file_contains "budget_profile_auto_long_max_tokens" "$BUDGET_CURL_DUMP" '"max_tokens": 5555'
 
 # --- Regression 12: vocab import/export/dedupe safety behavior remains stable. ---

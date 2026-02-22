@@ -10,7 +10,7 @@ usage() {
 Usage: ./install.sh [--force] [--with-sounds|--no-sounds] [--replace-sounds]
 
 Options:
-  --force        overwrite config defaults (backing up current files first)
+  --force        reinstall binaries/integrations (preserves existing config and modes)
   --with-sounds  install bundled sample sounds into ~/.local/share/sounds/dictate
   --no-sounds    skip sample sound installation
   --replace-sounds  overwrite existing sound files with bundled samples
@@ -51,13 +51,62 @@ CONFIG_DIR="${DICTATE_CONFIG_DIR:-$HOME/.config/dictate}"
 SWIFTBAR_DIR="${DICTATE_SWIFTBAR_DIR:-$HOME/.config/swiftbar/plugins}"
 INSTALL_SWIFTBAR="${DICTATE_INSTALL_SWIFTBAR:-1}"
 SOUND_DIR="${DICTATE_SOUNDS_DIR:-$HOME/.local/share/sounds/dictate}"
-STAMP="$(date +%Y%m%d-%H%M%S)"
 
-backup_if_exists() {
-  local target="$1"
-  if [[ -e "$target" ]]; then
-    cp -R "$target" "${target}.bak.${STAMP}"
+copy_if_missing() {
+  local src="$1"
+  local dst="$2"
+  [[ -e "$dst" ]] || cp -R "$src" "$dst"
+}
+
+migrate_mode_short_to_code() {
+  local modes_dir="$CONFIG_DIR/modes"
+  if [[ -d "$modes_dir/short" && ! -e "$modes_dir/code" ]]; then
+    mv "$modes_dir/short" "$modes_dir/code"
   fi
+  if [[ -f "$CONFIG_DIR/current-mode" ]]; then
+    local current_mode
+    current_mode="$(tr -d '[:space:]' < "$CONFIG_DIR/current-mode" 2>/dev/null || true)"
+    if [[ "$current_mode" == "short" ]]; then
+      printf '%s\n' "code" > "$CONFIG_DIR/current-mode"
+    fi
+  fi
+  if [[ -f "$CONFIG_DIR/config.toml" ]]; then
+    local tmp_cfg
+    tmp_cfg="$(mktemp)"
+    awk '
+      BEGIN { in_tmux=0 }
+      /^\[/ {
+        in_tmux = ($0 ~ /^\[tmux\][[:space:]]*$/)
+      }
+      {
+        line = $0
+        if (in_tmux && line ~ /^[[:space:]]*mode[[:space:]]*=/) {
+          sub(/"short"/, "\"code\"", line)
+        }
+        print line
+      }
+    ' "$CONFIG_DIR/config.toml" > "$tmp_cfg"
+    mv "$tmp_cfg" "$CONFIG_DIR/config.toml"
+  fi
+}
+
+install_default_config_files() {
+  copy_if_missing "$REPO_ROOT/config/config.toml" "$CONFIG_DIR/config.toml"
+  copy_if_missing "$REPO_ROOT/config/vocab" "$CONFIG_DIR/vocab"
+  copy_if_missing "$REPO_ROOT/config/current-mode" "$CONFIG_DIR/current-mode"
+}
+
+install_default_modes_preserving_local() {
+  local modes_preexisting="0"
+  [[ -d "$CONFIG_DIR/modes" ]] && modes_preexisting="1"
+  mkdir -p "$CONFIG_DIR/modes"
+  migrate_mode_short_to_code
+  if [[ "$modes_preexisting" == "0" ]]; then
+    cp -R "$REPO_ROOT/config/modes/." "$CONFIG_DIR/modes/"
+    return 0
+  fi
+  # Existing installs keep local mode set; only ensure the core code mode exists.
+  copy_if_missing "$REPO_ROOT/config/modes/code" "$CONFIG_DIR/modes/code"
 }
 
 mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$CONFIG_DIR/integrations/raycast"
@@ -65,24 +114,10 @@ mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$CONFIG_DIR/integrations/raycast"
 install -m 0755 "$REPO_ROOT/bin/tmux-whisper" "$BIN_DIR/tmux-whisper"
 install -m 0755 "$REPO_ROOT/bin/dictate-lib.sh" "$BIN_DIR/dictate-lib.sh"
 
-if [[ "$FORCE" -eq 1 ]]; then
-  backup_if_exists "$CONFIG_DIR/config.toml"
-  backup_if_exists "$CONFIG_DIR/vocab"
-  backup_if_exists "$CONFIG_DIR/current-mode"
-  backup_if_exists "$CONFIG_DIR/modes"
-  cp "$REPO_ROOT/config/config.toml" "$CONFIG_DIR/config.toml"
-  cp "$REPO_ROOT/config/vocab" "$CONFIG_DIR/vocab"
-  cp "$REPO_ROOT/config/current-mode" "$CONFIG_DIR/current-mode"
-  rm -rf "$CONFIG_DIR/modes"
-  cp -R "$REPO_ROOT/config/modes" "$CONFIG_DIR/modes"
-else
-  [[ -f "$CONFIG_DIR/config.toml" ]] || cp "$REPO_ROOT/config/config.toml" "$CONFIG_DIR/config.toml"
-  [[ -f "$CONFIG_DIR/vocab" ]] || cp "$REPO_ROOT/config/vocab" "$CONFIG_DIR/vocab"
-  [[ -f "$CONFIG_DIR/current-mode" ]] || cp "$REPO_ROOT/config/current-mode" "$CONFIG_DIR/current-mode"
-  if [[ ! -d "$CONFIG_DIR/modes" ]]; then
-    cp -R "$REPO_ROOT/config/modes" "$CONFIG_DIR/modes"
-  fi
-fi
+# Preserve user config and local mode edits on every install, including --force.
+# `--force` remains a convenience for reinstalling binaries/integrations.
+install_default_config_files
+install_default_modes_preserving_local
 
 install -m 0755 "$REPO_ROOT/integrations/raycast/tmux-whisper-inline.sh" "$CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh"
 install -m 0755 "$REPO_ROOT/integrations/raycast/tmux-whisper-toggle.sh" "$CONFIG_DIR/integrations/raycast/tmux-whisper-toggle.sh"
