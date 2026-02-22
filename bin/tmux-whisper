@@ -23,142 +23,142 @@ mkdir -p "$DEFAULT_WHISPER_MODELS_DIR"
 
 usage() {
   cat <<'EOF'
-dictate: local whisper.cpp dictation with LLM post-processing and mode-aware prompts.
+tmux-whisper: local whisper.cpp dictation with LLM post-processing and mode-aware prompts.
 
 RECORDING:
-  dictate                    # toggle: start/stop recording (tmux mode)
-  dictate inline             # foreground recording (inline mode)
-  dictate status             # show runtime + effective settings snapshot
-  dictate stop               # force stop any recording
-  dictate cancel             # cancel recording (discard, no paste)
+  tmux-whisper                    # toggle: start/stop recording (tmux mode)
+  tmux-whisper inline             # foreground recording (inline mode)
+  tmux-whisper status             # show runtime + effective settings snapshot
+  tmux-whisper stop               # force stop any recording
+  tmux-whisper cancel             # cancel recording (discard, no paste)
 
 AUDIO:
-  dictate devices            # list macOS audio devices
-  dictate device             # show current device + list available
-  dictate device source <auto|external|mac|iphone|name>  # set mic source strategy
-  dictate device external    # prefer plugged-in external mic, then fallback
-  dictate device mac         # prefer built-in Mac microphone
-  dictate device iphone      # prefer iPhone/Continuity microphone
-  dictate device <index>     # set preferred device by index (stores name; index used as fallback)
-  dictate device index <n>   # pin device index (not recommended; indices can change)
-  dictate device auto        # auto source: prefer external -> mac -> iphone
-  dictate device name "<X>"  # named source: prefer device name substring
-  dictate device mac-name "<X>"    # override built-in Mac source name hint
-  dictate device iphone-name "<X>" # override iPhone source name hint
+  tmux-whisper devices            # list macOS audio devices
+  tmux-whisper device             # show current device + list available
+  tmux-whisper device source <auto|external|mac|iphone|name>  # set mic source strategy
+  tmux-whisper device external    # prefer plugged-in external mic, then fallback
+  tmux-whisper device mac         # prefer built-in Mac microphone
+  tmux-whisper device iphone      # prefer iPhone/Continuity microphone
+  tmux-whisper device <index>     # set preferred device by index (stores name; index used as fallback)
+  tmux-whisper device index <n>   # pin device index (not recommended; indices can change)
+  tmux-whisper device auto        # auto source: prefer external -> mac -> iphone
+  tmux-whisper device name "<X>"  # named source: prefer device name substring
+  tmux-whisper device mac-name "<X>"    # override built-in Mac source name hint
+  tmux-whisper device iphone-name "<X>" # override iPhone source name hint
 
 DIAGNOSTICS:
-  dictate debug              # show resolved device + relevant env/config
-  dictate doctor             # quick health summary (state files, markers, logs)
-  dictate logs               # show recent logs (record/transcribe)
-  dictate keep-logs          # show persistent log retention setting
-  dictate keep-logs on|off   # persist log retention in config
-  dictate bench [N]          # summarize recent stage timings (default: 30 runs)
-  dictate bench-matrix [N] [phrase_file] # compare llm_model(post=on) x postprocess x vocab_clean on fixed phrases
-  dictate changelog          # show recent Dictate changes
+  tmux-whisper debug              # show resolved device + relevant env/config
+  tmux-whisper doctor             # quick health summary (state files, markers, logs)
+  tmux-whisper logs               # show recent logs (record/transcribe)
+  tmux-whisper keep-logs          # show persistent log retention setting
+  tmux-whisper keep-logs on|off   # persist log retention in config
+  tmux-whisper bench [N]          # summarize recent stage timings (default: 30 runs)
+  tmux-whisper bench-matrix [N] [phrase_file] # compare llm_model(post=on) x postprocess x vocab_clean on fixed phrases
+  tmux-whisper changelog          # show recent Tmux Whisper changes
 
 INTEGRATIONS:
-  dictate swiftbar           # show SwiftBar runtime integration state
-  dictate swiftbar on|off    # enable/disable SwiftBar runtime integration
-  dictate swiftbar toggle    # toggle SwiftBar runtime integration
+  tmux-whisper swiftbar           # show SwiftBar runtime integration state
+  tmux-whisper swiftbar on|off    # enable/disable SwiftBar runtime integration
+  tmux-whisper swiftbar toggle    # toggle SwiftBar runtime integration
 
 TEXT CLEANUP:
-  dictate silence-trim       # show silence-trim status
-  dictate silence-trim on|off|toggle  # control ffmpeg silence trimming
-  dictate repeats            # show repeat cleanup level
-  dictate repeats 0|1|2      # set repeat cleanup level
+  tmux-whisper silence-trim       # show silence-trim status
+  tmux-whisper silence-trim on|off|toggle  # control ffmpeg silence trimming
+  tmux-whisper repeats            # show repeat cleanup level
+  tmux-whisper repeats 0|1|2      # set repeat cleanup level
 
 SOUNDS:
-  dictate sound              # show sound settings
-  dictate sound on|off       # master mute toggle
-  dictate sound mute|unmute  # alias for off/on
-  dictate sound start on|off # toggle start sound
-  dictate sound stop on|off  # toggle stop sound
-  dictate sound process on|off # toggle process sound
-  dictate sound error on|off # toggle error sound
+  tmux-whisper sound              # show sound settings
+  tmux-whisper sound on|off       # master mute toggle
+  tmux-whisper sound mute|unmute  # alias for off/on
+  tmux-whisper sound start on|off # toggle start sound
+  tmux-whisper sound stop on|off  # toggle stop sound
+  tmux-whisper sound process on|off # toggle process sound
+  tmux-whisper sound error on|off # toggle error sound
 
 WHISPER MODEL:
-  dictate model              # show current model + list all
-  dictate model base         # 141 MB - fast, good accuracy (default)
-  dictate model small        # 465 MB - slower, better accuracy
-  dictate model turbo        # 547 MB - large-v3-turbo-q5, fast+accurate
+  tmux-whisper model              # show current model + list all
+  tmux-whisper model base         # 141 MB - fast, good accuracy (default)
+  tmux-whisper model small        # 465 MB - slower, better accuracy
+  tmux-whisper model turbo        # 547 MB - large-v3-turbo-q5, fast+accurate
 
 LLM POST-PROCESSING (Cerebras API):
-  dictate postprocess        # show current setting
-  dictate postprocess on     # enable LLM cleanup
-  dictate postprocess off    # disable LLM cleanup
-  dictate llm                # show current Cerebras LLM + list all
-  dictate llm fast           # llama3.1-8b (~2200 t/s)
-  dictate llm smart          # llama-3.3-70b (~2100 t/s)
-  dictate llm qwen           # qwen-3-32b (~2600 t/s)
-  dictate llm gpt            # gpt-oss-120b (~3000 t/s, default)
-  dictate llm <mode> <llm>   # per-mode override (e.g., "dictate llm short smart")
-  dictate profile            # show short/long postprocess profiles (effective)
-  dictate profile <mode>     # show one profile (short or long)
-  dictate profile <mode> llm fast|smart|qwen|gpt|<id>
-  dictate profile <mode> max_tokens <n>
-  dictate profile <mode> chunk_words <n>
-  dictate profile <mode> clear # remove mode-specific overrides
+  tmux-whisper postprocess        # show current setting
+  tmux-whisper postprocess on     # enable LLM cleanup
+  tmux-whisper postprocess off    # disable LLM cleanup
+  tmux-whisper llm                # show current Cerebras LLM + list all
+  tmux-whisper llm fast           # llama3.1-8b (~2200 t/s)
+  tmux-whisper llm smart          # llama-3.3-70b (~2100 t/s)
+  tmux-whisper llm qwen           # qwen-3-32b (~2600 t/s)
+  tmux-whisper llm gpt            # gpt-oss-120b (~3000 t/s, default)
+  tmux-whisper llm <mode> <llm>   # per-mode override (e.g., "tmux-whisper llm short smart")
+  tmux-whisper profile            # show short/long postprocess profiles (effective)
+  tmux-whisper profile <mode>     # show one profile (short or long)
+  tmux-whisper profile <mode> llm fast|smart|qwen|gpt|<id>
+  tmux-whisper profile <mode> max_tokens <n>
+  tmux-whisper profile <mode> chunk_words <n>
+  tmux-whisper profile <mode> clear # remove mode-specific overrides
 
 MODES (context-aware prompts):
-  dictate mode               # show current mode + list all
-  dictate mode short         # short cleanup mode (default)
-  dictate mode long          # long-form cleanup mode
-  dictate mode email         # email mode (formal, professional)
-  dictate mode chat          # chat mode (casual, minimal intervention)
-  dictate mode apps          # list apps that trigger current mode
-  dictate mode apps add X    # add app to current mode's trigger list
-  dictate mode create <name> # create new custom mode
-  dictate mode edit [name]   # edit mode's prompt in $EDITOR
+  tmux-whisper mode               # show current mode + list all
+  tmux-whisper mode short         # short cleanup mode (default)
+  tmux-whisper mode long          # long-form cleanup mode
+  tmux-whisper mode email         # email mode (formal, professional)
+  tmux-whisper mode chat          # chat mode (casual, minimal intervention)
+  tmux-whisper mode apps          # list apps that trigger current mode
+  tmux-whisper mode apps add X    # add app to current mode's trigger list
+  tmux-whisper mode create <name> # create new custom mode
+  tmux-whisper mode edit [name]   # edit mode's prompt in $EDITOR
 
 VOCABULARY:
-  dictate vocab              # show custom word corrections
-  dictate vocab add "X::Y" ["A::B"...] # add one or more corrections
-  dictate vocab import <file> # import corrections from file (one per line)
-  dictate vocab export <file> # export normalized/deduped corrections to file
-  dictate vocab clipboard    # import corrections from clipboard lines
-  dictate vocab dedupe       # normalize + remove duplicate entries
-  dictate vocab edit         # open global vocab file in $EDITOR
-  dictate vocab rm "pattern" # remove entries matching pattern
+  tmux-whisper vocab              # show custom word corrections
+  tmux-whisper vocab add "X::Y" ["A::B"...] # add one or more corrections
+  tmux-whisper vocab import <file> # import corrections from file (one per line)
+  tmux-whisper vocab export <file> # export normalized/deduped corrections to file
+  tmux-whisper vocab clipboard    # import corrections from clipboard lines
+  tmux-whisper vocab dedupe       # normalize + remove duplicate entries
+  tmux-whisper vocab edit         # open global vocab file in $EDITOR
+  tmux-whisper vocab rm "pattern" # remove entries matching pattern
 
 INLINE OPTIONS:
-  dictate autosend           # show auto-send setting
-  dictate autosend on        # paste + Enter (default)
-  dictate autosend off       # paste only, no Enter
-  dictate send-mode          # show inline autosend key strategy
-  dictate send-mode enter    # inline autosend uses Enter
-  dictate send-mode ctrl_j   # inline autosend uses Ctrl+J (Claude-friendly)
-  dictate send-mode cmd_enter # inline autosend uses Cmd+Enter
-  dictate target             # show paste target setting
-  dictate target origin      # paste to app from recording start (default; alias: restore)
-  dictate target current     # paste to whatever app is frontmost now
+  tmux-whisper autosend           # show auto-send setting
+  tmux-whisper autosend on        # paste + Enter (default)
+  tmux-whisper autosend off       # paste only, no Enter
+  tmux-whisper send-mode          # show inline autosend key strategy
+  tmux-whisper send-mode enter    # inline autosend uses Enter
+  tmux-whisper send-mode ctrl_j   # inline autosend uses Ctrl+J (Claude-friendly)
+  tmux-whisper send-mode cmd_enter # inline autosend uses Cmd+Enter
+  tmux-whisper target             # show paste target setting
+  tmux-whisper target origin      # paste to app from recording start (default; alias: restore)
+  tmux-whisper target current     # paste to whatever app is frontmost now
 
 TMUX OPTIONS:
-  dictate tmux               # show tmux defaults
-  dictate tmux autosend on   # tmux: paste + Enter (default)
-  dictate tmux autosend off  # tmux: paste only, no Enter
-  dictate tmux target origin # tmux: paste to pane where recording started (default)
-  dictate tmux target current# tmux: paste to current pane at stop
-  dictate tmux postprocess on|off # tmux: LLM cleanup toggle
-  dictate tmux process-sound on|off # tmux: play processing SFX before transcribe
-  dictate tmux send-mode auto|enter|codex # tmux autosend strategy
-  dictate tmux mode <name>   # tmux: force mode for postprocess (default: short)
-  dictate tmux model <name>  # tmux: whisper model (default: base)
+  tmux-whisper tmux               # show tmux defaults
+  tmux-whisper tmux autosend on   # tmux: paste + Enter (default)
+  tmux-whisper tmux autosend off  # tmux: paste only, no Enter
+  tmux-whisper tmux target origin # tmux: paste to pane where recording started (default)
+  tmux-whisper tmux target current# tmux: paste to current pane at stop
+  tmux-whisper tmux postprocess on|off # tmux: LLM cleanup toggle
+  tmux-whisper tmux process-sound on|off # tmux: play processing SFX before transcribe
+  tmux-whisper tmux send-mode auto|enter|codex # tmux autosend strategy
+  tmux-whisper tmux mode <name>   # tmux: force mode for postprocess (default: short)
+  tmux-whisper tmux model <name>  # tmux: whisper model (default: base)
 
 KEYBINDS (reference for display in SwiftBar):
-  dictate keybind            # show current keybinds
-  dictate keybind tmux F12   # set tmux mode keybind
-  dictate keybind inline F11 # set inline mode keybind
+  tmux-whisper keybind            # show current keybinds
+  tmux-whisper keybind tmux F12   # set tmux mode keybind
+  tmux-whisper keybind inline F11 # set inline mode keybind
 
 REPLAY (re-process text with different mode):
-  dictate replay             # re-process clipboard with current mode
-  dictate replay <mode>      # re-process clipboard with specified mode
-  dictate replay <mode> "X"  # re-process provided text with specified mode
+  tmux-whisper replay             # re-process clipboard with current mode
+  tmux-whisper replay <mode>      # re-process clipboard with specified mode
+  tmux-whisper replay <mode> "X"  # re-process provided text with specified mode
 
 HISTORY (saved transcripts, auto-cleanup after 7 days):
-  dictate history            # list recent dictations (last 20)
-  dictate history N          # show entry N (1 = most recent)
-  dictate history reprocess N [mode]  # re-run LLM on raw transcript
-  dictate history clear      # delete all history
+  tmux-whisper history            # list recent dictations (last 20)
+  tmux-whisper history N          # show entry N (1 = most recent)
+  tmux-whisper history reprocess N [mode]  # re-run LLM on raw transcript
+  tmux-whisper history clear      # delete all history
 
 ENV OPTIONS:
   DICTATE_CLEAN=1            # regex filler removal (fast, no LLM)
@@ -212,7 +212,7 @@ EOF
 }
 
 die() {
-  local msg="dictate: $*"
+  local msg="tmux-whisper: $*"
   echo "$msg" >&2
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
     tmux display-message -d 5000 "$msg" 2>/dev/null || true
@@ -344,7 +344,7 @@ import os, sys
 path = os.path.expanduser(sys.argv[1])
 os.makedirs(os.path.dirname(path), exist_ok=True)
 
-default = """# Dictate configuration (TOML)
+default = """# Tmux Whisper configuration (TOML)
 
 [meta]
 config_version = 1
@@ -361,7 +361,7 @@ silence_min_ms = 250
 silence_keep_ms = 50
 
 [audio.sounds]
-# These support `$SOUNDS_DIR` (expanded by Dictate scripts).
+# These support `$SOUNDS_DIR` (expanded by Tmux Whisper scripts).
 enabled = true
 start_enabled = true
 stop_enabled = true
@@ -652,18 +652,18 @@ detect_install_channel() {
 }
 
 debug() {
-  echo "Dictate debug"
+  echo "Tmux Whisper debug"
   echo ""
 
   local dictate_bin ffmpeg_bin whisper_bin python_bin install_channel
-  dictate_bin="$(command -v dictate 2>/dev/null || true)"
+  dictate_bin="$(command -v tmux-whisper 2>/dev/null || true)"
   ffmpeg_bin="$(command -v ffmpeg 2>/dev/null || true)"
   whisper_bin="$(command -v whisper-cli 2>/dev/null || true)"
   python_bin="$(command -v python3 2>/dev/null || true)"
   install_channel="$(detect_install_channel "$dictate_bin")"
 
   echo "Binaries:"
-  echo "  dictate: ${dictate_bin:-'(not found)'}"
+  echo "  tmux-whisper: ${dictate_bin:-'(not found)'}"
   echo "  ffmpeg:  ${ffmpeg_bin:-'(not found)'}"
   echo "  whisper: ${whisper_bin:-'(not found)'}"
   echo "  python3: ${python_bin:-'(not found)'}"
@@ -685,7 +685,7 @@ debug() {
   echo "  vocab_file:   $DICTATE_CONFIG_DIR/vocab $([[ -f "$DICTATE_CONFIG_DIR/vocab" ]] && echo '(ok)' || echo '(missing)')"
   echo "  models_dir:   $models_dir ($model_count models)"
   echo "  raycast_dir:  $DICTATE_CONFIG_DIR/integrations/raycast $([[ -d "$DICTATE_CONFIG_DIR/integrations/raycast" ]] && echo '(ok)' || echo '(missing)')"
-  echo "  swiftbar_plg: $HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh $([[ -f "$HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh" ]] && echo '(ok)' || echo '(missing)')"
+  echo "  swiftbar_plg: $HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh $([[ -f "$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh" ]] && echo '(ok)' || echo '(missing)')"
   echo ""
 
   echo "Env overrides:"
@@ -800,7 +800,7 @@ debug() {
 }
 
 doctor() {
-  echo "Dictate doctor"
+  echo "Tmux Whisper doctor"
   echo ""
 
   local issues=0
@@ -857,18 +857,18 @@ doctor() {
 
   echo "Install sanity:"
   local dictate_bin install_channel
-  dictate_bin="$(command -v dictate 2>/dev/null || true)"
+  dictate_bin="$(command -v tmux-whisper 2>/dev/null || true)"
   install_channel="$(detect_install_channel "$dictate_bin")"
-  echo "  - dictate binary: ${dictate_bin:-missing}"
+  echo "  - tmux-whisper binary: ${dictate_bin:-missing}"
   if [[ -z "$dictate_bin" ]]; then
     issues=$((issues + 1))
-    add_suggestion "Install Dictate from this repo: ./install.sh --force"
+    add_suggestion "Install Tmux Whisper from this repo: ./install.sh --force"
   fi
   echo "  - install channel: $install_channel"
   echo "  - shared library: $DICTATE_LIB_PATH $([[ -r "$DICTATE_LIB_PATH" ]] && echo '(ok)' || echo '(missing)')"
   if [[ ! -r "$DICTATE_LIB_PATH" ]]; then
     issues=$((issues + 1))
-    add_suggestion "Repair Dictate install: ./install.sh --force"
+    add_suggestion "Repair Tmux Whisper install: ./install.sh --force"
   fi
   echo "  - config file: $DICTATE_CONFIG_FILE $([[ -f "$DICTATE_CONFIG_FILE" ]] && echo '(ok)' || echo '(missing)')"
   if [[ ! -f "$DICTATE_CONFIG_FILE" ]]; then
@@ -884,12 +884,12 @@ doctor() {
       issues=$((issues + 1))
       echo "  - hint: this build requires config schema v${DICTATE_CONFIG_SCHEMA_VERSION}. Run ./install.sh --force to refresh defaults (backups are created)."
       add_suggestion "Refresh defaults from repo: ./install.sh --force"
-      add_suggestion "Or refresh via bootstrap: curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash -s -- --force"
+      add_suggestion "Or refresh via bootstrap: curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force"
       ;;
   esac
-  echo "  - raycast inline: $DICTATE_CONFIG_DIR/integrations/raycast/dictate-inline.sh $([[ -f "$DICTATE_CONFIG_DIR/integrations/raycast/dictate-inline.sh" ]] && echo '(ok)' || echo '(missing)')"
+  echo "  - raycast inline: $DICTATE_CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh $([[ -f "$DICTATE_CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh" ]] && echo '(ok)' || echo '(missing)')"
   local swiftbar_plugin swiftbar_enabled swiftbar_state
-  swiftbar_plugin="$HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh"
+  swiftbar_plugin="$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh"
   swiftbar_enabled="${CFG_SWIFTBAR_ENABLED:-1}"
   if [[ "$swiftbar_enabled" == "1" ]]; then
     if [[ -f "$swiftbar_plugin" ]]; then
@@ -898,7 +898,7 @@ doctor() {
       swiftbar_state="missing, enabled"
       warnings=$((warnings + 1))
       add_suggestion "Install SwiftBar plugin: ./install.sh --force"
-      add_suggestion "Or disable SwiftBar integration: dictate swiftbar off"
+      add_suggestion "Or disable SwiftBar integration: tmux-whisper swiftbar off"
     fi
   else
     if [[ -f "$swiftbar_plugin" ]]; then
@@ -918,7 +918,7 @@ doctor() {
       fixed_mode="short"
       warnings=$((warnings + 1))
       echo "  - mode.current: <empty> (invalid, fallback=short)"
-      add_suggestion "Set a valid fixed mode: dictate mode short"
+      add_suggestion "Set a valid fixed mode: tmux-whisper mode short"
     elif [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$fixed_mode_raw")" ]]; then
       fixed_mode="$(canonical_mode_name "$fixed_mode_raw")"
       echo "  - mode.current: $fixed_mode (fixed)"
@@ -926,8 +926,8 @@ doctor() {
       fixed_mode="short"
       warnings=$((warnings + 1))
       echo "  - mode.current: $fixed_mode_raw (invalid, fallback=short)"
-      add_suggestion "Set a valid fixed mode: dictate mode short"
-      add_suggestion "Or create the missing mode: dictate mode create \"$fixed_mode_raw\""
+      add_suggestion "Set a valid fixed mode: tmux-whisper mode short"
+      add_suggestion "Or create the missing mode: tmux-whisper mode create \"$fixed_mode_raw\""
     fi
   else
     fixed_mode="$(get_current_mode 2>/dev/null || true)"
@@ -943,7 +943,7 @@ doctor() {
   else
     warnings=$((warnings + 1))
     echo "  - tmux.mode: $tmux_mode_raw (invalid, fallback=short)"
-    add_suggestion "Set tmux mode to a valid mode: dictate tmux mode short"
+    add_suggestion "Set tmux mode to a valid mode: tmux-whisper tmux mode short"
   fi
 
   local required_mode required_prompt
@@ -954,7 +954,7 @@ doctor() {
     elif [[ -f "$required_prompt" ]]; then
       warnings=$((warnings + 1))
       echo "  - mode.$required_mode.prompt: empty"
-      add_suggestion "Populate $required_mode prompt: dictate mode edit $required_mode"
+      add_suggestion "Populate $required_mode prompt: tmux-whisper mode edit $required_mode"
     else
       warnings=$((warnings + 1))
       echo "  - mode.$required_mode.prompt: missing"
@@ -974,7 +974,7 @@ doctor() {
   echo "  - ggml models: $model_count"
   if [[ "$model_count" -eq 0 ]]; then
     warnings=$((warnings + 1))
-    echo "  - hint: place ggml-*.bin models in the models dir, then run: dictate model"
+    echo "  - hint: place ggml-*.bin models in the models dir, then run: tmux-whisper model"
     add_suggestion "Add at least one ggml model to $models_dir (for example ggml-base.en.bin)"
   fi
   echo ""
@@ -1114,7 +1114,7 @@ doctor() {
       echo "  - $suggestion"
     done
   fi
-  echo "Next: dictate debug   |   dictate logs"
+  echo "Next: tmux-whisper debug   |   tmux-whisper logs"
 }
 
 logs() {
@@ -1282,8 +1282,8 @@ def ordered_keys(section, scalars):
   return [k for k in pref if k in scalars] + remaining
 
 parts = [
-  "# Dictate configuration (TOML)",
-  "# Generated by `dictate`; safe to edit.",
+  "# Tmux Whisper configuration (TOML)",
+  "# Generated by `tmux-whisper`; safe to edit.",
   "",
 ]
 
@@ -1667,14 +1667,14 @@ bench() {
       return 0
       ;;
     *)
-      [[ "$arg" =~ ^[0-9]+$ ]] || die "usage: dictate bench [N|clear]"
+      [[ "$arg" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper bench [N|clear]"
       limit="$arg"
       ;;
   esac
 
   if [[ ! -f "$BENCH_FILE" ]]; then
     echo "No bench data yet."
-    echo "Run a dictation first, then: dictate bench"
+    echo "Run a dictation first, then: tmux-whisper bench"
     return 0
   fi
 
@@ -1759,7 +1759,7 @@ def fmt_stage(name, values):
 flow_counts = collections.Counter(r["flow"] for r in subset)
 status_counts = collections.Counter(r["status"] for r in subset)
 
-print(f"Dictate bench (last {len(subset)} of {len(records)} runs)")
+print(f"Tmux Whisper bench (last {len(subset)} of {len(records)} runs)")
 print(f"Source: {path}")
 print("")
 print("Counts:")
@@ -1821,8 +1821,8 @@ bench_matrix() {
   local rounds="1"
 
   if [[ -n "$rounds_arg" ]]; then
-    [[ "$rounds_arg" =~ ^[0-9]+$ ]] || die "usage: dictate bench-matrix [N] [phrase_file]"
-    (( rounds_arg > 0 )) || die "usage: dictate bench-matrix [N] [phrase_file]"
+    [[ "$rounds_arg" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper bench-matrix [N] [phrase_file]"
+    (( rounds_arg > 0 )) || die "usage: tmux-whisper bench-matrix [N] [phrase_file]"
     rounds="$rounds_arg"
   fi
 
@@ -2048,7 +2048,7 @@ def sort_key(item):
     model_val = model if model != "-" else ""
     return (post_val, model_val, vocab_val)
 
-print("Dictate bench-matrix")
+print("Tmux Whisper bench-matrix")
 print(f"Mode: {mode}")
 print(f"Phrases: {phrase_count} (source: {phrase_src})")
 print(f"Rounds: {rounds}")
@@ -2653,7 +2653,7 @@ devices() {
     if printf "%s\n" "$out" | grep -q "Input/output error"; then
       echo ""
       echo "No devices listed (ffmpeg: Input/output error)."
-      echo "Tip: On macOS, grant Microphone permission to your terminal app (System Settings → Privacy & Security → Microphone), then rerun: dictate devices"
+      echo "Tip: On macOS, grant Microphone permission to your terminal app (System Settings → Privacy & Security → Microphone), then rerun: tmux-whisper devices"
     fi
   fi
 }
@@ -2942,13 +2942,13 @@ start() {
     audio_index="$CFG_AUDIO_DEVICE_INDEX"
     startup_audio_source="config:audio.device_index"
   fi
-  [[ -n "$audio_index" ]] || die "no audio device found. Run: dictate debug"
+  [[ -n "$audio_index" ]] || die "no audio device found. Run: tmux-whisper debug"
 
   if [[ -f "$STATE_FILE" ]]; then
     # shellcheck disable=SC1090
     . "$STATE_FILE"
     if kill -0 "${pid:-0}" 2>/dev/null; then
-      die "already recording (pid=$pid). Run: dictate stop"
+      die "already recording (pid=$pid). Run: tmux-whisper stop"
     fi
     rm -f "$STATE_FILE"
   fi
@@ -2956,7 +2956,7 @@ start() {
   local target_pane
   target_pane="$(tmux_resolve_invoking_pane || true)"
   if [[ -z "$target_pane" ]]; then
-    die "not running inside tmux and DICTATE_TARGET_PANE is not set. Start tmux and run dictate from the target pane, set DICTATE_TARGET_PANE, or use: dictate inline"
+    die "not running inside tmux and DICTATE_TARGET_PANE is not set. Start tmux and run tmux-whisper from the target pane, set DICTATE_TARGET_PANE, or use: tmux-whisper inline"
   fi
 
   # Track tmux job for queue display.
@@ -2970,7 +2970,7 @@ start() {
   wav="$TMPDIR/whisper-dictate-$$.wav"
   rm -f "$wav" 2>/dev/null || true
 
-  # Record in background until 'dictate stop' sends SIGINT.
+  # Record in background until 'tmux-whisper stop' sends SIGINT.
   : >"$RECORD_LOG" 2>/dev/null || true
   local ffmpeg_live_started_ms
   ffmpeg_live_started_ms="$(now_ms)"
@@ -3043,7 +3043,7 @@ start() {
 stop() {
   need tmux
 
-  [[ -f "$STATE_FILE" ]] || die "not recording. Run: dictate start"
+  [[ -f "$STATE_FILE" ]] || die "not recording. Run: tmux-whisper start"
 
   # shellcheck disable=SC1090
   . "$STATE_FILE"
@@ -3057,7 +3057,7 @@ stop() {
   stop_requested_ms="$(now_ms)"
   rm -f "$STATE_FILE"
 
-  [[ -n "${pid:-}" && -n "${wav:-}" && -n "${target_pane:-}" && -n "${model_id:-}" ]] || die "state file invalid; try: dictate start"
+  [[ -n "${pid:-}" && -n "${wav:-}" && -n "${target_pane:-}" && -n "${model_id:-}" ]] || die "state file invalid; try: tmux-whisper start"
   local job_id="${job_id:-}"
   local record_ms="0"
   if [[ -n "$state_record_started_ms" && "$state_record_started_ms" =~ ^[0-9]+$ ]]; then
@@ -3349,7 +3349,7 @@ inline() {
     audio_index="$CFG_AUDIO_DEVICE_INDEX"
     startup_audio_source="config:audio.device_index"
   fi
-  [[ -n "$audio_index" ]] || die "no audio device found. Run: dictate debug"
+  [[ -n "$audio_index" ]] || die "no audio device found. Run: tmux-whisper debug"
   
   # Capture target app only when inline is configured to restore/origin behavior.
   local target_app="${DICTATE_TARGET_APP:-}"
@@ -3394,7 +3394,7 @@ inline() {
     else
       echo "No audio recorded"
     fi
-    echo "Tip: On macOS, grant Microphone permission to your terminal app (System Settings → Privacy & Security → Microphone), then run: dictate devices"
+    echo "Tip: On macOS, grant Microphone permission to your terminal app (System Settings → Privacy & Security → Microphone), then run: tmux-whisper devices"
     echo "Log: $record_log"
     total_ms=$(( $(now_ms) - flow_started_ms ))
     append_bench_entry "inline" "record_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "0" "0" "0" "0" "$total_ms" \
@@ -3839,7 +3839,7 @@ status() {
   local tmux_total tmux_rec tmux_proc
   read -r tmux_total tmux_rec tmux_proc < <(count_tmux_jobs_snapshot)
 
-  echo "Dictate status"
+  echo "Tmux Whisper status"
   echo ""
   echo "Runtime:"
   describe_state_file "tmux" "$STATE_FILE"
@@ -3926,7 +3926,7 @@ status() {
   fi
 
   echo ""
-  echo "More detail: dictate debug   |   dictate doctor   |   dictate logs"
+  echo "More detail: tmux-whisper debug   |   tmux-whisper doctor   |   tmux-whisper logs"
 }
 
 toggle() {
@@ -4000,7 +4000,7 @@ set_keep_logs() {
       echo "Env override: DICTATE_KEEP_LOGS=${DICTATE_KEEP_LOGS:-<unset>}"
       ;;
     *)
-      die "usage: dictate keep-logs [on|off]"
+      die "usage: tmux-whisper keep-logs [on|off]"
       ;;
   esac
 }
@@ -4035,7 +4035,7 @@ set_silence_trim() {
       echo "keep_ms: ${CFG_AUDIO_SILENCE_KEEP_MS:-50}"
       ;;
     *)
-      die "usage: dictate silence-trim [on|off|toggle|show]"
+      die "usage: tmux-whisper silence-trim [on|off|toggle|show]"
       ;;
   esac
 }
@@ -4072,7 +4072,7 @@ set_repeats_level() {
       echo "  2 = dedupe repeated words + short phrases"
       ;;
     *)
-      die "usage: dictate repeats [0|1|2|off|toggle|show]"
+      die "usage: tmux-whisper repeats [0|1|2|off|toggle|show]"
       ;;
   esac
 }
@@ -4085,7 +4085,7 @@ set_autosend() {
     "")
       [[ "${CFG_INLINE_AUTOSEND:-1}" == "1" ]] && echo "Auto-send: ON" || echo "Auto-send: OFF"
       echo ""
-      echo "Note: Applies to inline mode only. Use: dictate tmux autosend on|off"
+      echo "Note: Applies to inline mode only. Use: tmux-whisper tmux autosend on|off"
       ;;
     *) die "unknown value: $val (use: on, off)" ;;
   esac
@@ -4335,7 +4335,7 @@ manage_tmux() {
       esac
       ;;
     *)
-      die "usage: dictate tmux [autosend|target|postprocess|process-sound|send-mode|mode|model] [value]"
+      die "usage: tmux-whisper tmux [autosend|target|postprocess|process-sound|send-mode|mode|model] [value]"
       ;;
   esac
 }
@@ -4388,7 +4388,7 @@ set_llm() {
     fi
     echo ""
     echo "Set with:"
-    echo "  dictate llm $mode fast|smart|qwen|gpt"
+    echo "  tmux-whisper llm $mode fast|smart|qwen|gpt"
     return 0
   fi
 
@@ -4423,9 +4423,9 @@ set_llm() {
       echo "  gpt   (gpt-oss-120b)  - ~3000 t/s, fastest + 120B params"
       echo ""
       echo "Per-mode override:"
-      echo "  dictate llm <mode> <llm>   (e.g., dictate llm short smart)"
+      echo "  tmux-whisper llm <mode> <llm>   (e.g., tmux-whisper llm short smart)"
       ;;
-    *) die "unknown LLM: $name (use: fast, smart, qwen, gpt, or: dictate llm <mode> <llm>)" ;;
+    *) die "unknown LLM: $name (use: fast, smart, qwen, gpt, or: tmux-whisper llm <mode> <llm>)" ;;
   esac
 }
 
@@ -4498,9 +4498,9 @@ set_profile() {
     show_one_profile "long"
     echo ""
     echo "Set overrides:"
-    echo "  dictate profile short llm gpt"
-    echo "  dictate profile short max_tokens 2000"
-    echo "  dictate profile long chunk_words 1000"
+    echo "  tmux-whisper profile short llm gpt"
+    echo "  tmux-whisper profile short max_tokens 2000"
+    echo "  tmux-whisper profile long chunk_words 1000"
     return 0
   fi
 
@@ -4508,7 +4508,7 @@ set_profile() {
   mode="$(canonical_mode_name "$a1")"
   case "$mode" in
     short|long) ;;
-    *) die "usage: dictate profile [short|long] [llm|max_tokens|chunk_words|clear] [value]" ;;
+    *) die "usage: tmux-whisper profile [short|long] [llm|max_tokens|chunk_words|clear] [value]" ;;
   esac
   local mode_key
   mode_key="$(mode_override_key "$mode")"
@@ -4517,16 +4517,16 @@ set_profile() {
     show_one_profile "$mode"
     echo ""
     echo "Set overrides:"
-    echo "  dictate profile $mode llm gpt|smart|qwen|fast|<model>"
-    echo "  dictate profile $mode max_tokens <n>"
-    echo "  dictate profile $mode chunk_words <n>"
-    echo "  dictate profile $mode clear"
+    echo "  tmux-whisper profile $mode llm gpt|smart|qwen|fast|<model>"
+    echo "  tmux-whisper profile $mode max_tokens <n>"
+    echo "  tmux-whisper profile $mode chunk_words <n>"
+    echo "  tmux-whisper profile $mode clear"
     return 0
   fi
 
   case "$a2" in
     llm)
-      [[ -n "$a3" ]] || die "usage: dictate profile $mode llm <model|fast|smart|qwen|gpt>"
+      [[ -n "$a3" ]] || die "usage: tmux-whisper profile $mode llm <model|fast|smart|qwen|gpt>"
       local llm_id
       llm_id="$(resolve_llm_alias "$a3")"
       config_set "postprocess.mode_overrides.${mode_key}.llm" "string" "$llm_id"
@@ -4534,7 +4534,7 @@ set_profile() {
       echo "$mode profile llm: $llm_id"
       ;;
     max_tokens|chunk_words)
-      [[ -n "$a3" ]] || die "usage: dictate profile $mode $a2 <n>"
+      [[ -n "$a3" ]] || die "usage: tmux-whisper profile $mode $a2 <n>"
       [[ "$a3" =~ ^[0-9]+$ ]] || die "$a2 must be a positive integer"
       [[ "$a3" -gt 0 ]] || die "$a2 must be > 0"
       config_set "postprocess.mode_overrides.${mode_key}.${a2}" "int" "$a3"
@@ -4549,7 +4549,7 @@ set_profile() {
       echo "$mode profile overrides cleared (now using global defaults)."
       ;;
     *)
-      die "usage: dictate profile [short|long] [llm|max_tokens|chunk_words|clear] [value]"
+      die "usage: tmux-whisper profile [short|long] [llm|max_tokens|chunk_words|clear] [value]"
       ;;
   esac
 }
@@ -4578,12 +4578,12 @@ set_device() {
       devices
       echo ""
       echo "Quick source commands:"
-      echo "  dictate device auto"
-      echo "  dictate device external"
-      echo "  dictate device mac"
-      echo "  dictate device iphone"
-      echo "  dictate device name \"MacBook Air Microphone\""
-      echo "  dictate device iphone-name \"Rico's iPhone\""
+      echo "  tmux-whisper device auto"
+      echo "  tmux-whisper device external"
+      echo "  tmux-whisper device mac"
+      echo "  tmux-whisper device iphone"
+      echo "  tmux-whisper device name \"MacBook Air Microphone\""
+      echo "  tmux-whisper device iphone-name \"Rico's iPhone\""
       ;;
     auto|external|mac|iphone)
       config_set "audio.source" "string" "$(normalize_audio_source "$a1")"
@@ -4593,12 +4593,12 @@ set_device() {
       echo "Device source set: ${CFG_AUDIO_SOURCE:-auto}"
       ;;
     source)
-      [[ -n "$a2" ]] || die "usage: dictate device source <auto|external|mac|iphone|name>"
+      [[ -n "$a2" ]] || die "usage: tmux-whisper device source <auto|external|mac|iphone|name>"
       local src_raw src_norm
       src_raw="$(printf "%s" "$a2" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
       case "$src_raw" in
         auto|external|mac|iphone|name) ;;
-        *) die "usage: dictate device source <auto|external|mac|iphone|name>" ;;
+        *) die "usage: tmux-whisper device source <auto|external|mac|iphone|name>" ;;
       esac
       src_norm="$(normalize_audio_source "$src_raw")"
       config_set "audio.source" "string" "$src_norm"
@@ -4609,7 +4609,7 @@ set_device() {
       ;;
     name)
       local name="${*:-}"
-      [[ -n "$name" ]] || die "usage: dictate device name \"<substring>\""
+      [[ -n "$name" ]] || die "usage: tmux-whisper device name \"<substring>\""
       config_set "audio.source" "string" "name"
       config_set "audio.device_name" "string" "$name"
       local detected=""
@@ -4627,7 +4627,7 @@ set_device() {
       ;;
     mac-name)
       local mac_name="${*:-}"
-      [[ -n "$mac_name" ]] || die "usage: dictate device mac-name \"<substring>\""
+      [[ -n "$mac_name" ]] || die "usage: tmux-whisper device mac-name \"<substring>\""
       config_set "audio.mac_name" "string" "$mac_name"
       clear_audio_index_cache
       config_load
@@ -4635,20 +4635,20 @@ set_device() {
       ;;
     iphone-name|phone-name)
       local iphone_name="${*:-}"
-      [[ -n "$iphone_name" ]] || die "usage: dictate device iphone-name \"<substring>\""
+      [[ -n "$iphone_name" ]] || die "usage: tmux-whisper device iphone-name \"<substring>\""
       config_set "audio.iphone_name" "string" "$iphone_name"
       clear_audio_index_cache
       config_load
       echo "iPhone source hint set: ${CFG_AUDIO_IPHONE_NAME:-$iphone_name}"
       ;;
     index)
-      [[ -n "$a2" ]] || die "usage: dictate device index <n>"
+      [[ -n "$a2" ]] || die "usage: tmux-whisper device index <n>"
       [[ "$a2" =~ ^[0-9]+$ ]] || die "invalid device index: $a2 (must be a number)"
       config_set "audio.device_index" "int" "$a2"
       clear_audio_index_cache
       config_load
       echo "Device pinned: index $a2"
-      echo "Note: indices can change when devices connect/disconnect; prefer: dictate device name \"...\""
+      echo "Note: indices can change when devices connect/disconnect; prefer: tmux-whisper device name \"...\""
       ;;
     *)
       if [[ "$a1" =~ ^[0-9]+$ ]]; then
@@ -4667,13 +4667,13 @@ set_device() {
         config_load
         if [[ -n "$name" ]]; then
           echo "Device set: $a1 ($name)"
-          echo "Note: Dictate will prefer the name; index is only a fallback."
+          echo "Note: Tmux Whisper will prefer the name; index is only a fallback."
         else
           echo "Device set: $a1"
           echo "Note: couldn't resolve a name for index $a1; index may change between boots/devices."
         fi
       else
-        die "usage: dictate device [<index>|index <n>|auto|external|mac|iphone|source <...>|name \"<substring>\"|mac-name \"<substring>\"|iphone-name \"<substring>\"]"
+        die "usage: tmux-whisper device [<index>|index <n>|auto|external|mac|iphone|source <...>|name \"<substring>\"|mac-name \"<substring>\"|iphone-name \"<substring>\"]"
       fi
       ;;
   esac
@@ -4801,7 +4801,7 @@ manage_vocab() {
   
   case "$subcmd" in
     add)
-      [[ "$#" -gt 0 ]] || die "usage: dictate vocab add \"wrong::right\" [\"a::b\" ...]"
+      [[ "$#" -gt 0 ]] || die "usage: tmux-whisper vocab add \"wrong::right\" [\"a::b\" ...]"
       local token part
       local added=0 dup=0 invalid=0
       for token in "$@"; do
@@ -4827,7 +4827,7 @@ manage_vocab() {
       ;;
     import)
       local src="${1:-}"
-      [[ -n "$src" ]] || die "usage: dictate vocab import <file>"
+      [[ -n "$src" ]] || die "usage: tmux-whisper vocab import <file>"
       src="$(expand_path "$src")"
       [[ -f "$src" ]] || die "file not found: $src"
       local stats added dup invalid invalid_tmp
@@ -4847,7 +4847,7 @@ manage_vocab() {
       ;;
     export)
       local dst="${1:-}"
-      [[ -n "$dst" ]] || die "usage: dictate vocab export <file>"
+      [[ -n "$dst" ]] || die "usage: tmux-whisper vocab export <file>"
       [[ -f "$VOCAB_FILE" ]] || die "no custom vocab file: $VOCAB_FILE"
       dst="$(expand_path "$dst")"
       mkdir -p "$(dirname "$dst")"
@@ -4931,7 +4931,7 @@ manage_vocab() {
     rm|remove)
       local pattern="$*"
       if [[ -z "$pattern" ]]; then
-        die "usage: dictate vocab rm \"pattern\""
+        die "usage: tmux-whisper vocab rm \"pattern\""
       fi
       if [[ ! -f "$VOCAB_FILE" ]]; then
         echo "No custom vocab file"
@@ -4953,17 +4953,17 @@ manage_vocab() {
         echo "$(wc -l < "$VOCAB_FILE" | tr -d ' ') entries"
         echo ""
         echo "Commands:"
-        echo "  dictate vocab add \"wrong::right\" [\"a::b\" ...]"
-        echo "  dictate vocab import <file>"
-        echo "  dictate vocab export <file>"
-        echo "  dictate vocab clipboard"
-        echo "  dictate vocab dedupe"
+        echo "  tmux-whisper vocab add \"wrong::right\" [\"a::b\" ...]"
+        echo "  tmux-whisper vocab import <file>"
+        echo "  tmux-whisper vocab export <file>"
+        echo "  tmux-whisper vocab clipboard"
+        echo "  tmux-whisper vocab dedupe"
       else
         echo "No custom vocab file yet."
         echo ""
         echo "Add corrections:"
-        echo "  dictate vocab add \"health lag::help flag\""
-        echo "  dictate vocab add \"my app::MyApp\""
+        echo "  tmux-whisper vocab add \"health lag::help flag\""
+        echo "  tmux-whisper vocab add \"my app::MyApp\""
       fi
       ;;
     *) die "unknown vocab command: $subcmd (use: add, import, export, clipboard, dedupe, edit, rm)" ;;
@@ -4997,7 +4997,7 @@ manage_mode() {
         add)
           local app_name="$*"
           if [[ -z "$app_name" ]]; then
-            die "usage: dictate mode apps add \"AppName\""
+            die "usage: tmux-whisper mode apps add \"AppName\""
           fi
           mkdir -p "$(dirname "$apps_file")"
           echo "$app_name" >> "$apps_file"
@@ -5017,7 +5017,7 @@ manage_mode() {
     create)
       local new_mode="$1"
       if [[ -z "$new_mode" ]]; then
-        die "usage: dictate mode create <name>"
+        die "usage: tmux-whisper mode create <name>"
       fi
       local new_dir="$DICTATE_CONFIG_DIR/modes/$new_mode"
       if [[ -d "$new_dir" ]]; then
@@ -5028,7 +5028,7 @@ manage_mode() {
       touch "$new_dir/vocab"
       echo "Context: $new_mode mode." > "$new_dir/prompt"
       echo "Created mode: $new_mode"
-      echo "  Edit apps: dictate mode apps add \"AppName\""
+      echo "  Edit apps: tmux-whisper mode apps add \"AppName\""
       echo "  Edit prompt: \$EDITOR $new_dir/prompt"
       ;;
     edit)
@@ -5072,11 +5072,11 @@ manage_mode() {
       done
       echo ""
       echo "Commands:"
-      echo "  dictate mode <name>     - set fixed mode"
-      echo "  dictate mode apps       - list apps for current mode"
-      echo "  dictate mode apps add X - add app to current mode"
-      echo "  dictate mode create X   - create new mode"
-      echo "  dictate mode edit [X]   - edit mode prompt"
+      echo "  tmux-whisper mode <name>     - set fixed mode"
+      echo "  tmux-whisper mode apps       - list apps for current mode"
+      echo "  tmux-whisper mode apps add X - add app to current mode"
+      echo "  tmux-whisper mode create X   - create new mode"
+      echo "  tmux-whisper mode edit [X]   - edit mode prompt"
       ;;
     *)
       # Check if it's a custom mode name
@@ -5093,9 +5093,9 @@ manage_mode() {
 }
 
 # Replay: re-run LLM post-processing on clipboard or provided text with a mode
-# Usage: dictate replay [mode] [text]
-#   dictate replay long          # reprocess clipboard with long mode
-#   dictate replay long "text"   # reprocess provided text with long mode
+# Usage: tmux-whisper replay [mode] [text]
+#   tmux-whisper replay long          # reprocess clipboard with long mode
+#   tmux-whisper replay long "text"   # reprocess provided text with long mode
 replay() {
   local target_mode="${1:-}"
   shift 2>/dev/null || true
@@ -5114,7 +5114,7 @@ replay() {
   else
     input="$(pbpaste)"
     if [[ -z "$input" ]]; then
-      die "clipboard is empty (or provide text: dictate replay <mode> \"text\")"
+      die "clipboard is empty (or provide text: tmux-whisper replay <mode> \"text\")"
     fi
   fi
   
@@ -5162,7 +5162,7 @@ manage_keybind() {
     echo "  tmux: ${CFG_UI_KEYBIND_TMUX:-F12}"
     echo "  inline: ${CFG_UI_KEYBIND_INLINE:-F11}"
     echo ""
-    echo "Set keybind: dictate keybind <tmux|inline> <key>"
+    echo "Set keybind: tmux-whisper keybind <tmux|inline> <key>"
     echo "Note: This is for display only. Update actual bindings in zsh/Raycast."
   elif [[ -z "$key" ]]; then
     # Show specific keybind
@@ -5186,7 +5186,7 @@ manage_keybind() {
 
 manage_swiftbar() {
   local action="${1:-show}"
-  local plugin_path="$HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh"
+  local plugin_path="$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh"
   local enabled="${CFG_SWIFTBAR_ENABLED:-1}"
 
   case "$action" in
@@ -5214,7 +5214,7 @@ manage_swiftbar() {
       fi
       ;;
     *)
-      die "usage: dictate swiftbar [show|on|off|toggle]"
+      die "usage: tmux-whisper swiftbar [show|on|off|toggle]"
       ;;
   esac
 }
@@ -5254,11 +5254,11 @@ manage_sounds() {
       echo "Sounds: $(onoff "${CFG_AUDIO_SOUNDS_ENABLED:-1}")"
       ;;
     start|stop|process|error|cancel)
-      [[ -n "$val" ]] || die "usage: dictate sound $target on|off"
+      [[ -n "$val" ]] || die "usage: tmux-whisper sound $target on|off"
       case "$val" in
         on|1) config_set "audio.sounds.${target}_enabled" "bool" "true" ;;
         off|0) config_set "audio.sounds.${target}_enabled" "bool" "false" ;;
-        *) die "usage: dictate sound $target on|off" ;;
+        *) die "usage: tmux-whisper sound $target on|off" ;;
       esac
       config_load
       local state="1"
@@ -5271,7 +5271,7 @@ manage_sounds() {
       esac
       echo "$target: $(onoff "$state")"
       ;;
-    *) die "usage: dictate sound [on|off|start|stop|process|error|cancel] [on|off]" ;;
+    *) die "usage: tmux-whisper sound [on|off|start|stop|process|error|cancel] [on|off]" ;;
   esac
 }
 
@@ -5308,5 +5308,5 @@ case "$cmd" in
   swiftbar) manage_swiftbar "${2:-}" ;;
   replay) replay "${2:-}" "${@:3}" ;;
   history) manage_history "${2:-}" "${@:3}" ;;
-  *) die "unknown command: $cmd (run: dictate --help)" ;;
+  *) die "unknown command: $cmd (run: tmux-whisper --help)" ;;
 esac

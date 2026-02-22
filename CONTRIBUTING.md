@@ -1,18 +1,18 @@
 # Contributing
 
-Thanks for contributing to Dictate.
+Thanks for contributing to Tmux Whisper.
 
 ## Scope and Direction
 
-- Dictate is tmux-first.
+- Tmux Whisper is tmux-first.
 - Inline mode and desktop integrations are important, but secondary to core tmux reliability.
 - Keep changes minimal and production-oriented.
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/ricardo-nth/dictate-cli.git
-cd dictate-cli
+git clone https://github.com/ricardo-nth/tmux-whisper.git
+cd tmux-whisper
 ./tests/ci.sh
 ./install.sh --force
 ```
@@ -36,8 +36,8 @@ If behavior changes in runtime flows, also test locally:
 
 ```bash
 ./install.sh --force
-dictate debug
-dictate doctor
+tmux-whisper debug
+tmux-whisper doctor
 ```
 
 ## Release Policy

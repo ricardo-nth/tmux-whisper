@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # @raycast.schemaVersion 1
-# @raycast.title Dictate Inline
+# @raycast.title Tmux Whisper Inline
 # @raycast.mode silent
-# @raycast.packageName Dictate
+# @raycast.packageName Tmux Whisper
 # @raycast.description Toggle recording → paste into frontmost app
 
 LOG="/tmp/dictate-raycast-inline.log"
@@ -26,16 +26,16 @@ fi
 DICTATE_SOUNDS_DIR="${SOUNDS_DIR:-}/dictate"
 
 notify_inline_error() {
-  local msg="${1:-Dictate inline error}"
+  local msg="${1:-Tmux Whisper inline error}"
   local escaped="${msg//\"/\\\"}"
   echo "ERROR: $msg"
   command -v osascript >/dev/null 2>&1 || return 0
-  osascript -e "display notification \"$escaped\" with title \"Dictate Inline\"" 2>/dev/null || true
+  osascript -e "display notification \"$escaped\" with title \"Tmux Whisper Inline\"" 2>/dev/null || true
 }
 
 STATE_FILE="/tmp/whisper-dictate-inline.state"
 PROCESSING_DIR="/tmp/dictate-processing"
-SWIFTBAR_PLUGIN_ID="dictate-status.0.2s.sh"
+SWIFTBAR_PLUGIN_ID="tmux-whisper-status.0.2s.sh"
 PROCESSING_THRESHOLD_S="0.35"
 PROCESSING_LONG_FLAG="/tmp/dictate-inline-processing-long.flag"
 CONFIG_DIR="$HOME/.config/dictate"
@@ -48,7 +48,7 @@ if [[ ! -r "$DICTATE_LIB_PATH" ]]; then
   if command -v dictate-lib.sh >/dev/null 2>&1; then
     DICTATE_LIB_PATH="$(command -v dictate-lib.sh)"
   else
-    dictate_bin_path="$(command -v dictate 2>/dev/null || true)"
+    dictate_bin_path="$(command -v tmux-whisper 2>/dev/null || true)"
     if [[ -n "$dictate_bin_path" ]]; then
       maybe_lib="$(cd "$(dirname "$dictate_bin_path")" && pwd)/dictate-lib.sh"
       [[ -r "$maybe_lib" ]] && DICTATE_LIB_PATH="$maybe_lib"

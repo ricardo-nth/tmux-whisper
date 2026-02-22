@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DICTATE_BIN="$ROOT/bin/dictate"
+DICTATE_BIN="$ROOT/bin/tmux-whisper"
 TMP_ROOT="$(mktemp -d)"
 STUB_DIR="$TMP_ROOT/stubs"
 mkdir -p "$STUB_DIR"

@@ -6,15 +6,15 @@ usage() {
 Usage: curl -fsSL <bootstrap-url> | bash
 
 Environment:
-  DICTATE_BOOTSTRAP_REPO         GitHub repo slug (default: ricardo-nth/dictate-cli)
+  DICTATE_BOOTSTRAP_REPO         GitHub repo slug (default: ricardo-nth/tmux-whisper)
   DICTATE_BOOTSTRAP_REF          Git ref/branch/tag (default: main)
   DICTATE_BOOTSTRAP_ARCHIVE_URL  Optional override archive URL (advanced/testing)
 
 Any arguments after `bash -s --` are forwarded to install.sh.
 Examples:
-  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash
-  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/main/bootstrap.sh | bash -s -- --force
-  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/dictate-cli/v0.4.1/bootstrap.sh | bash -s -- --no-sounds
+  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force
+  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.4.1/bootstrap.sh | bash -s -- --no-sounds
 USAGE
 }
 
@@ -30,11 +30,11 @@ for cmd in bash curl tar mktemp; do
   fi
 done
 
-REPO="${DICTATE_BOOTSTRAP_REPO:-ricardo-nth/dictate-cli}"
+REPO="${DICTATE_BOOTSTRAP_REPO:-ricardo-nth/tmux-whisper}"
 REF="${DICTATE_BOOTSTRAP_REF:-main}"
 ARCHIVE_URL="${DICTATE_BOOTSTRAP_ARCHIVE_URL:-https://codeload.github.com/${REPO}/tar.gz/${REF}}"
 
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dictate-cli-bootstrap.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tmux-whisper-bootstrap.XXXXXX")"
 cleanup() {
   rm -rf "$TMP_DIR"
 }
@@ -45,7 +45,7 @@ ARCHIVE_PATH="$TMP_DIR/repo.tar.gz"
 curl -fsSL "$ARCHIVE_URL" -o "$ARCHIVE_PATH"
 tar -xzf "$ARCHIVE_PATH" -C "$TMP_DIR"
 
-SRC_DIR="$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d -name 'dictate-cli-*' | head -n1)"
+SRC_DIR="$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d -name 'tmux-whisper-*' | head -n1)"
 if [[ -z "$SRC_DIR" || ! -x "$SRC_DIR/install.sh" ]]; then
   echo "bootstrap error: could not find extracted install.sh" >&2
   exit 1

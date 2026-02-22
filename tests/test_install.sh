@@ -26,13 +26,13 @@ assert_exec() {
 
 "$ROOT/install.sh" --with-sounds
 
-assert_exec "$HOME/.local/bin/dictate"
+assert_exec "$HOME/.local/bin/tmux-whisper"
 assert_exec "$HOME/.local/bin/dictate-lib.sh"
 assert_file "$HOME/.config/dictate/config.toml"
 assert_file "$HOME/.config/dictate/current-mode"
 assert_file "$HOME/.config/dictate/vocab"
-assert_file "$HOME/.config/dictate/integrations/raycast/dictate-inline.sh"
-assert_file "$HOME/.config/swiftbar/plugins/dictate-status.0.2s.sh"
+assert_file "$HOME/.config/dictate/integrations/raycast/tmux-whisper-inline.sh"
+assert_file "$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh"
 assert_file "$HOME/.local/share/sounds/dictate/start.wav"
 
 # Non-force install should preserve user-edited config.

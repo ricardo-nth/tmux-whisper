@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
 # @raycast.schemaVersion 1
-# @raycast.title Dictate Toggle (tmux)
+# @raycast.title Tmux Whisper Toggle (tmux)
 # @raycast.mode silent
-# @raycast.packageName Dictate
+# @raycast.packageName Tmux Whisper
 # @raycast.description Toggle recording → paste+Enter into tmux pane
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 export DICTATE_CLEAN=1
-SWIFTBAR_PLUGIN_ID="dictate-status.0.2s.sh"
+SWIFTBAR_PLUGIN_ID="tmux-whisper-status.0.2s.sh"
 
 if [[ -f "$HOME/.zshenv" ]]; then
   # Load XDG vars + SOUNDS_DIR for Raycast environment
@@ -23,19 +23,19 @@ fi
 
 DICTATE_SOUNDS_DIR="${SOUNDS_DIR:-}/dictate"
 CONFIG_TOML="$HOME/.config/dictate/config.toml"
-DICTATE_BIN="${DICTATE_BIN:-$(command -v dictate 2>/dev/null || true)}"
-DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/dictate}"
+DICTATE_BIN="${DICTATE_BIN:-$(command -v tmux-whisper 2>/dev/null || true)}"
+DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/tmux-whisper}"
 
 notify() {
-  local msg="${1:-Dictate error}"
+  local msg="${1:-Tmux Whisper error}"
   local escaped="${msg//\"/\\\"}"
   command -v osascript >/dev/null 2>&1 || return 0
-  osascript -e "display notification \"$escaped\" with title \"Dictate\"" 2>/dev/null || true
+  osascript -e "display notification \"$escaped\" with title \"Tmux Whisper\"" 2>/dev/null || true
 }
 
 die_with_notice() {
   local msg="${1:-Unknown error}"
-  echo "dictate-toggle: $msg" >&2
+  echo "tmux-whisper-toggle: $msg" >&2
   notify "$msg"
   exit 1
 }
@@ -136,7 +136,7 @@ load_config_sounds
 STATE_FILE="/tmp/whisper-dictate.state"
 
 if [[ ! -x "$DICTATE_BIN" ]]; then
-  die_with_notice "Dictate binary not found. Install via brew or ./install.sh --force."
+  die_with_notice "Tmux Whisper binary not found. Install via brew or ./install.sh --force."
 fi
 
 if ! command -v tmux >/dev/null 2>&1; then
@@ -155,7 +155,7 @@ if [[ -f "$STATE_FILE" ]]; then
   # Stopping - just play sound
   "$DICTATE_BIN" toggle 2>/tmp/dictate-raycast.log
   refresh_swiftbar
-  # Stop sound is played by Dictate after transcription/paste completes.
+  # Stop sound is played by Tmux Whisper after transcription/paste completes.
 else
   # Starting - just play sound
   "$DICTATE_BIN" toggle 2>/tmp/dictate-raycast.log

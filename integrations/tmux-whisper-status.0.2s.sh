@@ -27,8 +27,8 @@ XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CONFIG_DIR="$XDG_CONFIG_HOME/dictate"
 CONFIG_TOML="$CONFIG_DIR/config.toml"
 MODE_FILE="$CONFIG_DIR/current-mode"
-DICTATE_BIN="${DICTATE_BIN:-$(command -v dictate 2>/dev/null || true)}"
-DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/dictate}"
+DICTATE_BIN="${DICTATE_BIN:-$(command -v tmux-whisper 2>/dev/null || true)}"
+DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/tmux-whisper}"
 
 # SwiftBar may run without interactive shell env; load API key similarly to Raycast path.
 if [[ -z "${CEREBRAS_API_KEY:-}" && -f "${ZDOTDIR:-$HOME}/.zshrc" ]]; then
@@ -316,7 +316,7 @@ count_processing() {
       fi
       kind="$(sed -n 's/^kind=//p' "$f" 2>/dev/null | head -n 1 || true)"
 
-      # Only show processing for inline flows (Raycast inline or `dictate inline`).
+      # Only show processing for inline flows (Raycast inline or `tmux-whisper inline`).
       # Still clean up stale markers for other kinds.
       local is_inline="0"
       if [[ "$kind" == "raycast-inline" || "$kind" == "inline" ]]; then
@@ -428,9 +428,9 @@ ICON_PAUSED="$(get_icon "paused" "⏸")"
 if [[ ! -x "$DICTATE_BIN" ]]; then
   echo "$ICON_ERROR"
   echo "---"
-  echo "Dictate binary not found | color=red"
+  echo "Tmux Whisper binary not found | color=red"
   echo "Checked: ${DICTATE_BIN:-<none>} | size=11 color=gray"
-  echo "Install (stable): brew install ricardo-nth/tap/dictate-cli | size=11"
+  echo "Install (stable): brew install ricardo-nth/tap/tmux-whisper | size=11"
   echo "Install (dev): ./install.sh --force | size=11"
   exit 0
 fi
@@ -633,7 +633,7 @@ if [[ "$model_id" == */* ]]; then
 elif [[ "$model_id" == *.bin ]]; then
   model_base="$model_id"
 fi
-# Toggle commands (dictate uses on/off)
+# Toggle commands (tmux-whisper uses on/off)
 autosend_toggle_val=$([[ "$autosend_val" == "1" ]] && echo "off" || echo "on")
 postprocess_toggle_val=$([[ "$postprocess_val" == "1" ]] && echo "off" || echo "on")
 tmux_autosend_toggle_val=$([[ "$tmux_autosend_val" == "1" ]] && echo "off" || echo "on")

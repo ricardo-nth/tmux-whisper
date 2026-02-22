@@ -6,29 +6,29 @@
 - [ ] Run local validation:
   - [ ] `./tests/ci.sh`
   - [ ] `./install.sh --force`
-  - [ ] `dictate debug`
-  - [ ] `dictate doctor`
+  - [ ] `tmux-whisper debug`
+  - [ ] `tmux-whisper doctor`
 - [ ] Confirm changelog is updated (`CHANGELOG.md`).
 - [ ] Confirm roadmap alignment (`ROADMAP.md`) if scope changed.
 
 ## Tag and Publish
 
-- [ ] Create release tag in `dictate-cli` (`vX.Y.Z`).
+- [ ] Create release tag in `tmux-whisper` (`vX.Y.Z`).
 - [ ] Push tag to origin.
 - [ ] Verify GitHub tarball URL and checksum.
 
 ## Homebrew Update
 
-- [ ] Update `homebrew-tap/Formula/dictate-cli.rb`:
+- [ ] Update `homebrew-tap/Formula/tmux-whisper.rb`:
   - [ ] `url` -> new tag
   - [ ] `sha256` -> new archive checksum
 - [ ] Run:
   - [ ] `brew update`
-  - [ ] `brew audit --new --strict --online ricardo-nth/tap/dictate-cli`
-  - [ ] `brew install/upgrade ricardo-nth/tap/dictate-cli`
+  - [ ] `brew audit --new --strict --online ricardo-nth/tap/tmux-whisper`
+  - [ ] `brew install/upgrade ricardo-nth/tap/tmux-whisper`
 - [ ] Validate command:
-  - [ ] `dictate --help`
-  - [ ] `dictate debug`
+  - [ ] `tmux-whisper --help`
+  - [ ] `tmux-whisper debug`
 
 ## Post-release
 

@@ -62,7 +62,7 @@ backup_if_exists() {
 
 mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$CONFIG_DIR/integrations/raycast"
 
-install -m 0755 "$REPO_ROOT/bin/dictate" "$BIN_DIR/dictate"
+install -m 0755 "$REPO_ROOT/bin/tmux-whisper" "$BIN_DIR/tmux-whisper"
 install -m 0755 "$REPO_ROOT/bin/dictate-lib.sh" "$BIN_DIR/dictate-lib.sh"
 
 if [[ "$FORCE" -eq 1 ]]; then
@@ -84,13 +84,13 @@ else
   fi
 fi
 
-install -m 0755 "$REPO_ROOT/integrations/raycast/dictate-inline.sh" "$CONFIG_DIR/integrations/raycast/dictate-inline.sh"
-install -m 0755 "$REPO_ROOT/integrations/raycast/dictate-toggle.sh" "$CONFIG_DIR/integrations/raycast/dictate-toggle.sh"
-install -m 0755 "$REPO_ROOT/integrations/raycast/dictate-cancel.sh" "$CONFIG_DIR/integrations/raycast/dictate-cancel.sh"
+install -m 0755 "$REPO_ROOT/integrations/raycast/tmux-whisper-inline.sh" "$CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh"
+install -m 0755 "$REPO_ROOT/integrations/raycast/tmux-whisper-toggle.sh" "$CONFIG_DIR/integrations/raycast/tmux-whisper-toggle.sh"
+install -m 0755 "$REPO_ROOT/integrations/raycast/tmux-whisper-cancel.sh" "$CONFIG_DIR/integrations/raycast/tmux-whisper-cancel.sh"
 
 if [[ "$INSTALL_SWIFTBAR" == "1" ]]; then
   mkdir -p "$SWIFTBAR_DIR"
-  install -m 0755 "$REPO_ROOT/integrations/dictate-status.0.2s.sh" "$SWIFTBAR_DIR/dictate-status.0.2s.sh"
+  install -m 0755 "$REPO_ROOT/integrations/tmux-whisper-status.0.2s.sh" "$SWIFTBAR_DIR/tmux-whisper-status.0.2s.sh"
 fi
 
 if [[ "$INSTALL_SOUNDS" == "1" && -d "$REPO_ROOT/assets/sounds/dictate" ]]; then
@@ -104,10 +104,10 @@ if [[ "$INSTALL_SOUNDS" == "1" && -d "$REPO_ROOT/assets/sounds/dictate" ]]; then
   done
 fi
 
-echo "Installed dictate to: $BIN_DIR/dictate"
+echo "Installed tmux-whisper to: $BIN_DIR/tmux-whisper"
 echo "Config path: $CONFIG_DIR"
 if [[ "$INSTALL_SWIFTBAR" == "1" ]]; then
-  echo "SwiftBar plugin: $SWIFTBAR_DIR/dictate-status.0.2s.sh"
+  echo "SwiftBar plugin: $SWIFTBAR_DIR/tmux-whisper-status.0.2s.sh"
 else
   echo "SwiftBar plugin: skipped (DICTATE_INSTALL_SWIFTBAR=0)"
 fi
@@ -116,4 +116,4 @@ if [[ "$INSTALL_SOUNDS" == "1" ]]; then
 else
   echo "Sample sounds: skipped"
 fi
-echo "Run: dictate debug"
+echo "Run: tmux-whisper debug"

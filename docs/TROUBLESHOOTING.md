@@ -5,9 +5,9 @@ Use this page for quick diagnosis and high-confidence fixes.
 ## 1) Run the health checks
 
 ```bash
-dictate debug
-dictate doctor
-dictate status
+tmux-whisper debug
+tmux-whisper doctor
+tmux-whisper status
 ```
 
 - `debug`: detailed config/env/path visibility
@@ -18,7 +18,7 @@ dictate status
 
 Schema mismatch:
 
-- Symptom in `dictate doctor`: `config schema: ... status=mismatch`
+- Symptom in `tmux-whisper doctor`: `config schema: ... status=mismatch`
 - Fix:
 
 ```bash
@@ -40,14 +40,14 @@ Invalid fixed mode fallback:
 
 - Symptom: `mode.current: <name> (invalid, fallback=short)`
 - Fix either:
-  - reset to built-in mode: `dictate mode short`
-  - create missing custom mode: `dictate mode create "<name>"`
+  - reset to built-in mode: `tmux-whisper mode short`
+  - create missing custom mode: `tmux-whisper mode create "<name>"`
 
 Invalid tmux mode fallback:
 
 - Symptom: `tmux.mode: <name> (invalid, fallback=short)`
 - Fix:
-  - `dictate tmux mode short`
+  - `tmux-whisper tmux mode short`
 
 Missing prompt files:
 
@@ -55,8 +55,8 @@ Missing prompt files:
 - Fix:
 
 ```bash
-dictate mode edit short
-dictate mode edit long
+tmux-whisper mode edit short
+tmux-whisper mode edit long
 ```
 
 If both are missing after install drift, refresh defaults:
@@ -75,11 +75,11 @@ Accepted correction formats:
 
 Invalid import lines:
 
-- `dictate vocab import <file>` now reports line numbers for invalid entries (first 5).
+- `tmux-whisper vocab import <file>` now reports line numbers for invalid entries (first 5).
 - Clean and normalize existing vocab safely:
 
 ```bash
-dictate vocab dedupe
+tmux-whisper vocab dedupe
 ```
 
 This writes a timestamped backup before rewrite.
@@ -87,18 +87,18 @@ This writes a timestamped backup before rewrite.
 Export a clean snapshot for sharing/versioning:
 
 ```bash
-dictate vocab export <file>
+tmux-whisper vocab export <file>
 ```
 
 ## 5) Integration optionality
 
-Dictate remains usable without Raycast/SwiftBar.
+Tmux Whisper remains usable without Raycast/SwiftBar.
 
-- Missing integration scripts appear as warnings in `dictate doctor`, not hard failures.
+- Missing integration scripts appear as warnings in `tmux-whisper doctor`, not hard failures.
 - Runtime SwiftBar toggle:
 
 ```bash
-dictate swiftbar        # show state
-dictate swiftbar off    # disable SwiftBar runtime integration
-dictate swiftbar on
+tmux-whisper swiftbar        # show state
+tmux-whisper swiftbar off    # disable SwiftBar runtime integration
+tmux-whisper swiftbar on
 ```

@@ -13,7 +13,7 @@ This roadmap reflects the current product direction: **tmux-first reliability** 
 Focus: make the public project robust for wider use.
 
 - Harden parity between CLI, Raycast, and SwiftBar behaviors.
-- Improve diagnostics (`dictate debug`, `dictate doctor`) for install/path/config issues.
+- Improve diagnostics (`tmux-whisper debug`, `tmux-whisper doctor`) for install/path/config issues.
 - Add contributor-facing repo hygiene:
   - `CONTRIBUTING.md`
   - issue templates
@@ -36,10 +36,10 @@ Focus: make day-to-day usage cleaner and safer.
 
 Recent progress (2026-02-19):
 
-- `dictate doctor` now includes mode/config fallback diagnostics plus actionable suggested fixes.
+- `tmux-whisper doctor` now includes mode/config fallback diagnostics plus actionable suggested fixes.
 - Vocab safety flow now includes invalid-line previews, guarded dedupe backups, and export snapshots.
 - Added dedicated troubleshooting guide: `docs/TROUBLESHOOTING.md`.
-- Added runtime SwiftBar integration toggle (`dictate swiftbar on|off|toggle`) so integration can be managed without reinstalling.
+- Added runtime SwiftBar integration toggle (`tmux-whisper swiftbar on|off|toggle`) so integration can be managed without reinstalling.
 
 Success criteria:
 

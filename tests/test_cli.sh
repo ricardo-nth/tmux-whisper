@@ -9,15 +9,15 @@ BIN_DIR="$TMP_ROOT/bin"
 HOME_DIR="$TMP_ROOT/home"
 mkdir -p "$BIN_DIR" "$HOME_DIR"
 
-cp "$ROOT/bin/dictate" "$BIN_DIR/dictate"
+cp "$ROOT/bin/tmux-whisper" "$BIN_DIR/tmux-whisper"
 cp "$ROOT/bin/dictate-lib.sh" "$BIN_DIR/dictate-lib.sh"
-chmod +x "$BIN_DIR/dictate" "$BIN_DIR/dictate-lib.sh"
+chmod +x "$BIN_DIR/tmux-whisper" "$BIN_DIR/dictate-lib.sh"
 
 # Ensure the default ~/.local/bin path is unavailable and fallback-to-sibling works.
-output="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= "$BIN_DIR/dictate" --help)"
+output="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= "$BIN_DIR/tmux-whisper" --help)"
 
-if [[ "$output" != *"dictate: local whisper.cpp dictation"* ]]; then
-  echo "Expected help output from dictate command" >&2
+if [[ "$output" != *"tmux-whisper: local whisper.cpp dictation"* ]]; then
+  echo "Expected help output from tmux-whisper command" >&2
   exit 1
 fi
 

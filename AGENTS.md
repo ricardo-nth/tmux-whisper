@@ -1,16 +1,16 @@
-# Dictate CLI - Project Working Agreement
+# Tmux Whisper CLI - Project Working Agreement
 
-This project is now the single source of truth for Dictate development.
+This project is now the single source of truth for Tmux Whisper development.
 
 ## Source of Truth
 
-- Primary development repo: `dictate-cli` (project workspace)
+- Primary development repo: `tmux-whisper` (project workspace)
 - Homebrew tap repo: `homebrew-tap` (separate repo for formula updates)
 - Legacy bare repo (`~/.dictate.git`) is retired and archived; do not use it for active development.
 
 ## Development Workflow
 
-1. Create a feature branch in `dictate-cli`.
+1. Create a feature branch in `tmux-whisper`.
 2. Implement changes in this repo only.
 3. Run validation:
    - `./tests/ci.sh`
@@ -21,7 +21,7 @@ This project is now the single source of truth for Dictate development.
 ## Install Channels
 
 - Daily/personal testing: `./install.sh --force` (or bootstrap installer).
-- Public stable installs: Homebrew (`ricardo-nth/tap/dictate-cli`).
+- Public stable installs: Homebrew (`ricardo-nth/tap/tmux-whisper`).
 
 Do not require Homebrew for every development iteration.
 
@@ -29,13 +29,13 @@ Do not require Homebrew for every development iteration.
 
 1. Merge stable changes to `main`.
 2. Update `CHANGELOG.md` with release-ready notes.
-3. Tag release in `dictate-cli` (`vX.Y.Z`).
+3. Tag release in `tmux-whisper` (`vX.Y.Z`).
 4. Update Homebrew formula in `homebrew-tap`:
    - `url` to new tag archive
    - `sha256` to matching archive checksum
 5. Validate with:
    - `brew update`
-   - `brew install/upgrade ricardo-nth/tap/dictate-cli`
+   - `brew install/upgrade ricardo-nth/tap/tmux-whisper`
 
 ## Config and Privacy Boundaries
 

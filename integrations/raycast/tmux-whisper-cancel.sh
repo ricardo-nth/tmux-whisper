@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 # @raycast.schemaVersion 1
-# @raycast.title Dictate Cancel
+# @raycast.title Tmux Whisper Cancel
 # @raycast.mode silent
-# @raycast.packageName Dictate
+# @raycast.packageName Tmux Whisper
 # @raycast.description Cancel current recording (discard without pasting)
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
-SWIFTBAR_PLUGIN_ID="dictate-status.0.2s.sh"
+SWIFTBAR_PLUGIN_ID="tmux-whisper-status.0.2s.sh"
 
 if [[ -f "$HOME/.zshenv" ]]; then
   source "$HOME/.zshenv"

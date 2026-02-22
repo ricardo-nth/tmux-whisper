@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible issue in Dictate
+description: Report a reproducible issue in Tmux Whisper
 title: "bug: "
 labels: [bug]
 body:
@@ -40,7 +40,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: Paste key output from `dictate debug` and `dictate doctor`.
+      description: Paste key output from `tmux-whisper debug` and `tmux-whisper doctor`.
       render: shell
 
   - type: textarea
