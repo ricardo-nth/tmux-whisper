@@ -199,7 +199,123 @@ swiftbar_toggle_out="$(HOME="$SWIFTBAR_TOGGLE_HOME" XDG_CONFIG_HOME="$SWIFTBAR_T
 assert_contains "swiftbar_plugin_off_state" "$swiftbar_toggle_out" "SwiftBar integration: OFF"
 assert_contains "swiftbar_plugin_off_enable_action" "$swiftbar_toggle_out" "Enable SwiftBar integration"
 
-# --- Regression 8: vocab import/export/dedupe safety behavior remains stable. ---
+# --- Regression 8: budget profile auto-selection is based on transcript length, not mode name. ---
+BUDGET_HOME="$TMP_ROOT/home-budget"
+BUDGET_BIN="$BUDGET_HOME/.local/bin"
+BUDGET_CFG="$BUDGET_HOME/.config/dictate"
+BUDGET_STUBS="$TMP_ROOT/budget-stubs"
+mkdir -p "$BUDGET_BIN" "$BUDGET_CFG/modes/short" "$BUDGET_CFG/modes/long" "$BUDGET_STUBS"
+cp "$ROOT/bin/tmux-whisper" "$BUDGET_BIN/tmux-whisper"
+cp "$ROOT/bin/dictate-lib.sh" "$BUDGET_BIN/dictate-lib.sh"
+chmod +x "$BUDGET_BIN/tmux-whisper" "$BUDGET_BIN/dictate-lib.sh"
+cat >"$BUDGET_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[postprocess]
+llm = "gpt-oss-120b"
+max_tokens = 1111
+chunk_words = 0
+
+[postprocess.mode_overrides.short]
+max_tokens = 2222
+chunk_words = 0
+
+[postprocess.mode_overrides.long]
+max_tokens = 5555
+chunk_words = 0
+EOF
+printf '%s\n' "Context: code mode." >"$BUDGET_CFG/modes/short/prompt"
+printf '%s\n' "Context: long mode." >"$BUDGET_CFG/modes/long/prompt"
+
+cat >"$BUDGET_STUBS/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+payload=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d)
+      payload="${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [[ -n "${DICTATE_TEST_CURL_DUMP:-}" ]]; then
+  printf '%s' "$payload" >"$DICTATE_TEST_CURL_DUMP"
+fi
+printf '%s\n' '{"choices":[{"message":{"content":"processed"}}]}'
+EOF
+chmod +x "$BUDGET_STUBS/curl"
+
+cat >"$BUDGET_STUBS/jq" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "-Rs" && "${2:-}" == "." ]]; then
+  python3 - <<'PY'
+import json, sys
+print(json.dumps(sys.stdin.read()))
+PY
+  exit 0
+fi
+if [[ "${1:-}" == "-r" ]]; then
+  filter="${2:-}"
+  python3 - "$filter" <<'PY'
+import json, sys
+flt = sys.argv[1]
+raw = sys.stdin.read().strip()
+if not raw:
+    print("")
+    raise SystemExit(0)
+try:
+    data = json.loads(raw)
+except Exception:
+    print("")
+    raise SystemExit(0)
+if flt == '.choices[0].message.content // empty':
+    out = ""
+    try:
+        out = data["choices"][0]["message"]["content"] or ""
+    except Exception:
+        out = ""
+    print(out)
+    raise SystemExit(0)
+if flt == '.error.message // .error // empty':
+    err = data.get("error", "")
+    if isinstance(err, dict):
+        print(err.get("message", "") or "")
+    elif isinstance(err, str):
+        print(err)
+    else:
+        print("")
+    raise SystemExit(0)
+print("")
+PY
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$BUDGET_STUBS/jq"
+
+cat >"$BUDGET_STUBS/pbcopy" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+EOF
+chmod +x "$BUDGET_STUBS/pbcopy"
+
+BUDGET_CURL_DUMP="$TMP_ROOT/budget-curl.json"
+long_text="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour twentyfive twentysix twentyseven twentyeight twentynine thirty"
+budget_replay_out="$(HOME="$BUDGET_HOME" PATH="$BUDGET_STUBS:$BUDGET_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BUDGET_CFG" DICTATE_CONFIG_FILE="$BUDGET_CFG/config.toml" CEREBRAS_API_KEY=test-key DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD=20 DICTATE_TEST_CURL_DUMP="$BUDGET_CURL_DUMP" tmux-whisper replay code "$long_text")"
+assert_contains "budget_replay_runs" "$budget_replay_out" "Re-processing with short mode"
+assert_file_contains "budget_profile_auto_long_max_tokens" "$BUDGET_CURL_DUMP" '"max_tokens": 5555'
+
+# --- Regression 9: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"
 VOCAB_BIN="$VOCAB_HOME/.local/bin"
 VOCAB_CFG="$VOCAB_HOME/.config/dictate"
@@ -232,7 +348,7 @@ assert_contains "vocab_dedupe_backup_line" "$dedupe_out" "Backup: "
 dedupe_backup="$(printf "%s\n" "$dedupe_out" | sed -n 's/^Backup: //p' | head -n 1)"
 assert_file_exists "vocab_dedupe_backup_exists" "$dedupe_backup"
 
-# --- Regression 9: bench-matrix UX checks are stable. ---
+# --- Regression 10: bench-matrix UX checks are stable. ---
 BENCH_HOME="$TMP_ROOT/home-bench"
 BENCH_BIN="$BENCH_HOME/.local/bin"
 BENCH_CFG="$BENCH_HOME/.config/dictate"

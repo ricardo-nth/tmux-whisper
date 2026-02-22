@@ -771,6 +771,32 @@ postprocess_llm() {
     lookup_override "$list" "$key" 2>/dev/null || true
   }
 
+  budget_profile_for_input() {
+    local text="${1:-}"
+    local threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-120}"
+    local word_count
+    [[ "$threshold" =~ ^[0-9]+$ ]] || threshold="120"
+    word_count="$(printf '%s' "$text" | wc -w | tr -d '[:space:]')"
+    [[ "$word_count" =~ ^[0-9]+$ ]] || word_count="0"
+    if [[ "$word_count" -ge "$threshold" ]]; then
+      echo "long"
+    else
+      echo "short"
+    fi
+  }
+
+  resolve_budget_override() {
+    local list="${1:-}"
+    local mode_key="${2:-}"
+    local budget_key="${3:-}"
+    local val=""
+    if [[ -n "$mode_key" && "$mode_key" != "short" && "$mode_key" != "long" ]]; then
+      val="$(lookup_override_for_mode "$list" "$mode_key" 2>/dev/null || true)"
+      [[ -n "$val" ]] && { echo "$val"; return 0; }
+    fi
+    lookup_override_for_mode "$list" "$budget_key" 2>/dev/null || true
+  }
+
   local llm_model="llama3.1-8b"
   [[ -n "${CFG_POSTPROCESS_LLM:-}" ]] && llm_model="$CFG_POSTPROCESS_LLM"
   if [[ -n "${DICTATE_LLM_MODEL:-}" ]]; then
@@ -786,17 +812,19 @@ postprocess_llm() {
 
   local max_tokens=""
   local chunk_words=""
+  local budget_profile_key
+  budget_profile_key="$(budget_profile_for_input "$input")"
   if [[ -n "${DICTATE_LLM_MAX_TOKENS:-}" ]]; then
     max_tokens="$DICTATE_LLM_MAX_TOKENS"
   else
-    max_tokens="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+    max_tokens="$(resolve_budget_override "${CFG_POSTPROCESS_MODE_MAX_TOKENS_OVERRIDES:-}" "$mode_key" "$budget_profile_key" 2>/dev/null || true)"
     [[ -z "$max_tokens" ]] && max_tokens="${CFG_POSTPROCESS_MAX_TOKENS:-}"
   fi
 
   if [[ -n "${DICTATE_LLM_CHUNK_WORDS:-}" ]]; then
     chunk_words="$DICTATE_LLM_CHUNK_WORDS"
   else
-    chunk_words="$(lookup_override_for_mode "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" 2>/dev/null || true)"
+    chunk_words="$(resolve_budget_override "${CFG_POSTPROCESS_MODE_CHUNK_WORDS_OVERRIDES:-}" "$mode_key" "$budget_profile_key" 2>/dev/null || true)"
     [[ -z "$chunk_words" ]] && chunk_words="${CFG_POSTPROCESS_CHUNK_WORDS:-}"
   fi
   [[ -z "$chunk_words" ]] && chunk_words="0"
