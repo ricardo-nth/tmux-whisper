@@ -670,6 +670,33 @@ mode_override_key() {
   echo "$m"
 }
 
+mode_allows_flow() {
+  local mode flow flows_file line saw_entries
+  mode="$(canonical_mode_name "${1:-}")"
+  flow="${2:-}"
+  [[ -n "$mode" ]] || return 1
+  [[ -z "$flow" ]] && return 0
+
+  flows_file="$CONFIG_DIR/modes/$(mode_to_dir_name "$mode")/flows"
+  [[ -f "$flows_file" ]] || return 0
+
+  saw_entries="0"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [[ -n "$line" ]] || continue
+    saw_entries="1"
+    case "$line" in
+      all|both) return 0 ;;
+      tmux|inline)
+        [[ "$line" == "$flow" ]] && return 0
+        ;;
+    esac
+  done < "$flows_file"
+
+  [[ "$saw_entries" == "0" ]]
+}
+
 normalize_mode_name() {
   local mode
   mode="$(canonical_mode_name "${1:-}")"
@@ -692,6 +719,7 @@ detect_mode() {
     mode_name="$(basename "$mode_dir")"
     local apps_file="$mode_dir/apps"
     [[ -f "$apps_file" ]] || continue
+    mode_allows_flow "$mode_name" "inline" || continue
     if grep -iq "^${app}$" "$apps_file" 2>/dev/null; then
       normalize_mode_name "$mode_name"
       return 0

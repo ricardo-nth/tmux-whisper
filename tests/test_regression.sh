@@ -214,7 +214,39 @@ swiftbar_toggle_out="$(HOME="$SWIFTBAR_TOGGLE_HOME" XDG_CONFIG_HOME="$SWIFTBAR_T
 assert_contains "swiftbar_plugin_off_state" "$swiftbar_toggle_out" "SwiftBar integration: OFF"
 assert_contains "swiftbar_plugin_off_enable_action" "$swiftbar_toggle_out" "Enable SwiftBar integration"
 
-# --- Regression 10: budget profile auto-selection is based on transcript length, not mode name. ---
+# --- Regression 10: SwiftBar mode menus are folder-driven and respect flow filters. ---
+SWIFTBAR_MODES_HOME="$TMP_ROOT/home-swiftbar-modes"
+SWIFTBAR_MODES_BIN="$SWIFTBAR_MODES_HOME/.local/bin"
+SWIFTBAR_MODES_CFG="$SWIFTBAR_MODES_HOME/.config/dictate"
+mkdir -p "$SWIFTBAR_MODES_BIN" "$SWIFTBAR_MODES_CFG/modes/short" "$SWIFTBAR_MODES_CFG/modes/email" "$SWIFTBAR_MODES_CFG/modes/long"
+cp "$ROOT/bin/tmux-whisper" "$SWIFTBAR_MODES_BIN/tmux-whisper"
+cp "$ROOT/bin/dictate-lib.sh" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
+chmod +x "$SWIFTBAR_MODES_BIN/tmux-whisper" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
+cat >"$SWIFTBAR_MODES_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[integrations.swiftbar]
+enabled = true
+EOF
+printf '%s\n' "short" >"$SWIFTBAR_MODES_CFG/current-mode"
+printf '%s\n' "Context: code mode." >"$SWIFTBAR_MODES_CFG/modes/short/prompt"
+printf '%s\n' "tmux" "inline" >"$SWIFTBAR_MODES_CFG/modes/short/flows"
+printf '%s\n' "Context: email mode." >"$SWIFTBAR_MODES_CFG/modes/email/prompt"
+printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/email/flows"
+printf '%s\n' "Context: long mode." >"$SWIFTBAR_MODES_CFG/modes/long/prompt"
+printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/long/flows"
+
+swiftbar_modes_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_inline_menu_email" "$swiftbar_modes_out" "param1=mode param2=email"
+assert_contains "swiftbar_tmux_menu_code" "$swiftbar_modes_out" "param1=tmux param2=mode param3=code"
+assert_not_contains "swiftbar_tmux_menu_email_hidden" "$swiftbar_modes_out" "param1=tmux param2=mode param3=email"
+assert_not_contains "swiftbar_tmux_menu_long_hidden" "$swiftbar_modes_out" "param1=tmux param2=mode param3=long"
+
+# --- Regression 11: budget profile auto-selection is based on transcript length, not mode name. ---
 BUDGET_HOME="$TMP_ROOT/home-budget"
 BUDGET_BIN="$BUDGET_HOME/.local/bin"
 BUDGET_CFG="$BUDGET_HOME/.config/dictate"
@@ -330,7 +362,7 @@ budget_replay_out="$(HOME="$BUDGET_HOME" PATH="$BUDGET_STUBS:$BUDGET_BIN:/usr/bi
 assert_contains "budget_replay_runs" "$budget_replay_out" "Re-processing with short mode"
 assert_file_contains "budget_profile_auto_long_max_tokens" "$BUDGET_CURL_DUMP" '"max_tokens": 5555'
 
-# --- Regression 11: vocab import/export/dedupe safety behavior remains stable. ---
+# --- Regression 12: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"
 VOCAB_BIN="$VOCAB_HOME/.local/bin"
 VOCAB_CFG="$VOCAB_HOME/.config/dictate"
@@ -363,7 +395,7 @@ assert_contains "vocab_dedupe_backup_line" "$dedupe_out" "Backup: "
 dedupe_backup="$(printf "%s\n" "$dedupe_out" | sed -n 's/^Backup: //p' | head -n 1)"
 assert_file_exists "vocab_dedupe_backup_exists" "$dedupe_backup"
 
-# --- Regression 12: bench-matrix UX checks are stable. ---
+# --- Regression 13: bench-matrix UX checks are stable. ---
 BENCH_HOME="$TMP_ROOT/home-bench"
 BENCH_BIN="$BENCH_HOME/.local/bin"
 BENCH_CFG="$BENCH_HOME/.config/dictate"
