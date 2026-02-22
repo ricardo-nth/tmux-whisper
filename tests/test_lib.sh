@@ -63,15 +63,15 @@ british="$(printf '%s' 'Color and optimize behavior.' | dictate_lib_normalize_br
 assert_eq "british_spelling" "Colour and optimise behaviour." "$british"
 
 para_input="Sentence one is long enough. Sentence two continues with more words. Sentence three keeps this going. Sentence four closes it out."
-para_out="$(printf '%s' "$para_input" | dictate_lib_auto_paragraphs short 10)"
+para_out="$(printf '%s' "$para_input" | dictate_lib_auto_paragraphs code 10)"
 assert_contains "auto_paragraphs_split" "$para_out" $'\n\n'
 
 cfg_tmp="$(mktemp -d)"
 trap 'rm -rf "$cfg_tmp"' EXIT
-mkdir -p "$cfg_tmp/modes/short"
+mkdir -p "$cfg_tmp/modes/code"
 printf '%s\n' 'codex -> Codex' > "$cfg_tmp/vocab"
-printf '%s\n' 'tmux -> Tmux' > "$cfg_tmp/modes/short/vocab"
-vocab_out="$(printf '%s' 'codex and tmux' | dictate_lib_apply_vocab_corrections short "$cfg_tmp" | trim_nl)"
+printf '%s\n' 'tmux -> Tmux' > "$cfg_tmp/modes/code/vocab"
+vocab_out="$(printf '%s' 'codex and tmux' | dictate_lib_apply_vocab_corrections code "$cfg_tmp" | trim_nl)"
 assert_eq "vocab_corrections" "Codex and Tmux" "$vocab_out"
 
 assert_eq "resolve_model_turbo" "/models/ggml-large-v3-turbo-q5_0.bin" "$(dictate_lib_resolve_model_path turbo /models)"

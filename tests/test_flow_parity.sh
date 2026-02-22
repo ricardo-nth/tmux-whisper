@@ -209,10 +209,10 @@ setup_case() {
   local name="$1"
   CASE_DIR="$TMP_ROOT/$name"
   mkdir -p "$CASE_DIR"/{home,tmp,logs,models,tmux-jobs}
-  mkdir -p "$CASE_DIR/config/modes/short" "$CASE_DIR/config/modes/long"
+  mkdir -p "$CASE_DIR/config/modes/code" "$CASE_DIR/config/modes/long"
 
-  printf '%s\n' "short" >"$CASE_DIR/config/current-mode"
-  : >"$CASE_DIR/config/modes/short/prompt"
+  printf '%s\n' "code" >"$CASE_DIR/config/current-mode"
+  : >"$CASE_DIR/config/modes/code/prompt"
   : >"$CASE_DIR/config/modes/long/prompt"
   : >"$CASE_DIR/config/vocab"
   : >"$CASE_DIR/models/ggml-test.bin"
@@ -306,7 +306,7 @@ run_inline_vocab_round() {
   export DICTATE_AUTOSEND=1
 
   printf '%s\n' 'codex -> Codex' >"$DICTATE_CONFIG_DIR/vocab"
-  printf '%s\n' 'tmux -> Tmux' >"$DICTATE_CONFIG_DIR/modes/short/vocab"
+  printf '%s\n' 'tmux -> Tmux' >"$DICTATE_CONFIG_DIR/modes/code/vocab"
 
   local out
   out="$("$DICTATE_BIN" inline)"

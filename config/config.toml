@@ -43,7 +43,7 @@ autosend = true
 paste_target = "origin"
 postprocess = false
 process_sound = true
-mode = "short"
+mode = "code"
 model = "base"
 send_mode = "auto"
 
@@ -63,7 +63,7 @@ processing = "🔲"
 ready = "🔳"
 error = "⚠️"
 base = "🎯"
-short = "🌀"
+code = "🌀"
 long = "📚"
 email = "📧"
 chat = "💬"

@@ -138,7 +138,7 @@ print(f"CFG_TMUX_AUTOSEND={shlex.quote('1' if b(get('tmux.autosend', True), True
 print(f"CFG_TMUX_PASTE_TARGET={shlex.quote(str(get('tmux.paste_target', 'origin')))}")
 print(f"CFG_TMUX_POSTPROCESS={shlex.quote('1' if b(get('tmux.postprocess', False), False) else '0')}")
 print(f"CFG_TMUX_PROCESS_SOUND={shlex.quote('1' if b(get('tmux.process_sound', False), False) else '0')}")
-print(f"CFG_TMUX_MODE={shlex.quote(str(get('tmux.mode', 'short')))}")
+print(f"CFG_TMUX_MODE={shlex.quote(str(get('tmux.mode', 'code')))}")
 print(f"CFG_TMUX_MODEL={shlex.quote(str(get('tmux.model', 'base')))}")
 print(f"CFG_TMUX_SEND_MODE={shlex.quote(str(get('tmux.send_mode', 'auto')))}")
 print(f"CFG_DEBUG_KEEP_LOGS={shlex.quote('1' if b(get('debug.keep_logs', False), False) else '0')}")
@@ -228,8 +228,7 @@ load_audio_resolution_cache() {
 canonical_mode_name() {
   local m="${1:-}"
   case "$m" in
-    code) echo "short" ;;
-    "") echo "short" ;;
+    "") echo "code" ;;
     *) echo "$m" ;;
   esac
 }
@@ -237,10 +236,7 @@ canonical_mode_name() {
 mode_display_name() {
   local m
   m="$(canonical_mode_name "${1:-}")"
-  case "$m" in
-    short) echo "code" ;;
-    *) echo "$m" ;;
-  esac
+  echo "$m"
 }
 
 mode_to_dir_name() {
@@ -292,11 +288,11 @@ list_modes_for_flow() {
 normalize_mode_name() {
   local mode
   mode="$(canonical_mode_name "${1:-}")"
-  [[ -z "$mode" ]] && mode="short"
+  [[ -z "$mode" ]] && mode="code"
   if [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]; then
     echo "$mode"
   else
-    echo "short"
+    echo "code"
   fi
 }
 
@@ -304,7 +300,7 @@ read_saved_mode() {
   if [[ -f "$MODE_FILE" ]]; then
     normalize_mode_name "$(cat "$MODE_FILE" 2>/dev/null || true)"
   else
-    echo "short"
+    echo "code"
   fi
 }
 
@@ -316,7 +312,7 @@ mode_exists() {
 
 emit_inline_modes_menu() {
   local current_mode
-  current_mode="$(normalize_mode_name "${1:-short}")"
+  current_mode="$(normalize_mode_name "${1:-code}")"
   local current_mode_display
   current_mode_display="$(mode_display_name "$current_mode")"
   local mode_name
@@ -333,7 +329,7 @@ emit_inline_modes_menu() {
 
 emit_tmux_modes_menu() {
   local current_mode
-  current_mode="$(normalize_mode_name "${1:-short}")"
+  current_mode="$(normalize_mode_name "${1:-code}")"
   local current_mode_display
   current_mode_display="$(mode_display_name "$current_mode")"
   local mode_name
@@ -459,7 +455,7 @@ mode_icon() {
   local mode="$1"
   case "$mode" in
     base) get_icon "base" "⚪" ;;
-    short) get_icon "short" "💻" ;;
+    code) get_icon "code" "💻" ;;
     email) get_icon "email" "📧" ;;
     chat) get_icon "chat" "💬" ;;
     long) get_icon "long" "📝" ;;
@@ -718,7 +714,7 @@ for m in base small turbo; do
 done
 echo "Tmux"
 echo "-- Modes"
-emit_tmux_modes_menu "$(normalize_mode_name "${CFG_TMUX_MODE:-short}")"
+emit_tmux_modes_menu "$(normalize_mode_name "${CFG_TMUX_MODE:-code}")"
 echo "-- Settings"
 echo "-- Postprocess: $tmux_postprocess_label | bash=$DICTATE_BIN param1=tmux param2=postprocess param3=$tmux_postprocess_toggle_val terminal=false refresh=true"
 echo "-- Process sound: $tmux_process_sound_label | bash=$DICTATE_BIN param1=tmux param2=process-sound param3=$tmux_process_sound_toggle_val terminal=false refresh=true"
