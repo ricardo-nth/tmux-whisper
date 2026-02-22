@@ -2173,12 +2173,18 @@ PYEOF
 }
 
 # Save a dictation to history
-# Usage: save_history "raw_transcript" "processed_text" "mode" "app"
+# Usage: save_history "raw_transcript" "processed_text" "mode" "app" [record_ms] [transcribe_ms] [clean_ms] [postprocess_ms] [paste_ms] [total_ms]
 save_history() {
   local raw="$1"
   local processed="$2"
   local mode="${3:-unknown}"
   local app="${4:-unknown}"
+  local record_ms="${5:-}"
+  local transcribe_ms="${6:-}"
+  local clean_ms="${7:-}"
+  local postprocess_ms="${8:-}"
+  local paste_ms="${9:-}"
+  local total_ms="${10:-}"
   
   mkdir -p "$HISTORY_DIR"
   
@@ -2199,6 +2205,49 @@ save_history() {
   processed_escaped="$(printf '%s' "$processed" | jq -Rs .)"
   mode_escaped="$(printf '%s' "$mode" | jq -Rs .)"
   app_escaped="$(printf '%s' "$app" | jq -Rs .)"
+
+  local metrics_lines=""
+  append_metric_line() {
+    local key="$1"
+    local val="$2"
+    [[ "$val" =~ ^[0-9]+$ ]] || return 0
+    if [[ -n "$metrics_lines" ]]; then
+      metrics_lines="${metrics_lines},"$'\n'
+    fi
+    metrics_lines="${metrics_lines}    \"${key}\": ${val}"
+  }
+  append_metric_line "record_ms" "$record_ms"
+  append_metric_line "transcribe_ms" "$transcribe_ms"
+  append_metric_line "clean_ms" "$clean_ms"
+  append_metric_line "postprocess_ms" "$postprocess_ms"
+  append_metric_line "paste_ms" "$paste_ms"
+  append_metric_line "total_ms" "$total_ms"
+
+  local budget_obs_lines=""
+  if [[ "${DICTATE_LAST_POSTPROCESS_BUDGET_OBS_ACTIVE:-0}" == "1" ]]; then
+    local _profile _llm
+    local profile_escaped llm_escaped
+    _profile="${DICTATE_LAST_POSTPROCESS_BUDGET_PROFILE:-}"
+    _llm="${DICTATE_LAST_POSTPROCESS_BUDGET_LLM_MODEL:-}"
+    profile_escaped="$(printf '%s' "$_profile" | jq -Rs .)"
+    llm_escaped="$(printf '%s' "$_llm" | jq -Rs .)"
+    budget_obs_lines="    \"numeric_sizing\": \"auto_dynamic\","$'\n'
+    budget_obs_lines="${budget_obs_lines}    \"profile\": ${profile_escaped}"
+    [[ "${DICTATE_LAST_POSTPROCESS_BUDGET_THRESHOLD:-}" =~ ^[0-9]+$ ]] && budget_obs_lines="${budget_obs_lines},"$'\n'"    \"threshold_words\": ${DICTATE_LAST_POSTPROCESS_BUDGET_THRESHOLD}"
+    [[ "${DICTATE_LAST_POSTPROCESS_BUDGET_WORD_COUNT:-}" =~ ^[0-9]+$ ]] && budget_obs_lines="${budget_obs_lines},"$'\n'"    \"word_count\": ${DICTATE_LAST_POSTPROCESS_BUDGET_WORD_COUNT}"
+    [[ "${DICTATE_LAST_POSTPROCESS_BUDGET_MAX_TOKENS:-}" =~ ^[0-9]+$ ]] && budget_obs_lines="${budget_obs_lines},"$'\n'"    \"max_tokens\": ${DICTATE_LAST_POSTPROCESS_BUDGET_MAX_TOKENS}"
+    [[ "${DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_WORDS:-}" =~ ^[0-9]+$ ]] && budget_obs_lines="${budget_obs_lines},"$'\n'"    \"chunk_words\": ${DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_WORDS}"
+    [[ "${DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_COUNT:-}" =~ ^[0-9]+$ ]] && budget_obs_lines="${budget_obs_lines},"$'\n'"    \"chunk_count\": ${DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_COUNT}"
+    [[ -n "$_llm" ]] && budget_obs_lines="${budget_obs_lines},"$'\n'"    \"llm\": ${llm_escaped}"
+  fi
+
+  local extra_fields=""
+  if [[ -n "$metrics_lines" ]]; then
+    extra_fields="${extra_fields},"$'\n'"  \"metrics\": {"$'\n'"${metrics_lines}"$'\n'"  }"
+  fi
+  if [[ -n "$budget_obs_lines" ]]; then
+    extra_fields="${extra_fields},"$'\n'"  \"postprocess_budget\": {"$'\n'"${budget_obs_lines}"$'\n'"  }"
+  fi
   
   cat > "$filename" <<EOF
 {
@@ -2206,7 +2255,7 @@ save_history() {
   "mode": $mode_escaped,
   "app": $app_escaped,
   "raw": $raw_escaped,
-  "processed": $processed_escaped
+  "processed": $processed_escaped${extra_fields}
 }
 EOF
 }
@@ -2369,6 +2418,7 @@ raw_chars = []
 raw_words = []
 proc_chars = []
 proc_words = []
+budget_rows = []
 
 for f in files:
     try:
@@ -2382,6 +2432,33 @@ for f in files:
     raw_words.append(word_count(raw))
     proc_chars.append(len(proc))
     proc_words.append(word_count(proc))
+    budget = data.get("postprocess_budget") or {}
+    metrics = data.get("metrics") or {}
+    if isinstance(budget, dict) and budget:
+        def bint(name):
+            v = budget.get(name)
+            try:
+                return int(v)
+            except Exception:
+                return 0
+        def mint(name):
+            v = metrics.get(name) if isinstance(metrics, dict) else None
+            try:
+                return int(v)
+            except Exception:
+                return 0
+        budget_rows.append(
+            {
+                "profile": str(budget.get("profile", "") or ""),
+                "word_count": bint("word_count"),
+                "threshold_words": bint("threshold_words"),
+                "max_tokens": bint("max_tokens"),
+                "chunk_words": bint("chunk_words"),
+                "chunk_count": bint("chunk_count"),
+                "postprocess_ms": mint("postprocess_ms"),
+                "numeric_sizing": str(budget.get("numeric_sizing", "") or ""),
+            }
+        )
 
 def summarize(name, arr):
     if not arr:
@@ -2397,6 +2474,46 @@ print(summarize("processed_words", proc_words))
 # Rough token estimate (~1.33 tokens per word for English)
 approx_max_tokens = int(max(raw_words) * 1.33) if raw_words else 0
 print(f"approx_max_tokens (raw words * 1.33): {approx_max_tokens}")
+
+if budget_rows:
+    def pctl(arr, pct):
+        if not arr:
+            return 0
+        vals = sorted(arr)
+        if len(vals) == 1:
+            return vals[0]
+        pos = (len(vals) - 1) * pct
+        lo = int(pos)
+        hi = min(lo + 1, len(vals) - 1)
+        frac = pos - lo
+        return int(round(vals[lo] * (1 - frac) + vals[hi] * frac))
+
+    def metric_line(name, arr):
+        arr = [int(x) for x in arr if int(x) > 0]
+        if not arr:
+            return f"{name}: n=0"
+        return f"{name}: n={len(arr)} median={int(statistics.median(arr))} p95={pctl(arr, 0.95)} max={max(arr)}"
+
+    profile_counts = {}
+    for row in budget_rows:
+        p = row.get("profile") or "<unset>"
+        profile_counts[p] = profile_counts.get(p, 0) + 1
+    numeric_modes = sorted({row.get("numeric_sizing", "") for row in budget_rows if row.get("numeric_sizing", "")})
+    thresholds = sorted({row.get("threshold_words", 0) for row in budget_rows if row.get("threshold_words", 0) > 0})
+
+    print("")
+    print(f"Postprocess budget observability entries: {len(budget_rows)}")
+    if profile_counts:
+        print("budget_profile_counts: " + ", ".join(f"{k}={v}" for k, v in sorted(profile_counts.items())))
+    if numeric_modes:
+        print("budget_numeric_sizing: " + ", ".join(numeric_modes))
+    if thresholds:
+        print("budget_threshold_words: " + ", ".join(str(x) for x in thresholds))
+    print(metric_line("budget.word_count", [r["word_count"] for r in budget_rows]))
+    print(metric_line("budget.max_tokens", [r["max_tokens"] for r in budget_rows]))
+    print(metric_line("budget.chunk_words", [r["chunk_words"] for r in budget_rows]))
+    print(metric_line("budget.chunk_count", [r["chunk_count"] for r in budget_rows]))
+    print(metric_line("metrics.postprocess_ms", [r["postprocess_ms"] for r in budget_rows]))
 PYEOF
       ;;
     clear)
@@ -2423,6 +2540,16 @@ PYEOF
 postprocess_llm() {
   local input="$1"
   local target_app="${2:-}"
+
+  # Per-run observability snapshot (consumed by save_history/history stats).
+  DICTATE_LAST_POSTPROCESS_BUDGET_OBS_ACTIVE="0"
+  DICTATE_LAST_POSTPROCESS_BUDGET_PROFILE=""
+  DICTATE_LAST_POSTPROCESS_BUDGET_THRESHOLD=""
+  DICTATE_LAST_POSTPROCESS_BUDGET_WORD_COUNT=""
+  DICTATE_LAST_POSTPROCESS_BUDGET_MAX_TOKENS=""
+  DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_WORDS=""
+  DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_COUNT=""
+  DICTATE_LAST_POSTPROCESS_BUDGET_LLM_MODEL=""
   
   if [[ -z "${CEREBRAS_API_KEY:-}" ]]; then
     echo "$input"
@@ -2544,6 +2671,10 @@ postprocess_llm() {
   local llm_model="llama3.1-8b"
   [[ -n "${CFG_POSTPROCESS_LLM:-}" ]] && llm_model="$CFG_POSTPROCESS_LLM"
   budget_profile_key="$(budget_profile_for_input "$input")"
+  local budget_word_count budget_threshold
+  budget_word_count="$(budget_word_count_for_input "$input")"
+  budget_threshold="${DICTATE_LLM_BUDGET_LONG_WORDS_THRESHOLD:-${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}}"
+  [[ "$budget_threshold" =~ ^[0-9]+$ ]] || budget_threshold="120"
   if [[ -n "${DICTATE_LLM_MODEL:-}" ]]; then
     llm_model="$DICTATE_LLM_MODEL"
   else
@@ -2574,6 +2705,15 @@ postprocess_llm() {
     [[ -z "$chunk_words" ]] && chunk_words="${CFG_POSTPROCESS_CHUNK_WORDS:-}"
   fi
   [[ -z "$chunk_words" ]] && chunk_words="0"
+
+  DICTATE_LAST_POSTPROCESS_BUDGET_OBS_ACTIVE="1"
+  DICTATE_LAST_POSTPROCESS_BUDGET_PROFILE="$budget_profile_key"
+  DICTATE_LAST_POSTPROCESS_BUDGET_THRESHOLD="$budget_threshold"
+  DICTATE_LAST_POSTPROCESS_BUDGET_WORD_COUNT="$budget_word_count"
+  DICTATE_LAST_POSTPROCESS_BUDGET_MAX_TOKENS="${max_tokens:-}"
+  DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_WORDS="${chunk_words:-}"
+  DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_COUNT="1"
+  DICTATE_LAST_POSTPROCESS_BUDGET_LLM_MODEL="${llm_model:-}"
 
   maybe_reject_llm_output() {
     local input_chunk="$1"
@@ -2700,9 +2840,11 @@ PYEOF
     if [[ -n "$chunks" ]]; then
       IFS=$'\n' read -r -d '' -a chunk_list < <(printf '%s' "$chunks" | awk 'BEGIN{RS="<<DICTATE_CHUNK>>"; ORS="\0"} {print}')
       local output="" first="1"
+      local chunk_count_used="0"
       for c in "${chunk_list[@]}"; do
         c="$(printf "%s" "$c" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
         [[ -z "$c" ]] && continue
+        chunk_count_used=$((chunk_count_used + 1))
         local part
         part="$(request_llm "$c")"
         if [[ "$first" == "1" ]]; then
@@ -2712,6 +2854,9 @@ PYEOF
           output="${output}"$'\n\n'"$part"
         fi
       done
+      if [[ "$chunk_count_used" =~ ^[0-9]+$ && "$chunk_count_used" -gt 0 ]]; then
+        DICTATE_LAST_POSTPROCESS_BUDGET_CHUNK_COUNT="$chunk_count_used"
+      fi
       echo "$output"
       return 0
     fi
@@ -3358,9 +3503,6 @@ stop() {
 
     txt="$(printf "%s" "$txt" | normalize_british_spelling)"
 
-    # Save to history
-    save_history "$raw_txt" "$txt" "$tmux_mode" "tmux"
-
     stage_started_ms="$(now_ms)"
     if [[ "$do_copy" != "0" ]]; then
       printf "%s" "$txt" | pbcopy
@@ -3396,6 +3538,8 @@ stop() {
     total_ms=$(( $(now_ms) - flow_started_ms ))
     local raw_chars="${#raw_txt}"
     local out_chars="${#txt}"
+    # Save to history (includes metrics and postprocess budget observability when available)
+    save_history "$raw_txt" "$txt" "$tmux_mode" "tmux" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms"
     append_bench_entry "tmux" "ok" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$tmux_mode" "$do_postprocess" "$raw_chars" "$out_chars" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
 
@@ -3748,7 +3892,7 @@ inline() {
 
   # Save history asynchronously so paste/send latency is not blocked by JSON + file I/O.
   local history_app="${target_app:-current}"
-  ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" ) >/dev/null 2>&1 &
+  ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" ) >/dev/null 2>&1 &
 }
 
 status() {

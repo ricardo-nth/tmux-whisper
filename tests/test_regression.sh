@@ -368,7 +368,72 @@ budget_replay_short_out="$(HOME="$BUDGET_HOME" PATH="$BUDGET_STUBS:$BUDGET_BIN:/
 assert_contains "budget_replay_short_runs" "$budget_replay_short_out" "Re-processing with code mode"
 assert_file_contains "budget_profile_auto_short_scaled_max_tokens" "$BUDGET_CURL_DUMP_SHORT" '"max_tokens": 3888'
 
-# --- Regression 12: vocab import/export/dedupe safety behavior remains stable. ---
+# --- Regression 12: history stats summarizes postprocess budget observability metadata. ---
+HISTOBS_HOME="$TMP_ROOT/home-histobs"
+HISTOBS_BIN="$HISTOBS_HOME/.local/bin"
+HISTOBS_CFG="$HISTOBS_HOME/.config/dictate"
+HISTOBS_HISTORY="$HISTOBS_CFG/history"
+mkdir -p "$HISTOBS_BIN" "$HISTOBS_HISTORY"
+cp "$ROOT/bin/tmux-whisper" "$HISTOBS_BIN/tmux-whisper"
+cp "$ROOT/bin/dictate-lib.sh" "$HISTOBS_BIN/dictate-lib.sh"
+chmod +x "$HISTOBS_BIN/tmux-whisper" "$HISTOBS_BIN/dictate-lib.sh"
+cat >"$HISTOBS_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+EOF
+cat >"$HISTOBS_HISTORY/2026-02-22T17-00-00.json" <<'EOF'
+{
+  "timestamp": "2026-02-22T17:00:00Z",
+  "mode": "code",
+  "app": "tmux",
+  "raw": "one two three four five six seven eight nine ten",
+  "processed": "one two three four five six seven eight nine ten",
+  "metrics": {"postprocess_ms": 240, "total_ms": 410},
+  "postprocess_budget": {
+    "numeric_sizing": "auto_dynamic",
+    "profile": "short",
+    "threshold_words": 20,
+    "word_count": 10,
+    "max_tokens": 3888,
+    "chunk_words": 850,
+    "chunk_count": 1,
+    "llm": "gpt-oss-120b"
+  }
+}
+EOF
+cat >"$HISTOBS_HISTORY/2026-02-22T17-05-00.json" <<'EOF'
+{
+  "timestamp": "2026-02-22T17:05:00Z",
+  "mode": "code",
+  "app": "Ghostty",
+  "raw": "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty one two three four five six seven eight nine ten",
+  "processed": "processed output",
+  "metrics": {"postprocess_ms": 620, "total_ms": 940},
+  "postprocess_budget": {
+    "numeric_sizing": "auto_dynamic",
+    "profile": "long",
+    "threshold_words": 20,
+    "word_count": 30,
+    "max_tokens": 5555,
+    "chunk_words": 1000,
+    "chunk_count": 2,
+    "llm": "gpt-oss-120b"
+  }
+}
+EOF
+histobs_stats="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history stats)"
+assert_contains "history_stats_budget_obs_count" "$histobs_stats" "Postprocess budget observability entries: 2"
+assert_contains "history_stats_budget_profiles" "$histobs_stats" "budget_profile_counts: long=1, short=1"
+assert_contains "history_stats_budget_numeric_mode" "$histobs_stats" "budget_numeric_sizing: auto_dynamic"
+assert_contains "history_stats_budget_threshold" "$histobs_stats" "budget_threshold_words: 20"
+assert_contains "history_stats_budget_max_tokens_line" "$histobs_stats" "budget.max_tokens: n=2"
+assert_contains "history_stats_budget_chunk_count_line" "$histobs_stats" "budget.chunk_count: n=2"
+assert_contains "history_stats_budget_postprocess_ms_line" "$histobs_stats" "metrics.postprocess_ms: n=2"
+
+# --- Regression 13: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"
 VOCAB_BIN="$VOCAB_HOME/.local/bin"
 VOCAB_CFG="$VOCAB_HOME/.config/dictate"
@@ -401,7 +466,7 @@ assert_contains "vocab_dedupe_backup_line" "$dedupe_out" "Backup: "
 dedupe_backup="$(printf "%s\n" "$dedupe_out" | sed -n 's/^Backup: //p' | head -n 1)"
 assert_file_exists "vocab_dedupe_backup_exists" "$dedupe_backup"
 
-# --- Regression 13: bench-matrix UX checks are stable. ---
+# --- Regression 14: bench-matrix UX checks are stable. ---
 BENCH_HOME="$TMP_ROOT/home-bench"
 BENCH_BIN="$BENCH_HOME/.local/bin"
 BENCH_CFG="$BENCH_HOME/.config/dictate"
