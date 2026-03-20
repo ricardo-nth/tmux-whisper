@@ -121,13 +121,15 @@ def b(v, default=False):
 
 post_enabled = "1" if b(get("postprocess.enabled", False), False) else "0"
 autosend = "1" if b(get("inline.autosend", True), True) else "0"
-whisper_model = str(get("whisper.model", "base"))
+whisper_backend = str(get("whisper.backend", "swift_parakeet"))
+parakeet_model_path = str(get("swift_parakeet.model_path", ""))
 
 print(f"CFG_CACHE_MTIME={shlex.quote(str(int(os.path.getmtime(path)) if os.path.exists(path) else 0))}")
 print(f"CFG_POSTPROCESS_ENABLED={shlex.quote(post_enabled)}")
 print(f"CFG_INLINE_AUTOSEND={shlex.quote(autosend)}")
 print(f"CFG_INLINE_PASTE_TARGET={shlex.quote(str(get('inline.paste_target', 'restore')))}")
-print(f"CFG_WHISPER_MODEL={shlex.quote(whisper_model)}")
+print(f"CFG_WHISPER_BACKEND={shlex.quote(whisper_backend)}")
+print(f"CFG_SWIFT_PARAKEET_MODEL_PATH={shlex.quote(parakeet_model_path)}")
 print(f"CFG_AUDIO_SOURCE={shlex.quote(str(get('audio.source', 'auto')))}")
 print(f"CFG_AUDIO_DEVICE_NAME={shlex.quote(str(get('audio.device_name', '')))}")
 print(f"CFG_AUDIO_MAC_NAME={shlex.quote(str(get('audio.mac_name', 'MacBook Air Microphone')))}")
@@ -139,7 +141,6 @@ print(f"CFG_TMUX_PASTE_TARGET={shlex.quote(str(get('tmux.paste_target', 'origin'
 print(f"CFG_TMUX_POSTPROCESS={shlex.quote('1' if b(get('tmux.postprocess', False), False) else '0')}")
 print(f"CFG_TMUX_PROCESS_SOUND={shlex.quote('1' if b(get('tmux.process_sound', False), False) else '0')}")
 print(f"CFG_TMUX_MODE={shlex.quote(str(get('tmux.mode', 'code')))}")
-print(f"CFG_TMUX_MODEL={shlex.quote(str(get('tmux.model', 'base')))}")
 print(f"CFG_TMUX_SEND_MODE={shlex.quote(str(get('tmux.send_mode', 'auto')))}")
 print(f"CFG_DEBUG_KEEP_LOGS={shlex.quote('1' if b(get('debug.keep_logs', False), False) else '0')}")
 print(f"CFG_SWIFTBAR_ENABLED={shlex.quote('1' if b(get('integrations.swiftbar.enabled', True), True) else '0')}")
@@ -176,6 +177,19 @@ get_icon() {
   var="CFG_ICON_${safe}"
   value="${!var:-}"
   [[ -n "$value" ]] && echo "$value" || echo "$fallback"
+}
+
+get_icon_allow_empty() {
+  local key="$1"
+  local fallback="$2"
+  local safe var
+  safe="$(safe_key "$key")"
+  var="CFG_ICON_${safe}"
+  if [[ -n "${!var+x}" ]]; then
+    printf '%s\n' "${!var}"
+  else
+    printf '%s\n' "$fallback"
+  fi
 }
 
 get_keybind() {
@@ -227,10 +241,7 @@ load_audio_resolution_cache() {
 
 canonical_mode_name() {
   local m="${1:-}"
-  case "$m" in
-    "") echo "code" ;;
-    *) echo "$m" ;;
-  esac
+  echo "$m"
 }
 
 mode_display_name() {
@@ -285,22 +296,37 @@ list_modes_for_flow() {
   done | sort -u
 }
 
-normalize_mode_name() {
-  local mode
-  mode="$(canonical_mode_name "${1:-}")"
-  [[ -z "$mode" ]] && mode="code"
-  if [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]; then
-    echo "$mode"
+first_mode_for_flow() {
+  local flow="${1:-}"
+  local first
+  first="$(list_modes_for_flow "$flow" | head -n 1)"
+  [[ -n "$first" ]] && echo "$first" || echo "code"
+}
+
+default_inline_mode() {
+  if [[ -d "$CONFIG_DIR/modes/base" ]] && mode_allows_flow "base" "inline"; then
+    echo "base"
   else
-    echo "code"
+    first_mode_for_flow "inline"
   fi
 }
 
-read_saved_mode() {
-  if [[ -f "$MODE_FILE" ]]; then
-    normalize_mode_name "$(cat "$MODE_FILE" 2>/dev/null || true)"
+normalize_mode_name() {
+  local mode
+  mode="$(canonical_mode_name "${1:-}")"
+  [[ -z "$mode" ]] && mode="$(default_inline_mode)"
+  if [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]; then
+    echo "$mode"
   else
-    echo "code"
+    echo "$(default_inline_mode)"
+  fi
+}
+
+read_saved_mode_raw() {
+  if [[ -f "$MODE_FILE" ]]; then
+    printf '%s' "$(cat "$MODE_FILE" 2>/dev/null || true)" | tr -d '\r' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+  else
+    echo "auto"
   fi
 }
 
@@ -310,19 +336,75 @@ mode_exists() {
   [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode_name")" ]]
 }
 
+mode_hidden_in_inline_menu() {
+  local mode_name
+  mode_name="$(normalize_mode_name "${1:-}")"
+  case "$mode_name" in
+    email|chat|linkedin|twitter|long) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+detect_mode() {
+  local app="${1:-}"
+  if [[ -z "$app" ]]; then
+    app="$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null || echo "")"
+  fi
+  [[ -z "$app" ]] && { default_inline_mode; return 0; }
+
+  local mode_dir mode_name apps_file
+  for mode_dir in "$CONFIG_DIR/modes"/*/; do
+    [[ -d "$mode_dir" ]] || continue
+    mode_name="$(basename "$mode_dir")"
+    apps_file="$mode_dir/apps"
+    [[ -f "$apps_file" ]] || continue
+    mode_allows_flow "$mode_name" "inline" || continue
+    if grep -iq "^${app}$" "$apps_file" 2>/dev/null; then
+      normalize_mode_name "$mode_name"
+      return 0
+    fi
+  done
+
+  default_inline_mode
+}
+
+resolve_inline_mode() {
+  local saved_mode_raw="${1:-}"
+  if [[ -z "$saved_mode_raw" || "$saved_mode_raw" == "auto" ]]; then
+    detect_mode
+    return 0
+  fi
+  if mode_exists "$saved_mode_raw" && mode_allows_flow "$saved_mode_raw" "inline"; then
+    normalize_mode_name "$saved_mode_raw"
+  else
+    default_inline_mode
+  fi
+}
+
 emit_inline_modes_menu() {
-  local current_mode
-  current_mode="$(normalize_mode_name "${1:-code}")"
-  local current_mode_display
-  current_mode_display="$(mode_display_name "$current_mode")"
+  local saved_mode_raw="${1:-auto}"
+  local effective_mode="${2:-$(default_inline_mode)}"
+  local auto_label="auto"
+  if [[ -n "$effective_mode" ]]; then
+    auto_label="auto -> $(mode_display_name "$effective_mode")"
+  fi
+  if [[ -z "$saved_mode_raw" || "$saved_mode_raw" == "auto" ]]; then
+    echo "-- ✓ $auto_label | bash=$DICTATE_BIN param1=mode param2=auto terminal=false refresh=true"
+  else
+    echo "-- $auto_label | bash=$DICTATE_BIN param1=mode param2=auto terminal=false refresh=true"
+  fi
   local mode_name
   while IFS= read -r mode_name; do
     [[ -n "$mode_name" ]] || continue
-    mode_name="$(mode_display_name "$mode_name")"
-    if [[ "$mode_name" == "$current_mode_display" ]]; then
-      echo "-- ✓ $mode_name | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
+    if mode_hidden_in_inline_menu "$mode_name"; then
+      continue
+    fi
+    local mode_label
+    mode_label="$(mode_display_name "$mode_name")"
+    if [[ "$mode_name" == "$saved_mode_raw" ]]; then
+      echo "-- ✓ $mode_label | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
     else
-      echo "-- $mode_name | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
+      echo "-- $mode_label | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
     fi
   done < <(list_modes_for_flow "inline")
 }
@@ -454,15 +536,19 @@ just_cancelled() {
 mode_icon() {
   local mode="$1"
   case "$mode" in
-    base) get_icon "base" "⚪" ;;
-    code) get_icon "code" "💻" ;;
-    email) get_icon "email" "📧" ;;
-    chat) get_icon "chat" "💬" ;;
-    long) get_icon "long" "📝" ;;
-    linkedin) get_icon "linkedin" "in" ;;
-    twitter) get_icon "twitter" "𝕏" ;;
-    *) get_icon "$mode" "${mode:0:2}" ;;
+    base|code|email|chat|long|linkedin|twitter) get_icon_allow_empty "$mode" "" ;;
+    *) get_icon_allow_empty "$mode" "" ;;
   esac
+}
+
+compose_status_icon() {
+  local primary="${1:-}"
+  local secondary="${2:-}"
+  if [[ -n "$secondary" ]]; then
+    printf '%s %s\n' "$primary" "$secondary"
+  else
+    printf '%s\n' "$primary"
+  fi
 }
 
 # State icons from config
@@ -516,11 +602,16 @@ if [[ -f "$ERROR_FLAG" ]]; then
   fi
 fi
 
-saved_mode="$(read_saved_mode)"
+saved_mode_raw="$(read_saved_mode_raw)"
+saved_mode="$(resolve_inline_mode "$saved_mode_raw")"
 
 # Determine mode icon display
 current_mode_icon="$(mode_icon "$saved_mode")"
-mode_display="$(mode_display_name "$saved_mode")"
+if [[ -z "$saved_mode_raw" || "$saved_mode_raw" == "auto" ]]; then
+  mode_display="auto -> $(mode_display_name "$saved_mode")"
+else
+  mode_display="$(mode_display_name "$saved_mode")"
+fi
 
 # Check if recording (either tmux or inline mode)
 if [[ -f "$STATE_FILE" ]] || [[ -f "$INLINE_STATE" ]]; then
@@ -531,7 +622,7 @@ if [[ -f "$STATE_FILE" ]] || [[ -f "$INLINE_STATE" ]]; then
   [[ -f "$INLINE_STATE" ]] && state_seen="$INLINE_STATE"
   if kill -0 "$pid" 2>/dev/null || is_recent_file "$state_seen" 2; then
     # Recording state
-    echo "$ICON_RECORDING $current_mode_icon"
+    compose_status_icon "$ICON_RECORDING" "$current_mode_icon"
     echo "---"
     echo "Recording... | color=red"
     echo "Mode: $mode_display | size=11"
@@ -573,14 +664,14 @@ fi
 
 if [[ "$processing_long" == "1" ]]; then
   current_mode="$saved_mode"
-  echo "$ICON_PROCESSING $current_mode_icon"
+  compose_status_icon "$ICON_PROCESSING" "$current_mode_icon"
   echo "---"
   echo "Processing ($processing_count) | color=orange"
   echo "Mode: $mode_display | size=11"
   echo "---"
   echo "Inline"
   echo "-- Modes"
-  emit_inline_modes_menu "$current_mode"
+  emit_inline_modes_menu "$saved_mode_raw" "$current_mode"
   exit 0
 fi
 
@@ -594,7 +685,7 @@ fi
 current_mode="$saved_mode"
 
 # Ready state
-echo "$ICON_READY $current_mode_icon"
+compose_status_icon "$ICON_READY" "$current_mode_icon"
 echo "---"
 if [[ "$recently_processed" == "1" ]]; then
   echo "Just processed | color=orange"
@@ -620,7 +711,7 @@ fi
 echo "---"
 echo "Inline"
 echo "-- Modes"
-emit_inline_modes_menu "$current_mode"
+emit_inline_modes_menu "$saved_mode_raw" "$current_mode"
 echo "-- Settings"
 postprocess_val="${CFG_POSTPROCESS_ENABLED:-0}"
 key_set="0"
@@ -671,16 +762,6 @@ else
   swiftbar_label="OFF"
 fi
 [[ "$keep_logs_val" == "1" ]] && keep_logs_label="ON" || keep_logs_label="OFF"
-silence_trim_val="${CFG_AUDIO_SILENCE_TRIM:-0}"
-[[ "$silence_trim_val" == "1" ]] && silence_trim_label="ON" || silence_trim_label="OFF"
-repeats_level_val="${CFG_CLEAN_REPEATS_LEVEL:-1}"
-model_id="${CFG_WHISPER_MODEL:-base}"
-model_base="$model_id"
-if [[ "$model_id" == */* ]]; then
-  model_base="$(basename "$model_id")"
-elif [[ "$model_id" == *.bin ]]; then
-  model_base="$model_id"
-fi
 # Toggle commands (tmux-whisper uses on/off)
 autosend_toggle_val=$([[ "$autosend_val" == "1" ]] && echo "off" || echo "on")
 postprocess_toggle_val=$([[ "$postprocess_val" == "1" ]] && echo "off" || echo "on")
@@ -690,28 +771,9 @@ tmux_process_sound_toggle_val=$([[ "$tmux_process_sound_val" == "1" ]] && echo "
 tmux_target_toggle_val=$([[ "$tmux_target_val" == "origin" ]] && echo "current" || echo "origin")
 inline_target_toggle_val=$([[ "$inline_target_val" == "origin" ]] && echo "current" || echo "origin")
 keep_logs_toggle_val=$([[ "$keep_logs_val" == "1" ]] && echo "off" || echo "on")
-silence_trim_toggle_val=$([[ "$silence_trim_val" == "1" ]] && echo "off" || echo "on")
 
 echo "-- Postprocess: $postprocess_label | bash=$DICTATE_BIN param1=postprocess param2=$postprocess_toggle_val terminal=false refresh=true"
 echo "-- Autosend: $autosend_label | bash=$DICTATE_BIN param1=autosend param2=$autosend_toggle_val terminal=false refresh=true"
-model_display="$model_base"
-case "$model_base" in
-  ggml-tiny.en.bin) model_display="base" ;;
-  ggml-base.en.bin) model_display="base" ;;
-  ggml-small.en.bin) model_display="small" ;;
-  ggml-large-v3-turbo-q5_0.bin) model_display="turbo" ;;
-  ggml-large-v3-turbo-q8_0.bin|ggml-large-v3-turbo.bin) model_display="turbo" ;;
-  base|small|turbo) model_display="$model_base" ;;
-  *) model_display="base" ;;
-esac
-echo "-- Models"
-for m in base small turbo; do
-  if [[ "$m" == "$model_display" ]]; then
-    echo "-- ✓ $m | bash=$DICTATE_BIN param1=model param2=$m terminal=false refresh=true"
-  else
-    echo "-- $m | bash=$DICTATE_BIN param1=model param2=$m terminal=false refresh=true"
-  fi
-done
 echo "Tmux"
 echo "-- Modes"
 emit_tmux_modes_menu "$(normalize_mode_name "${CFG_TMUX_MODE:-code}")"
@@ -720,47 +782,12 @@ echo "-- Postprocess: $tmux_postprocess_label | bash=$DICTATE_BIN param1=tmux pa
 echo "-- Process sound: $tmux_process_sound_label | bash=$DICTATE_BIN param1=tmux param2=process-sound param3=$tmux_process_sound_toggle_val terminal=false refresh=true"
 echo "-- Autosend: $tmux_autosend_label | bash=$DICTATE_BIN param1=tmux param2=autosend param3=$tmux_autosend_toggle_val terminal=false refresh=true"
 echo "-- Target: $tmux_target_val | bash=$DICTATE_BIN param1=tmux param2=target param3=$tmux_target_toggle_val terminal=false refresh=true"
-
-tmux_model_id="${CFG_TMUX_MODEL:-${CFG_WHISPER_MODEL:-base}}"
-tmux_model_base="$tmux_model_id"
-if [[ "$tmux_model_id" == */* ]]; then
-  tmux_model_base="$(basename "$tmux_model_id")"
-elif [[ "$tmux_model_id" == *.bin ]]; then
-  tmux_model_base="$tmux_model_id"
-fi
-tmux_model_display="$tmux_model_base"
-case "$tmux_model_base" in
-  ggml-tiny.en.bin) tmux_model_display="base" ;;
-  ggml-base.en.bin) tmux_model_display="base" ;;
-  ggml-small.en.bin) tmux_model_display="small" ;;
-  ggml-large-v3-turbo-q5_0.bin) tmux_model_display="turbo" ;;
-  ggml-large-v3-turbo-q8_0.bin|ggml-large-v3-turbo.bin) tmux_model_display="turbo" ;;
-  base|small|turbo) tmux_model_display="$tmux_model_base" ;;
-  *) tmux_model_display="base" ;;
-esac
-echo "-- Models"
-for m in base small turbo; do
-  if [[ "$m" == "$tmux_model_display" ]]; then
-    echo "-- ✓ $m | bash=$DICTATE_BIN param1=tmux param2=model param3=$m terminal=false refresh=true"
-  else
-    echo "-- $m | bash=$DICTATE_BIN param1=tmux param2=model param3=$m terminal=false refresh=true"
-  fi
-done
 echo "Advanced"
 echo "-- Global | color=gray"
 echo "-- SwiftBar integration: $swiftbar_label | bash=$DICTATE_BIN param1=swiftbar param2=$swiftbar_toggle_val terminal=false refresh=true"
 echo "-- Keep logs: $keep_logs_label | bash=$DICTATE_BIN param1=keep-logs param2=$keep_logs_toggle_val terminal=false refresh=true"
 echo "-- Inline | color=gray"
 echo "-- Paste target: $inline_target_val | bash=$DICTATE_BIN param1=target param2=$inline_target_toggle_val terminal=false refresh=true"
-echo "-- Silence trim: $silence_trim_label | bash=$DICTATE_BIN param1=silence-trim param2=$silence_trim_toggle_val terminal=false refresh=true"
-echo "-- Repeats level"
-for lvl in 0 1 2; do
-  if [[ "$lvl" == "$repeats_level_val" ]]; then
-    echo "---- ✓ $lvl | bash=$DICTATE_BIN param1=repeats param2=$lvl terminal=false refresh=true"
-  else
-    echo "---- $lvl | bash=$DICTATE_BIN param1=repeats param2=$lvl terminal=false refresh=true"
-  fi
-done
 echo "-- Tmux | color=gray"
 echo "-- Send mode"
 if [[ "auto" == "$tmux_send_mode_val" ]]; then

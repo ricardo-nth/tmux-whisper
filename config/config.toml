@@ -16,17 +16,7 @@ silence_keep_ms = 50
 repeats_level = 1
 
 [whisper]
-models_dir = "~/.local/share/whisper/models"
 backend = "swift_parakeet"
-model = "base"
-threads = 5
-beam_size = 1
-best_of = 1
-vad = false
-vad_threshold = 0.5
-vad_min_speech_ms = 250
-vad_min_silence_ms = 100
-vad_speech_pad_ms = 30
 
 [swift_parakeet]
 model_path = ""
@@ -50,7 +40,6 @@ paste_target = "origin"
 postprocess = false
 process_sound = true
 mode = "code"
-model = "base"
 send_mode = "auto"
 
 [debug]
@@ -68,13 +57,13 @@ recording = "🔴"
 processing = "🔲"
 ready = "🔳"
 error = "⚠️"
-base = "🎯"
-code = "🌀"
-long = "📚"
-email = "📧"
-chat = "💬"
-linkedin = "in"
-twitter = "𝕏"
+base = ""
+code = ""
+long = ""
+email = ""
+chat = ""
+linkedin = ""
+twitter = ""
 cancel = "🚫"
 
 [audio.sounds]
