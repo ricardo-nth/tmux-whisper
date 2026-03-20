@@ -25,7 +25,7 @@ assert_exec() {
   }
 }
 
-"$ROOT/install.sh" --with-sounds
+install_output="$("$ROOT/install.sh" --with-sounds)"
 
 assert_exec "$HOME/.local/bin/tmux-whisper"
 assert_exec "$HOME/.local/bin/dictate-lib.sh"
@@ -46,6 +46,10 @@ if ! rg -q '^[[:space:]]*backend = "swift_parakeet"$' "$HOME/.config/dictate/con
 fi
 if [[ "$(tr -d '[:space:]' < "$HOME/.config/dictate/current-mode")" != "auto" ]]; then
   echo "Expected fresh install current-mode to default to auto" >&2
+  exit 1
+fi
+if [[ "$install_output" != *"Warmup:"* ]]; then
+  echo "Expected install to report warmup status" >&2
   exit 1
 fi
 

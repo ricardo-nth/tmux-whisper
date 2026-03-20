@@ -4,6 +4,7 @@ set -euo pipefail
 FORCE=0
 INSTALL_SOUNDS="${DICTATE_INSTALL_SAMPLE_SOUNDS:-1}"
 REPLACE_SOUNDS="${DICTATE_REPLACE_SOUNDS:-0}"
+INSTALL_WARMUP="${DICTATE_INSTALL_WARMUP:-1}"
 
 usage() {
   cat <<'EOF'
@@ -59,6 +60,25 @@ copy_if_missing() {
   local src="$1"
   local dst="$2"
   [[ -e "$dst" ]] || cp -R "$src" "$dst"
+}
+
+run_install_warmup() {
+  if [[ "$INSTALL_WARMUP" != "1" ]]; then
+    echo "Warmup: skipped (DICTATE_INSTALL_WARMUP=0)"
+    return 0
+  fi
+
+  env \
+    -u DICTATE_BACKEND \
+    -u DICTATE_SWIFT_PARAKEET_MODEL_PATH \
+    -u DICTATE_SWIFT_PARAKEET_MODEL_VERSION \
+    -u DICTATE_SWIFT_PARAKEET_SOCKET_PATH \
+    -u DICTATE_TMUX_WHISPERD_BIN \
+    -u DICTATE_TMUX_WHISPERD_ROOT \
+    DICTATE_CONFIG_DIR="$CONFIG_DIR" \
+    DICTATE_CONFIG_FILE="$CONFIG_DIR/config.toml" \
+    XDG_DATA_HOME="$XDG_DATA_HOME" \
+    "$BIN_DIR/tmux-whisper" warmup --best-effort || true
 }
 
 migrate_legacy_mode_names() {
@@ -168,4 +188,5 @@ if [[ "$INSTALL_SOUNDS" == "1" ]]; then
 else
   echo "Sample sounds: skipped"
 fi
+run_install_warmup
 echo "Run: tmux-whisper debug"
