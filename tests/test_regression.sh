@@ -354,6 +354,7 @@ assert_not_contains "swiftbar_tmux_model_menu_removed" "$swiftbar_modes_out" "pa
 assert_not_contains "swiftbar_inline_silence_trim_removed" "$swiftbar_modes_out" "Silence trim:"
 assert_not_contains "swiftbar_inline_repeats_removed" "$swiftbar_modes_out" "Repeats level"
 assert_not_contains "swiftbar_inline_backend_removed" "$swiftbar_modes_out" "Backend:"
+assert_contains "swiftbar_tmux_target_present" "$swiftbar_modes_out" "param1=tmux param2=target"
 
 # --- Regression 12: budget profile auto-selection is based on transcript length, not mode name. ---
 BUDGET_HOME="$TMP_ROOT/home-budget"
