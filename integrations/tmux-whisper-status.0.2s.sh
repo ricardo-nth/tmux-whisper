@@ -384,11 +384,9 @@ resolve_inline_mode() {
 
 emit_inline_modes_menu() {
   local saved_mode_raw="${1:-auto}"
-  local auto_label="auto"
-  if [[ -z "$saved_mode_raw" || "$saved_mode_raw" == "auto" ]]; then
-    echo "-- ✓ $auto_label | bash=$DICTATE_BIN param1=mode param2=auto terminal=false refresh=true"
-  else
-    echo "-- $auto_label | bash=$DICTATE_BIN param1=mode param2=auto terminal=false refresh=true"
+  local selected_mode="$saved_mode_raw"
+  if [[ -z "$selected_mode" || "$selected_mode" == "auto" ]]; then
+    selected_mode="${2:-$(default_inline_mode)}"
   fi
   local mode_name
   while IFS= read -r mode_name; do
@@ -398,7 +396,7 @@ emit_inline_modes_menu() {
     fi
     local mode_label
     mode_label="$(mode_display_name "$mode_name")"
-    if [[ "$mode_name" == "$saved_mode_raw" ]]; then
+    if [[ "$mode_name" == "$selected_mode" ]]; then
       echo "-- ✓ $mode_label | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
     else
       echo "-- $mode_label | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
@@ -604,11 +602,7 @@ saved_mode="$(resolve_inline_mode "$saved_mode_raw")"
 
 # Determine mode icon display
 current_mode_icon="$(mode_icon "$saved_mode")"
-if [[ -z "$saved_mode_raw" || "$saved_mode_raw" == "auto" ]]; then
-  mode_display="auto -> $(mode_display_name "$saved_mode")"
-else
-  mode_display="$(mode_display_name "$saved_mode")"
-fi
+mode_display="$(mode_display_name "$saved_mode")"
 
 # Check if recording (either tmux or inline mode)
 if [[ -f "$STATE_FILE" ]] || [[ -f "$INLINE_STATE" ]]; then
