@@ -15,6 +15,7 @@
 - mode/config UX validation polish (`dictate doctor`, mode checks, clearer fix hints)
 - vocab workflow safety pass (import/export ergonomics, normalize/dedupe guardrails)
 - docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
+- CLI naming transition: move user-facing command language from legacy `dictate ...` toward `tmux-whisper ...` and update aliases/docs after the current UI/config cleanup settles
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
 
 ## 2026-02-19

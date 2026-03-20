@@ -42,6 +42,19 @@ assert_not_contains() {
   echo "PASS: $name"
 }
 
+assert_equals() {
+  local name="$1"
+  local actual="$2"
+  local expected="$3"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "FAIL: $name" >&2
+    echo "Expected: $expected" >&2
+    echo "Actual:   $actual" >&2
+    exit 1
+  fi
+  echo "PASS: $name"
+}
+
 assert_file_contains() {
   local name="$1"
   local file="$2"
@@ -131,6 +144,13 @@ assert_contains "debug_backend_model_path" "$backend_debug" "parakeet_mod: $BACK
 backend_doctor="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" tmux-whisper doctor)"
 assert_contains "doctor_backend_requested" "$backend_doctor" "backend requested: swift_parakeet"
 assert_contains "doctor_backend_model_version" "$backend_doctor" "parakeet model version: v3"
+
+backend_status="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" tmux-whisper status)"
+assert_contains "status_backend_swift_model" "$backend_status" "swift_parakeet.model: $BACKEND_MODEL (v3)"
+assert_contains "status_backend_swift_socket" "$backend_status" "swift_parakeet.socket: $BACKEND_CFG/.cache/tmux-whisperd.sock"
+assert_not_contains "status_backend_hides_inline_model" "$backend_status" "model.inline:"
+assert_not_contains "status_backend_hides_tmux_model" "$backend_status" "model.tmux:"
+assert_not_contains "status_backend_hides_whisper_knobs" "$backend_status" "whisper.threads/beam/best_of:"
 
 # --- Regression 4: doctor should fail on schema mismatch. ---
 MISMATCH_HOME="$TMP_ROOT/home-mismatch"
@@ -292,7 +312,7 @@ assert_contains "swiftbar_plugin_off_enable_action" "$swiftbar_toggle_out" "Enab
 SWIFTBAR_MODES_HOME="$TMP_ROOT/home-swiftbar-modes"
 SWIFTBAR_MODES_BIN="$SWIFTBAR_MODES_HOME/.local/bin"
 SWIFTBAR_MODES_CFG="$SWIFTBAR_MODES_HOME/.config/dictate"
-mkdir -p "$SWIFTBAR_MODES_BIN" "$SWIFTBAR_MODES_CFG/modes/code" "$SWIFTBAR_MODES_CFG/modes/email" "$SWIFTBAR_MODES_CFG/modes/long"
+mkdir -p "$SWIFTBAR_MODES_BIN" "$SWIFTBAR_MODES_CFG/modes/base" "$SWIFTBAR_MODES_CFG/modes/code" "$SWIFTBAR_MODES_CFG/modes/email" "$SWIFTBAR_MODES_CFG/modes/long"
 cp "$ROOT/bin/tmux-whisper" "$SWIFTBAR_MODES_BIN/tmux-whisper"
 cp "$ROOT/bin/dictate-lib.sh" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
 chmod +x "$SWIFTBAR_MODES_BIN/tmux-whisper" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
@@ -305,20 +325,35 @@ source = "auto"
 
 [integrations.swiftbar]
 enabled = true
+
+[ui.icons]
+email = ""
 EOF
-printf '%s\n' "code" >"$SWIFTBAR_MODES_CFG/current-mode"
+printf '%s\n' "auto" >"$SWIFTBAR_MODES_CFG/current-mode"
+printf '%s\n' "Context: base mode." >"$SWIFTBAR_MODES_CFG/modes/base/prompt"
+printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/base/flows"
 printf '%s\n' "Context: code mode." >"$SWIFTBAR_MODES_CFG/modes/code/prompt"
 printf '%s\n' "tmux" "inline" >"$SWIFTBAR_MODES_CFG/modes/code/flows"
 printf '%s\n' "Context: email mode." >"$SWIFTBAR_MODES_CFG/modes/email/prompt"
+printf '%s\n' "Mail" >"$SWIFTBAR_MODES_CFG/modes/email/apps"
 printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/email/flows"
 printf '%s\n' "Context: long mode." >"$SWIFTBAR_MODES_CFG/modes/long/prompt"
 printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/long/flows"
 
-swiftbar_modes_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
-assert_contains "swiftbar_inline_menu_email" "$swiftbar_modes_out" "param1=mode param2=email"
+swiftbar_modes_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+swiftbar_modes_first_line="$(printf '%s\n' "$swiftbar_modes_out" | sed -n '1p')"
+assert_equals "swiftbar_inline_blank_mode_icon_ready_line" "$swiftbar_modes_first_line" "🎙️"
+assert_contains "swiftbar_inline_mode_auto_display" "$swiftbar_modes_out" "Mode: auto -> email"
+assert_contains "swiftbar_inline_menu_auto" "$swiftbar_modes_out" "param1=mode param2=auto"
+assert_not_contains "swiftbar_inline_menu_email_hidden" "$swiftbar_modes_out" "param1=mode param2=email"
 assert_contains "swiftbar_tmux_menu_code" "$swiftbar_modes_out" "param1=tmux param2=mode param3=code"
 assert_not_contains "swiftbar_tmux_menu_email_hidden" "$swiftbar_modes_out" "param1=tmux param2=mode param3=email"
 assert_not_contains "swiftbar_tmux_menu_long_hidden" "$swiftbar_modes_out" "param1=tmux param2=mode param3=long"
+assert_not_contains "swiftbar_inline_model_menu_removed" "$swiftbar_modes_out" "param1=model"
+assert_not_contains "swiftbar_tmux_model_menu_removed" "$swiftbar_modes_out" "param2=model param3="
+assert_not_contains "swiftbar_inline_silence_trim_removed" "$swiftbar_modes_out" "Silence trim:"
+assert_not_contains "swiftbar_inline_repeats_removed" "$swiftbar_modes_out" "Repeats level"
+assert_not_contains "swiftbar_inline_backend_removed" "$swiftbar_modes_out" "Backend:"
 
 # --- Regression 12: budget profile auto-selection is based on transcript length, not mode name. ---
 BUDGET_HOME="$TMP_ROOT/home-budget"

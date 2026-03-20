@@ -423,17 +423,7 @@ silence_keep_ms = 50
 repeats_level = 1
 
 [whisper]
-models_dir = "~/.local/share/whisper/models"
 backend = "swift_parakeet"
-model = "base"
-threads = 5
-beam_size = 1
-best_of = 1
-vad = false
-vad_threshold = 0.5
-vad_min_speech_ms = 250
-vad_min_silence_ms = 100
-vad_speech_pad_ms = 30
 
 [swift_parakeet]
 model_path = ""
@@ -458,7 +448,6 @@ paste_target = "origin"
 postprocess = false
 process_sound = true
 mode = "code"
-model = "base"
 send_mode = "auto"
 
 [debug]
@@ -476,13 +465,13 @@ recording = "🔴"
 processing = "🔲"
 ready = "🔳"
 error = "⚠️"
-base = "🎯"
-code = "🌀"
-long = "📚"
-email = "📧"
-chat = "💬"
-linkedin = "in"
-twitter = "𝕏"
+base = ""
+code = ""
+long = ""
+email = ""
+chat = ""
+linkedin = ""
+twitter = ""
 cancel = "🚫"
 
 [audio.sounds]
@@ -4986,13 +4975,16 @@ status() {
   fi
   echo "  mode.inline: $(mode_display_name "$mode_inline") ($mode_inline_source)"
   echo "  mode.tmux: $(mode_display_name "$mode_tmux")"
-  echo "  model.inline: $model_inline_id ($model_inline_label)"
-  echo "  model.tmux: $model_tmux_id ($model_tmux_label)"
-  if [[ "$backend_requested" == "swift_parakeet" ]]; then
+  local backend_effective
+  backend_effective="${DICTATE_LAST_BACKEND_USED:-$backend_requested}"
+  if [[ "$backend_effective" == "swift_parakeet" ]]; then
     echo "  swift_parakeet.model: ${swift_model_path:-<missing>} (${swift_model_version})"
     echo "  swift_parakeet.socket: $swift_socket_path"
+  else
+    echo "  model.inline: $model_inline_id ($model_inline_label)"
+    echo "  model.tmux: $model_tmux_id ($model_tmux_label)"
+    echo "  whisper.threads/beam/best_of: ${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}/${DICTATE_BEAM_SIZE:-${CFG_WHISPER_BEAM_SIZE:-1}}/${DICTATE_BEST_OF:-${CFG_WHISPER_BEST_OF:-1}}"
   fi
-  echo "  whisper.threads/beam/best_of: ${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}/${DICTATE_BEAM_SIZE:-${CFG_WHISPER_BEAM_SIZE:-1}}/${DICTATE_BEST_OF:-${CFG_WHISPER_BEST_OF:-1}}"
   echo "  language: ${DICTATE_LANGUAGE:-en}"
   echo "  postprocess.inline: $(onoff "$post_inline")"
   echo "  postprocess.tmux: $(onoff "$post_tmux")"
