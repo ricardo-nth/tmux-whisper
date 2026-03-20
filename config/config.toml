@@ -31,6 +31,7 @@ chunk_words = 700
 
 [inline]
 autosend = true
+process_sound = true
 paste_target = "current"
 send_mode = "enter"
 

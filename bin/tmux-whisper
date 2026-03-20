@@ -130,6 +130,7 @@ INLINE OPTIONS:
   tmux-whisper autosend           # show auto-send setting
   tmux-whisper autosend on        # paste + Enter (default)
   tmux-whisper autosend off       # paste only, no Enter
+  tmux-whisper inline process-sound on|off # inline: play processing SFX before transcribe
   tmux-whisper send-mode          # show inline autosend key strategy
   tmux-whisper send-mode enter    # inline autosend uses Enter
   tmux-whisper send-mode ctrl_j   # inline autosend uses Ctrl+J (Claude-friendly)
@@ -178,6 +179,7 @@ ENV OPTIONS:
   DICTATE_TMUX_SEND_MODE=auto|enter|codex # tmux autosend strategy (default: auto)
   DICTATE_TMUX_SEND_DELAY_MS=90 # delay after paste before autosend key
   DICTATE_TMUX_CODEX_TAB_DELAY_MS=35 # delay between Tab and Enter in codex mode
+  DICTATE_INLINE_PROCESS_SOUND=1 # inline-only processing sound override
   DICTATE_INLINE_PASTE_TARGET=origin|current # inline paste target override
   DICTATE_INLINE_ACTIVATE_DELAY_MS=90 # inline: focus settle delay before paste (restore/origin only)
   DICTATE_INLINE_SEND_DELAY_MS=35 # inline: delay between Cmd+V and send key when autosend=on
@@ -439,6 +441,7 @@ budget_long_words_threshold = 120
 
 [inline]
 autosend = true
+process_sound = true
 paste_target = "current"
 send_mode = "enter"
 
@@ -575,6 +578,7 @@ out = {
   "CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES": "",
   "CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES": "",
   "CFG_INLINE_AUTOSEND": "1" if b(get("inline.autosend", True), True) else "0",
+  "CFG_INLINE_PROCESS_SOUND": "1" if b(get("inline.process_sound", True), True) else "0",
   "CFG_INLINE_PASTE_TARGET": str(get("inline.paste_target", "current")),
   "CFG_INLINE_SEND_MODE": str(get("inline.send_mode", "enter")),
   "CFG_TMUX_AUTOSEND": "1" if b(get("tmux.autosend", True), True) else "0",
@@ -794,6 +798,7 @@ debug() {
   echo "  DICTATE_TMUX_SEND_MODE=${DICTATE_TMUX_SEND_MODE:-}"
   echo "  DICTATE_TMUX_SEND_DELAY_MS=${DICTATE_TMUX_SEND_DELAY_MS:-}"
   echo "  DICTATE_TMUX_CODEX_TAB_DELAY_MS=${DICTATE_TMUX_CODEX_TAB_DELAY_MS:-}"
+  echo "  DICTATE_INLINE_PROCESS_SOUND=${DICTATE_INLINE_PROCESS_SOUND:-}"
   echo "  DICTATE_INLINE_PASTE_TARGET=${DICTATE_INLINE_PASTE_TARGET:-}"
   echo "  DICTATE_INLINE_ACTIVATE_DELAY_MS=${DICTATE_INLINE_ACTIVATE_DELAY_MS:-}"
   echo "  DICTATE_INLINE_SEND_DELAY_MS=${DICTATE_INLINE_SEND_DELAY_MS:-}"
@@ -848,16 +853,17 @@ debug() {
   echo "  postprocess.chunk_words=${CFG_POSTPROCESS_CHUNK_WORDS:-}"
   echo "  postprocess.budget_long_words_threshold=${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}"
   echo "  inline.autosend=${CFG_INLINE_AUTOSEND:-1}"
-      echo "  inline.paste_target=$(inline_paste_target_label "${CFG_INLINE_PASTE_TARGET:-restore}")"
-      echo "  inline.send_mode=$(inline_send_mode_label "${CFG_INLINE_SEND_MODE:-enter}")"
-      echo "  tmux.autosend=${CFG_TMUX_AUTOSEND:-1}"
-      echo "  tmux.paste_target=${CFG_TMUX_PASTE_TARGET:-origin}"
-      echo "  tmux.postprocess=${CFG_TMUX_POSTPROCESS:-0}"
-      echo "  tmux.process_sound=${CFG_TMUX_PROCESS_SOUND:-0}"
-      echo "  tmux.mode=${CFG_TMUX_MODE:-code}"
-      echo "  tmux.model=${CFG_TMUX_MODEL:-base}"
-      echo "  tmux.send_mode=${CFG_TMUX_SEND_MODE:-auto}"
-      echo "  integrations.swiftbar.enabled=${CFG_SWIFTBAR_ENABLED:-1}"
+  echo "  inline.process_sound=${CFG_INLINE_PROCESS_SOUND:-1}"
+  echo "  inline.paste_target=$(inline_paste_target_label "${CFG_INLINE_PASTE_TARGET:-restore}")"
+  echo "  inline.send_mode=$(inline_send_mode_label "${CFG_INLINE_SEND_MODE:-enter}")"
+  echo "  tmux.autosend=${CFG_TMUX_AUTOSEND:-1}"
+  echo "  tmux.paste_target=${CFG_TMUX_PASTE_TARGET:-origin}"
+  echo "  tmux.postprocess=${CFG_TMUX_POSTPROCESS:-0}"
+  echo "  tmux.process_sound=${CFG_TMUX_PROCESS_SOUND:-0}"
+  echo "  tmux.mode=${CFG_TMUX_MODE:-code}"
+  echo "  tmux.model=${CFG_TMUX_MODEL:-base}"
+  echo "  tmux.send_mode=${CFG_TMUX_SEND_MODE:-auto}"
+  echo "  integrations.swiftbar.enabled=${CFG_SWIFTBAR_ENABLED:-1}"
       echo "  debug.keep_logs=${CFG_DEBUG_KEEP_LOGS:-0}"
       echo ""
 
@@ -1401,7 +1407,7 @@ preferred_key_order = {
   "whisper": ["models_dir", "backend", "model", "threads", "beam_size", "best_of", "vad", "vad_model", "vad_threshold", "vad_min_speech_ms", "vad_min_silence_ms", "vad_speech_pad_ms"],
   "swift_parakeet": ["model_path", "model_version", "socket_path"],
   "postprocess": ["enabled", "llm", "max_tokens", "chunk_words", "budget_long_words_threshold"],
-  "inline": ["autosend", "paste_target", "send_mode"],
+  "inline": ["autosend", "process_sound", "paste_target", "send_mode"],
   "tmux": ["autosend", "paste_target", "postprocess", "process_sound", "mode", "model", "send_mode"],
   "debug": ["keep_logs"],
   "ui.keybinds": ["tmux", "inline"],
@@ -4594,6 +4600,9 @@ inline_stop() {
   (
     trap '' HUP
     set -euo pipefail
+    if [[ "${DICTATE_INLINE_PROCESS_SOUND:-${CFG_INLINE_PROCESS_SOUND:-1}}" == "1" ]]; then
+      play_sound process
+    fi
     process_inline_recording "$wav" "${target_app:-}" "${model_id:-${CFG_WHISPER_MODEL:-}}" "$record_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
   ) >"$TMPDIR/whisper-dictate-inline.transcribe.log" 2>&1 &
@@ -4863,8 +4872,9 @@ status() {
     post_inline="0"
   fi
 
-  local inline_autosend inline_target inline_send_mode tmux_autosend tmux_target tmux_process_sound
+  local inline_autosend inline_process_sound inline_target inline_send_mode tmux_autosend tmux_target tmux_process_sound
   inline_autosend="${DICTATE_AUTOSEND:-${CFG_INLINE_AUTOSEND:-1}}"
+  inline_process_sound="${DICTATE_INLINE_PROCESS_SOUND:-${CFG_INLINE_PROCESS_SOUND:-1}}"
   inline_target="$(inline_paste_target_label "${DICTATE_INLINE_PASTE_TARGET:-${CFG_INLINE_PASTE_TARGET:-restore}}")"
   inline_send_mode="$(inline_send_mode_label "${DICTATE_INLINE_SEND_MODE:-${CFG_INLINE_SEND_MODE:-enter}}")"
   tmux_autosend="${DICTATE_TMUX_AUTOSEND:-${CFG_TMUX_AUTOSEND:-1}}"
@@ -5014,6 +5024,7 @@ status() {
   echo "  clean.vocab_only_when_postprocess_off: $(onoff "$vocab_clean")"
   echo "  silence_trim: $(onoff "$silence_trim") (${CFG_AUDIO_SILENCE_TRIM_MODE:-edges})"
   echo "  inline.autosend: $(onoff "$inline_autosend")"
+  echo "  inline.process_sound: $(onoff "$inline_process_sound")"
   echo "  inline.target: $inline_target"
   echo "  inline.send_mode: $inline_send_mode"
   echo "  tmux.autosend: $(onoff "$tmux_autosend")"
@@ -5247,6 +5258,18 @@ set_autosend() {
       [[ "${CFG_INLINE_AUTOSEND:-1}" == "1" ]] && echo "Auto-send: ON" || echo "Auto-send: OFF"
       echo ""
       echo "Note: Applies to inline mode only. Use: tmux-whisper tmux autosend on|off"
+      ;;
+    *) die "unknown value: $val (use: on, off)" ;;
+  esac
+}
+
+set_inline_process_sound() {
+  local val="${1:-}"
+  case "$val" in
+    on|1)  config_set "inline.process_sound" "bool" "true";  config_load; echo "inline process_sound: ON" ;;
+    off|0) config_set "inline.process_sound" "bool" "false"; config_load; echo "inline process_sound: OFF" ;;
+    "")
+      [[ "${CFG_INLINE_PROCESS_SOUND:-1}" == "1" ]] && echo "inline process_sound: ON" || echo "inline process_sound: OFF"
       ;;
     *) die "unknown value: $val (use: on, off)" ;;
   esac
@@ -6517,7 +6540,8 @@ case "$cmd" in
       start) inline_start ;;
       stop) inline_stop ;;
       toggle) inline_toggle ;;
-      *) die "usage: tmux-whisper inline [start|stop|toggle]" ;;
+      process-sound|process_sound|processsound) set_inline_process_sound "${3:-}" ;;
+      *) die "usage: tmux-whisper inline [start|stop|toggle|process-sound]" ;;
     esac
     ;;
   sound|sounds) manage_sounds "${2:-}" "${3:-}" ;;
