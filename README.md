@@ -40,6 +40,20 @@ brew tap ricardo-nth/tap
 brew install ricardo-nth/tap/tmux-whisper
 ```
 
+`whisper-cpp` now installs the `whisper-cli` binary without downloading model files.
+Tmux Whisper needs at least one local GGML model (`.bin`) in `~/.local/share/whisper/models`.
+
+After install, download one of these common models into that directory:
+
+- `ggml-base.en.bin` for `tmux-whisper model base`
+- `ggml-small.en.bin` for `tmux-whisper model small`
+- `ggml-large-v3-turbo-q5_0.bin` for `tmux-whisper model turbo`
+
+Model sources:
+
+- <https://huggingface.co/ggerganov/whisper.cpp/tree/main>
+- <https://ggml.ggerganov.com/>
+
 Or one-line bootstrap:
 
 ```bash
@@ -57,6 +71,7 @@ First run:
 ```bash
 tmux-whisper debug
 tmux-whisper doctor
+tmux-whisper model
 tmux-whisper --help
 ```
 

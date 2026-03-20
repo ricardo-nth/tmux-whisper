@@ -996,7 +996,11 @@ doctor() {
   echo "  - ggml models: $model_count"
   if [[ "$model_count" -eq 0 ]]; then
     warnings=$((warnings + 1))
+    echo "  - hint: whisper-cpp installs whisper-cli, but GGML models (.bin) must be downloaded separately"
     echo "  - hint: place ggml-*.bin models in the models dir, then run: tmux-whisper model"
+    echo "  - sources:"
+    echo "      https://huggingface.co/ggerganov/whisper.cpp/tree/main"
+    echo "      https://ggml.ggerganov.com/"
     add_suggestion "Add at least one ggml model to $models_dir (for example ggml-base.en.bin)"
   fi
   echo ""

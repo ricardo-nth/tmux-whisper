@@ -34,6 +34,22 @@ Missing dependencies:
 brew install python ffmpeg whisper-cpp
 ```
 
+Missing GGML model files:
+
+- Symptom in `tmux-whisper doctor`: `ggml models: 0`
+- Symptom at runtime: `model not found: .../ggml-*.bin`
+- `whisper-cpp` installs `whisper-cli`, but model files are now a separate manual download.
+- Fix:
+  - create the models directory if needed: `mkdir -p ~/.local/share/whisper/models`
+  - download at least one `.bin` model there:
+    - `ggml-base.en.bin` for `tmux-whisper model base`
+    - `ggml-small.en.bin` for `tmux-whisper model small`
+    - `ggml-large-v3-turbo-q5_0.bin` for `tmux-whisper model turbo`
+  - model sources:
+    - <https://huggingface.co/ggerganov/whisper.cpp/tree/main>
+    - <https://ggml.ggerganov.com/>
+  - verify with: `tmux-whisper doctor`
+
 ## 3) Mode configuration issues
 
 Invalid fixed mode fallback:
