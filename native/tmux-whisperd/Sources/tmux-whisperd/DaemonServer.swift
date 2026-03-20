@@ -19,25 +19,30 @@ actor TranscriptionService {
           message: "ok"
         )
 
+      case .warmup:
+        let (modelURL, modelVersion) = try resolveModelRequest(request)
+        let result = try await adapter.warmup(modelURL: modelURL, modelVersion: modelVersion)
+        return DaemonResponse(
+          id: request.id,
+          ok: true,
+          text: nil,
+          engine: "swift_parakeet",
+          model: result.model,
+          durationMs: result.durationMs,
+          errorCode: nil,
+          message: "warmed"
+        )
+
       case .transcribe:
         guard let wavPath = request.wavPath, !wavPath.isEmpty else {
           throw DaemonServiceError.wavPathMissing
         }
-        guard let modelPath = request.modelPath, !modelPath.isEmpty else {
-          throw DaemonServiceError.modelPathMissing
-        }
-
         let wavURL = URL(fileURLWithPath: wavPath)
-        let modelURL = URL(fileURLWithPath: modelPath, isDirectory: true)
         guard FileManager.default.fileExists(atPath: wavURL.path) else {
           throw DaemonServiceError.wavPathInvalid(wavURL.path)
         }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: modelURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-          throw DaemonServiceError.modelPathInvalid(modelURL.path)
-        }
 
-        let modelVersion = request.modelVersion ?? "v3"
+        let (modelURL, modelVersion) = try resolveModelRequest(request)
         let result = try await adapter.transcribe(audioURL: wavURL, modelURL: modelURL, modelVersion: modelVersion)
         return DaemonResponse(
           id: request.id,
@@ -73,6 +78,20 @@ actor TranscriptionService {
         message: error.localizedDescription
       )
     }
+  }
+
+  private func resolveModelRequest(_ request: DaemonRequest) throws -> (URL, String) {
+    guard let modelPath = request.modelPath, !modelPath.isEmpty else {
+      throw DaemonServiceError.modelPathMissing
+    }
+
+    let modelURL = URL(fileURLWithPath: modelPath, isDirectory: true)
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: modelURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+      throw DaemonServiceError.modelPathInvalid(modelURL.path)
+    }
+
+    return (modelURL, request.modelVersion ?? "v3")
   }
 }
 

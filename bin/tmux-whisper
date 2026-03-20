@@ -55,6 +55,7 @@ DIAGNOSTICS:
   tmux-whisper debug              # show resolved device + relevant env/config
   tmux-whisper doctor             # quick health summary (state files, markers, logs)
   tmux-whisper logs               # show recent logs (record/transcribe)
+  tmux-whisper warmup            # preload the Swift Parakeet daemon/model
   tmux-whisper keep-logs          # show persistent log retention setting
   tmux-whisper keep-logs on|off   # persist log retention in config
   tmux-whisper bench [N]          # summarize recent stage timings (default: 30 runs)
@@ -1726,6 +1727,34 @@ ensure_swift_parakeet_daemon() {
   return 1
 }
 
+swift_parakeet_warmup_cli() {
+  local socket_path=""
+  local model_path=""
+  local model_version=""
+  local response=""
+  local shell_vars=""
+
+  socket_path="$(resolve_swift_parakeet_socket_path)"
+  model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
+  [[ -n "$model_path" ]] || return 1
+  model_version="$(resolve_swift_parakeet_model_version "$model_path")"
+
+  ensure_swift_parakeet_daemon "$socket_path" || return 1
+  response="$(swift_parakeet_request_json "warmup" "$socket_path" "" "en" "warmup" "$model_path" "$model_version")" || return 1
+  shell_vars="$(daemon_response_to_shell "$response" 2>/dev/null || true)"
+  [[ -n "$shell_vars" ]] || return 1
+  eval "$shell_vars"
+
+  if [[ "${RESP_OK:-0}" != "1" ]]; then
+    log_transcribe_event "swift_parakeet: daemon warmup error ${RESP_ERROR_CODE:-unknown}: ${RESP_MESSAGE:-unknown error}"
+    return 1
+  fi
+
+  DICTATE_LAST_BACKEND_ENGINE="${RESP_ENGINE:-swift_parakeet}"
+  DICTATE_LAST_BACKEND_MODEL="${RESP_MODEL:-$(basename "$model_path")}"
+  printf "%s\t%s\t%s\n" "${RESP_MODEL:-$(basename "$model_path")}" "${RESP_DURATION_MS:-0}" "${RESP_MESSAGE:-warmed}"
+}
+
 transcribe_swift_parakeet_cli() {
   local wav="$1"
   local language="${2:-en}"
@@ -1755,6 +1784,48 @@ transcribe_swift_parakeet_cli() {
   DICTATE_LAST_BACKEND_ENGINE="${RESP_ENGINE:-swift_parakeet}"
   DICTATE_LAST_BACKEND_MODEL="${RESP_MODEL:-$(basename "$model_path")}"
   printf "%s" "${RESP_TEXT:-}"
+}
+
+warmup_backend() {
+  local best_effort="0"
+  local arg backend_requested model_path result model_name duration_ms message
+
+  for arg in "$@"; do
+    case "$arg" in
+      --best-effort) best_effort="1" ;;
+      *) die "usage: tmux-whisper warmup [--best-effort]" ;;
+    esac
+  done
+
+  backend_requested="$(resolve_transcribe_backend)"
+  if [[ "$backend_requested" != "swift_parakeet" ]]; then
+    if [[ "$best_effort" == "1" ]]; then
+      echo "Warmup: skipped (backend=$backend_requested)"
+      return 0
+    fi
+    die "warmup only supports the swift_parakeet backend (current: $backend_requested)"
+  fi
+
+  model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
+  if [[ -z "$model_path" ]]; then
+    if [[ "$best_effort" == "1" ]]; then
+      echo "Warmup: skipped (no local Parakeet model found)"
+      return 0
+    fi
+    die "no local Parakeet model found. Expected under $DEFAULT_SWIFT_PARAKEET_MODELS_DIR or set swift_parakeet.model_path"
+  fi
+
+  result="$(swift_parakeet_warmup_cli 2>>"${TRANSCRIBE_LOG:-/dev/null}" || true)"
+  if [[ -z "$result" ]]; then
+    if [[ "$best_effort" == "1" ]]; then
+      echo "Warmup: skipped (daemon/model preload unavailable)"
+      return 0
+    fi
+    die "failed to warm up the swift_parakeet backend"
+  fi
+
+  IFS=$'\t' read -r model_name duration_ms message <<<"$result"
+  echo "Warmup: ready (model=${model_name:-$(basename "$model_path")}, duration=${duration_ms:-0}ms)"
 }
 
 resolve_model_path() {
@@ -6527,6 +6598,7 @@ case "$cmd" in
   debug) debug ;;
   doctor) doctor ;;
   logs) logs ;;
+  warmup) warmup_backend "${@:2}" ;;
   bench) bench "${2:-}" ;;
   bench-matrix|bench_matrix) bench_matrix "${2:-}" "${3:-}" ;;
   changelog) changelog ;;

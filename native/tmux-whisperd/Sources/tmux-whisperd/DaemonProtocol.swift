@@ -2,6 +2,7 @@ import Foundation
 
 enum DaemonOperation: String, Codable {
   case ping
+  case warmup
   case transcribe
 }
 

@@ -16,6 +16,15 @@ actor FluidAudioAdapter {
   private var currentKey: LoadedModelKey?
   private var manager: AsrManager?
 
+  func warmup(modelURL: URL, modelVersion: String) async throws -> (model: String, durationMs: Int) {
+    let version = try parseModelVersion(modelVersion)
+    let started = ContinuousClock.now
+    try await ensureInitialized(modelURL: modelURL, version: version, versionLabel: modelVersion)
+    let elapsed = started.duration(to: ContinuousClock.now)
+    let millis = Int(elapsed.components.seconds * 1000) + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
+    return (modelURL.lastPathComponent, max(0, millis))
+  }
+
   func transcribe(audioURL: URL, modelURL: URL, modelVersion: String) async throws -> AdapterResult {
     let version = try parseModelVersion(modelVersion)
     try await ensureInitialized(modelURL: modelURL, version: version, versionLabel: modelVersion)

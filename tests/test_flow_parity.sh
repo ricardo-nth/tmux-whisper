@@ -538,6 +538,7 @@ run_status_postprocess_round() {
 
 run_status_model_mode_round() {
   setup_case "status-model-mode"
+  export DICTATE_BACKEND="whisper_cpp"
   export DICTATE_MODEL="small"
   export DICTATE_TMUX_MODEL="turbo"
   export DICTATE_TMUX_MODE="long"
