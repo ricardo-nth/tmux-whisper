@@ -354,7 +354,8 @@ assert_not_contains "swiftbar_tmux_menu_long_hidden" "$swiftbar_modes_out" "para
 assert_not_contains "swiftbar_inline_model_menu_removed" "$swiftbar_modes_out" "param1=model"
 assert_not_contains "swiftbar_tmux_model_menu_removed" "$swiftbar_modes_out" "param2=model param3="
 assert_not_contains "swiftbar_inline_silence_trim_removed" "$swiftbar_modes_out" "Silence trim:"
-assert_not_contains "swiftbar_inline_repeats_removed" "$swiftbar_modes_out" "Repeats level"
+assert_contains "swiftbar_inline_repeats_present" "$swiftbar_modes_out" "Repeats level"
+assert_contains "swiftbar_inline_repeats_action" "$swiftbar_modes_out" "param1=repeats param2=1"
 assert_not_contains "swiftbar_inline_backend_removed" "$swiftbar_modes_out" "Backend:"
 assert_contains "swiftbar_tmux_target_present" "$swiftbar_modes_out" "param1=tmux param2=target"
 

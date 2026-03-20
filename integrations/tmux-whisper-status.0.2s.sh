@@ -755,6 +755,7 @@ else
   swiftbar_label="OFF"
 fi
 [[ "$keep_logs_val" == "1" ]] && keep_logs_label="ON" || keep_logs_label="OFF"
+repeats_level_val="${CFG_CLEAN_REPEATS_LEVEL:-1}"
 # Toggle commands (tmux-whisper uses on/off)
 autosend_toggle_val=$([[ "$autosend_val" == "1" ]] && echo "off" || echo "on")
 inline_process_sound_toggle_val=$([[ "$inline_process_sound_val" == "1" ]] && echo "off" || echo "on")
@@ -782,6 +783,14 @@ echo "-- SwiftBar integration: $swiftbar_label | bash=$DICTATE_BIN param1=swiftb
 echo "-- Keep logs: $keep_logs_label | bash=$DICTATE_BIN param1=keep-logs param2=$keep_logs_toggle_val terminal=false refresh=true"
 echo "-- Inline | color=gray"
 echo "-- Paste target: $inline_target_val | bash=$DICTATE_BIN param1=target param2=$inline_target_toggle_val terminal=false refresh=true"
+echo "-- Repeats level"
+for lvl in 0 1 2; do
+  if [[ "$lvl" == "$repeats_level_val" ]]; then
+    echo "---- ✓ $lvl | bash=$DICTATE_BIN param1=repeats param2=$lvl terminal=false refresh=true"
+  else
+    echo "---- $lvl | bash=$DICTATE_BIN param1=repeats param2=$lvl terminal=false refresh=true"
+  fi
+done
 echo "-- Tmux | color=gray"
 echo "-- Paste target: $tmux_target_val | bash=$DICTATE_BIN param1=tmux param2=target param3=$tmux_target_toggle_val terminal=false refresh=true"
 echo "-- Send mode"
