@@ -69,10 +69,13 @@ assert_contains "auto_paragraphs_split" "$para_out" $'\n\n'
 cfg_tmp="$(mktemp -d)"
 trap 'rm -rf "$cfg_tmp"' EXIT
 mkdir -p "$cfg_tmp/modes/code"
+mkdir -p "$cfg_tmp/modes/base"
 printf '%s\n' 'codex -> Codex' > "$cfg_tmp/vocab"
 printf '%s\n' 'ggml -> GGML' >> "$cfg_tmp/vocab"
 printf '%s\n' 'qwen -> Qwen' >> "$cfg_tmp/vocab"
 printf '%s\n' 'qwen three point five -> Qwen 3.5' >> "$cfg_tmp/vocab"
+printf '%s\n' 'source slash -> src/' > "$cfg_tmp/modes/base/vocab"
+printf '%s\n' 'at saw slash -> @src/' >> "$cfg_tmp/modes/base/vocab"
 printf '%s\n' 'tmux -> Tmux' > "$cfg_tmp/modes/code/vocab"
 printf '%s\n' 'tmux whisper -> tmux-whisper' >> "$cfg_tmp/modes/code/vocab"
 vocab_out="$(printf '%s' 'codex and tmux' | dictate_lib_apply_vocab_corrections code "$cfg_tmp" | trim_nl)"
@@ -83,6 +86,8 @@ vocab_specific_phrase="$(printf '%s' 'qwen three point five is fast' | dictate_l
 assert_eq "vocab_specific_phrase_wins" "Qwen 3.5 is fast" "$vocab_specific_phrase"
 vocab_code_phrase="$(printf '%s' 'tmux whisper in codex' | dictate_lib_apply_vocab_corrections code "$cfg_tmp" | trim_nl)"
 assert_eq "vocab_code_phrase" "tmux-whisper in Codex" "$vocab_code_phrase"
+vocab_base_path="$(printf '%s' 'open at saw slash components' | dictate_lib_apply_vocab_corrections base "$cfg_tmp" | trim_nl)"
+assert_eq "vocab_base_path_shortcuts" "open @src/ components" "$vocab_base_path"
 
 assert_eq "resolve_model_turbo" "/models/ggml-large-v3-turbo-q5_0.bin" "$(dictate_lib_resolve_model_path turbo /models)"
 assert_eq "resolve_model_alias_file" "/tmp/ggml-large-v3-turbo-q5_0.bin" "$(dictate_lib_resolve_model_path /tmp/ggml-large-v3-turbo.bin /unused)"
