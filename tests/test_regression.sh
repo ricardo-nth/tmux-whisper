@@ -10,6 +10,10 @@ mkdir -p "$STUB_BIN"
 cat >"$STUB_BIN/osascript" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+joined="$*"
+if [[ "$joined" == *"get name of first process whose frontmost is true"* ]]; then
+  printf '%s\n' "${DICTATE_TEST_FRONT_APP:-}"
+fi
 exit 0
 EOF
 chmod +x "$STUB_BIN/osascript"
@@ -94,7 +98,41 @@ LOCAL_DICTATE_CONFIG_FILE="$LOCAL_DICTATE_CONFIG_DIR/config.toml"
 local_debug="$(HOME="$LOCAL_HOME" PATH="$LOCAL_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOCAL_DICTATE_CONFIG_DIR" DICTATE_CONFIG_FILE="$LOCAL_DICTATE_CONFIG_FILE" tmux-whisper debug)"
 assert_contains "debug_local_user_channel" "$local_debug" "channel: local-user"
 
-# --- Regression 3: doctor should fail on schema mismatch. ---
+# --- Regression 3: backend diagnostics should surface Swift backend state. ---
+BACKEND_HOME="$TMP_ROOT/home-backend"
+BACKEND_BIN="$BACKEND_HOME/.local/bin"
+BACKEND_CFG="$BACKEND_HOME/.config/dictate"
+BACKEND_NATIVE="$BACKEND_HOME/.local/share/tmux-whisper/native/tmux-whisperd"
+BACKEND_MODEL="$BACKEND_HOME/models/parakeet-tdt-0.6b-v3-coreml"
+mkdir -p "$BACKEND_BIN" "$BACKEND_CFG" "$BACKEND_NATIVE" "$BACKEND_MODEL"
+cp "$ROOT/bin/tmux-whisper" "$BACKEND_BIN/tmux-whisper"
+cp "$ROOT/bin/dictate-lib.sh" "$BACKEND_BIN/dictate-lib.sh"
+cp -R "$ROOT/native/tmux-whisperd/." "$BACKEND_NATIVE/"
+chmod +x "$BACKEND_BIN/tmux-whisper" "$BACKEND_BIN/dictate-lib.sh"
+cat >"$BACKEND_CFG/config.toml" <<EOF
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[whisper]
+backend = "swift_parakeet"
+
+[swift_parakeet]
+model_path = "$BACKEND_MODEL"
+socket_path = "$BACKEND_CFG/.cache/tmux-whisperd.sock"
+EOF
+
+backend_debug="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" tmux-whisper debug)"
+assert_contains "debug_backend_requested" "$backend_debug" "backend:      swift_parakeet"
+assert_contains "debug_backend_model_path" "$backend_debug" "parakeet_mod: $BACKEND_MODEL (ok, v3)"
+
+backend_doctor="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" tmux-whisper doctor)"
+assert_contains "doctor_backend_requested" "$backend_doctor" "backend requested: swift_parakeet"
+assert_contains "doctor_backend_model_version" "$backend_doctor" "parakeet model version: v3"
+
+# --- Regression 4: doctor should fail on schema mismatch. ---
 MISMATCH_HOME="$TMP_ROOT/home-mismatch"
 MISMATCH_BIN="$MISMATCH_HOME/.local/bin"
 MISMATCH_CFG="$MISMATCH_HOME/.config/dictate"
@@ -115,7 +153,7 @@ assert_contains "doctor_schema_mismatch_hint" "$mismatch_doctor" "this build req
 assert_contains "doctor_schema_suggested_fixes" "$mismatch_doctor" "Suggested fixes:"
 assert_contains "doctor_schema_suggested_install" "$mismatch_doctor" "Replace config with repo defaults (manual): cp config/config.toml ~/.config/dictate/config.toml"
 
-# --- Regression 4: doctor mode checks should show clear fallbacks + fixes. ---
+# --- Regression 5: doctor mode checks should show clear fallbacks + fixes. ---
 MODECHECK_HOME="$TMP_ROOT/home-modecheck"
 MODECHECK_BIN="$MODECHECK_HOME/.local/bin"
 MODECHECK_CFG="$MODECHECK_HOME/.config/dictate"
@@ -138,19 +176,47 @@ printf '%s\n' "Context: code mode." >"$MODECHECK_CFG/modes/code/prompt"
 printf '%s\n' "Context: long mode." >"$MODECHECK_CFG/modes/long/prompt"
 modecheck_doctor="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper doctor)"
 assert_contains "doctor_modecheck_section" "$modecheck_doctor" "Mode/config:"
-assert_contains "doctor_modecheck_fixed_invalid" "$modecheck_doctor" "mode.current: ghost (invalid, fallback=code)"
+assert_contains "doctor_modecheck_fixed_invalid" "$modecheck_doctor" "mode.current: ghost (invalid, fallback=auto)"
 assert_contains "doctor_modecheck_tmux_invalid" "$modecheck_doctor" "tmux.mode: ghost (invalid, fallback=code)"
-assert_contains "doctor_modecheck_fix_mode" "$modecheck_doctor" "Set a valid fixed mode: tmux-whisper mode code"
+assert_contains "doctor_modecheck_fix_mode" "$modecheck_doctor" "Set inline mode policy: tmux-whisper mode auto"
 assert_contains "doctor_modecheck_fix_tmux" "$modecheck_doctor" "Set tmux mode to a valid mode: tmux-whisper tmux mode code"
 
-# --- Regression 5: postprocess commands clarify mode prompt inactivity when OFF. ---
+# --- Regression 5b: inline auto mode should use app detection with base fallback. ---
+MODEAUTO_HOME="$TMP_ROOT/home-modeauto"
+MODEAUTO_BIN="$MODEAUTO_HOME/.local/bin"
+MODEAUTO_CFG="$MODEAUTO_HOME/.config/dictate"
+mkdir -p "$MODEAUTO_BIN" "$MODEAUTO_CFG/modes/base" "$MODEAUTO_CFG/modes/chat" "$MODEAUTO_CFG/modes/code"
+cp "$ROOT/bin/tmux-whisper" "$MODEAUTO_BIN/tmux-whisper"
+cp "$ROOT/bin/dictate-lib.sh" "$MODEAUTO_BIN/dictate-lib.sh"
+chmod +x "$MODEAUTO_BIN/tmux-whisper" "$MODEAUTO_BIN/dictate-lib.sh"
+cat >"$MODEAUTO_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+EOF
+printf '%s\n' "auto" >"$MODEAUTO_CFG/current-mode"
+printf '%s\n' "Context: base mode." >"$MODEAUTO_CFG/modes/base/prompt"
+printf '%s\n' "inline" >"$MODEAUTO_CFG/modes/base/flows"
+printf '%s\n' "Context: chat mode." >"$MODEAUTO_CFG/modes/chat/prompt"
+printf '%s\n' "Messages" >"$MODEAUTO_CFG/modes/chat/apps"
+printf '%s\n' "inline" >"$MODEAUTO_CFG/modes/chat/flows"
+printf '%s\n' "Context: code mode." >"$MODEAUTO_CFG/modes/code/prompt"
+printf '%s\n' "tmux" "inline" >"$MODEAUTO_CFG/modes/code/flows"
+modeauto_status_messages="$(HOME="$MODEAUTO_HOME" PATH="$MODEAUTO_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODEAUTO_CFG" DICTATE_CONFIG_FILE="$MODEAUTO_CFG/config.toml" DICTATE_TEST_FRONT_APP=Messages tmux-whisper status)"
+assert_contains "status_modeauto_chat" "$modeauto_status_messages" "mode.inline: chat (auto)"
+modeauto_status_preview="$(HOME="$MODEAUTO_HOME" PATH="$MODEAUTO_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODEAUTO_CFG" DICTATE_CONFIG_FILE="$MODEAUTO_CFG/config.toml" DICTATE_TEST_FRONT_APP=Preview tmux-whisper status)"
+assert_contains "status_modeauto_base" "$modeauto_status_preview" "mode.inline: base (auto)"
+
+# --- Regression 6: postprocess commands clarify mode prompt inactivity when OFF. ---
 modecheck_postprocess_off="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper postprocess off)"
 assert_contains "postprocess_off_prompt_note" "$modecheck_postprocess_off" "Mode prompt: inactive (postprocess OFF)"
 
 modecheck_tmux_postprocess_off="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper tmux postprocess off)"
 assert_contains "tmux_postprocess_off_prompt_note" "$modecheck_tmux_postprocess_off" "tmux mode prompt: inactive (tmux postprocess OFF)"
 
-# --- Regression 6: budget command UX uses budget profile naming. ---
+# --- Regression 7: budget command UX uses budget profile naming. ---
 modecheck_budget_show="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper budget)"
 assert_contains "budget_show_header" "$modecheck_budget_show" "Postprocess budget profiles"
 assert_contains "budget_show_threshold" "$modecheck_budget_show" "auto_long_words_threshold:"
@@ -159,20 +225,27 @@ assert_contains "budget_show_dynamic_note" "$modecheck_budget_show" "auto_numeri
 modecheck_budget_threshold="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper budget threshold 42)"
 assert_contains "budget_threshold_set" "$modecheck_budget_threshold" "budget auto_long_words_threshold: 42"
 
-# --- Regression 7: integration scripts keep PATH-based command resolution. ---
-assert_file_contains "raycast_inline_lib_resolution" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" "command -v dictate-lib.sh"
+# --- Regression 8: integration scripts keep PATH-based command resolution. ---
+assert_file_contains "raycast_inline_binary_resolution" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" "command -v tmux-whisper"
+assert_file_contains "raycast_inline_toggle_delegate" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" 'inline toggle'
 assert_file_contains "raycast_toggle_dictate_resolution" "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" "command -v tmux-whisper"
 assert_file_contains "swiftbar_dictate_resolution" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "command -v tmux-whisper"
 assert_file_contains "raycast_inline_path_hardening" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" "/usr/local/bin"
 assert_file_contains "raycast_toggle_path_hardening" "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" "/usr/local/bin"
 assert_file_contains "raycast_cancel_path_hardening" "$ROOT/integrations/raycast/tmux-whisper-cancel.sh" "/usr/local/bin"
 assert_file_contains "swiftbar_path_hardening" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "/usr/local/bin"
-assert_file_contains "raycast_inline_dependency_notice" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" 'Missing dependency: $dep'
+assert_file_contains "raycast_inline_binary_notice" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" "Tmux Whisper binary not found."
 assert_file_contains "raycast_toggle_binary_notice" "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" "Tmux Whisper binary not found."
 assert_file_contains "swiftbar_missing_binary_notice" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "Tmux Whisper binary not found | color=red"
 assert_file_contains "swiftbar_enabled_config_parse" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "integrations.swiftbar.enabled"
 
-# --- Regression 8: script-level behavior for missing tmux-whisper binary is explicit. ---
+# --- Regression 9: script-level behavior for missing tmux-whisper binary is explicit. ---
+INLINE_HOME="$TMP_ROOT/home-inline"
+mkdir -p "$INLINE_HOME"
+rm -f /tmp/dictate-raycast-inline.log 2>/dev/null || true
+HOME="$INLINE_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/raycast/tmux-whisper-inline.sh" >/dev/null 2>&1 || true
+assert_file_contains "raycast_inline_missing_binary_runtime" "/tmp/dictate-raycast-inline.log" "ERROR: Tmux Whisper binary not found."
+
 TOGGLE_HOME="$TMP_ROOT/home-toggle"
 mkdir -p "$TOGGLE_HOME"
 toggle_out="$(HOME="$TOGGLE_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" 2>&1 || true)"
@@ -183,7 +256,7 @@ mkdir -p "$SWIFTBAR_HOME"
 swiftbar_out="$(HOME="$SWIFTBAR_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_missing_binary_runtime" "$swiftbar_out" "Tmux Whisper binary not found"
 
-# --- Regression 9: SwiftBar runtime integration toggle works end-to-end. ---
+# --- Regression 10: SwiftBar runtime integration toggle works end-to-end. ---
 SWIFTBAR_TOGGLE_HOME="$TMP_ROOT/home-swiftbar-toggle"
 SWIFTBAR_TOGGLE_BIN="$SWIFTBAR_TOGGLE_HOME/.local/bin"
 SWIFTBAR_TOGGLE_CFG="$SWIFTBAR_TOGGLE_HOME/.config/dictate"
@@ -215,7 +288,7 @@ swiftbar_toggle_out="$(HOME="$SWIFTBAR_TOGGLE_HOME" XDG_CONFIG_HOME="$SWIFTBAR_T
 assert_contains "swiftbar_plugin_off_state" "$swiftbar_toggle_out" "SwiftBar integration: OFF"
 assert_contains "swiftbar_plugin_off_enable_action" "$swiftbar_toggle_out" "Enable SwiftBar integration"
 
-# --- Regression 10: SwiftBar mode menus are folder-driven and respect flow filters. ---
+# --- Regression 11: SwiftBar mode menus are folder-driven and respect flow filters. ---
 SWIFTBAR_MODES_HOME="$TMP_ROOT/home-swiftbar-modes"
 SWIFTBAR_MODES_BIN="$SWIFTBAR_MODES_HOME/.local/bin"
 SWIFTBAR_MODES_CFG="$SWIFTBAR_MODES_HOME/.config/dictate"
@@ -247,7 +320,7 @@ assert_contains "swiftbar_tmux_menu_code" "$swiftbar_modes_out" "param1=tmux par
 assert_not_contains "swiftbar_tmux_menu_email_hidden" "$swiftbar_modes_out" "param1=tmux param2=mode param3=email"
 assert_not_contains "swiftbar_tmux_menu_long_hidden" "$swiftbar_modes_out" "param1=tmux param2=mode param3=long"
 
-# --- Regression 11: budget profile auto-selection is based on transcript length, not mode name. ---
+# --- Regression 12: budget profile auto-selection is based on transcript length, not mode name. ---
 BUDGET_HOME="$TMP_ROOT/home-budget"
 BUDGET_BIN="$BUDGET_HOME/.local/bin"
 BUDGET_CFG="$BUDGET_HOME/.config/dictate"

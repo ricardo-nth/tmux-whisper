@@ -1,6 +1,6 @@
 # tmux-whisper
 
-Local-first dictation for macOS using `ffmpeg` + `whisper.cpp` (`whisper-cli`), with optional LLM cleanup and tmux/desktop integrations.
+Local-first dictation for macOS using a warm Swift/CoreML Parakeet backend by default, with optional LLM cleanup and tmux/desktop integrations.
 
 ## Core USP
 
@@ -12,7 +12,7 @@ Tmux Whisper is **tmux-first**.
 
 ## What You Get
 
-- `bin/tmux-whisper`: main CLI
+- `bin/tmux-whisper`: main CLI / orchestration layer
 - `bin/dictate-lib.sh`: shared helper library used by CLI and integrations
 - `config/`: default config, modes, and vocab
 - `integrations/raycast/`: Raycast scripts (`inline`, `toggle`, `cancel`)
@@ -28,7 +28,9 @@ Tmux Whisper is **tmux-first**.
 - `ffmpeg`
 - `whisper-cli` (from whisper.cpp)
 - `python3` (with `tomllib`, Python 3.11+ recommended)
+- `swift` + Xcode toolchain (for building the local `tmux-whisperd` backend)
 - Optional: `tmux`, Raycast, SwiftBar
+- Optional legacy fallback/backend comparison path: `whisper-cli` (from whisper.cpp)
 - Optional for LLM postprocess: `CEREBRAS_API_KEY`
 
 ## Install
@@ -40,10 +42,19 @@ brew tap ricardo-nth/tap
 brew install ricardo-nth/tap/tmux-whisper
 ```
 
-`whisper-cpp` now installs the `whisper-cli` binary without downloading model files.
-Tmux Whisper needs at least one local GGML model (`.bin`) in `~/.local/share/whisper/models`.
+The default backend is local `swift_parakeet`.
 
-After install, download one of these common models into that directory:
+Preferred Parakeet model home:
+
+- `~/.local/share/tmux-whisper/models/parakeet-tdt-0.6b-v3-coreml`
+- `~/.local/share/tmux-whisper/models/parakeet-tdt-0.6b-v2-coreml`
+
+Tmux Whisper now expects Parakeet models to live in that owned path so the backend does not depend on another app being installed.
+
+If you want to keep the legacy Whisper CPP path available for comparison or fallback, `whisper-cpp` installs the `whisper-cli` binary without downloading model files.
+That path uses local GGML models (`.bin`) in `~/.local/share/whisper/models`.
+
+For the legacy Whisper CPP backend, common models are:
 
 - `ggml-base.en.bin` for `tmux-whisper model base`
 - `ggml-small.en.bin` for `tmux-whisper model small`
@@ -71,6 +82,7 @@ First run:
 ```bash
 tmux-whisper debug
 tmux-whisper doctor
+tmux-whisper status
 tmux-whisper model
 tmux-whisper --help
 ```
@@ -121,7 +133,7 @@ tmux-whisper debug
 tmux-whisper            # tmux-first toggle mode
 tmux-whisper devices
 tmux-whisper inline
-tmux-whisper mode code
+tmux-whisper mode auto
 tmux-whisper postprocess on
 ```
 
@@ -154,8 +166,8 @@ Common fixes:
 
 - Schema mismatch in `tmux-whisper doctor`:
   - `./install.sh --force`
-- Invalid fixed mode fallback (`mode.current: <name> (invalid, fallback=code)`):
-  - `tmux-whisper mode code`
+- Invalid fixed mode fallback (`mode.current: <name> (invalid, fallback=auto)`):
+  - `tmux-whisper mode auto`
   - or create it: `tmux-whisper mode create "<name>"`
 - Invalid tmux mode fallback (`tmux.mode: <name> (invalid, fallback=code)`):
   - `tmux-whisper tmux mode code`

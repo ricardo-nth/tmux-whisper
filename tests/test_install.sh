@@ -6,6 +6,7 @@ TMP_HOME="$(mktemp -d)"
 trap 'rm -rf "$TMP_HOME"' EXIT
 
 export HOME="$TMP_HOME/home"
+export XDG_DATA_HOME="$HOME/.local/share"
 mkdir -p "$HOME"
 
 assert_file() {
@@ -34,6 +35,19 @@ assert_file "$HOME/.config/dictate/vocab"
 assert_file "$HOME/.config/dictate/integrations/raycast/tmux-whisper-inline.sh"
 assert_file "$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh"
 assert_file "$HOME/.local/share/sounds/dictate/start.wav"
+assert_file "$HOME/.local/share/tmux-whisper/native/tmux-whisperd/Package.swift"
+if [[ ! -d "$HOME/.local/share/tmux-whisper/models" ]]; then
+  echo "Expected install to create tmux-whisper Parakeet models dir" >&2
+  exit 1
+fi
+if ! rg -q '^[[:space:]]*backend = "swift_parakeet"$' "$HOME/.config/dictate/config.toml"; then
+  echo "Expected fresh install config to default to swift_parakeet backend" >&2
+  exit 1
+fi
+if [[ "$(tr -d '[:space:]' < "$HOME/.config/dictate/current-mode")" != "auto" ]]; then
+  echo "Expected fresh install current-mode to default to auto" >&2
+  exit 1
+fi
 
 # Non-force install should preserve user-edited config.
 printf '%s\n' '# user-edit' >> "$HOME/.config/dictate/config.toml"
@@ -96,6 +110,37 @@ if [[ "$(tr -d '[:space:]' < "$HOME/.config/dictate/current-mode")" != "code" ]]
 fi
 if ! rg -q '^[[:space:]]*mode = "code"$' "$HOME/.config/dictate/config.toml"; then
   echo "Expected [tmux] mode short to migrate to code" >&2
+  exit 1
+fi
+
+# Legacy local base/fast mode should migrate from fast -> base without clobbering contents.
+mv "$HOME/.config/dictate/modes/base" "$HOME/.config/dictate/modes/fast"
+printf '%s\n' "fast" > "$HOME/.config/dictate/current-mode"
+printf '%s\n' "legacy base prompt" > "$HOME/.config/dictate/modes/fast/prompt"
+"$ROOT/install.sh" --force --with-sounds
+if [[ -d "$HOME/.config/dictate/modes/fast" ]]; then
+  echo "Expected legacy fast mode folder to be migrated to base" >&2
+  exit 1
+fi
+if [[ ! -f "$HOME/.config/dictate/modes/base/prompt" ]]; then
+  echo "Expected base mode folder after migration" >&2
+  exit 1
+fi
+if ! rg -q 'legacy base prompt' "$HOME/.config/dictate/modes/base/prompt"; then
+  echo "Expected migrated base mode prompt to preserve local content" >&2
+  exit 1
+fi
+if [[ "$(tr -d '[:space:]' < "$HOME/.config/dictate/current-mode")" != "base" ]]; then
+  echo "Expected current-mode fast to migrate to base" >&2
+  exit 1
+fi
+
+# Force install should replace native sources cleanly so removed Swift files do not linger.
+mkdir -p "$HOME/.local/share/tmux-whisper/native/tmux-whisperd/Sources/tmux-whisperd"
+printf '%s\n' 'stale native file' > "$HOME/.local/share/tmux-whisper/native/tmux-whisperd/Sources/tmux-whisperd/main.swift"
+"$ROOT/install.sh" --force --with-sounds
+if [[ -e "$HOME/.local/share/tmux-whisper/native/tmux-whisperd/Sources/tmux-whisperd/main.swift" ]]; then
+  echo "Expected --force to remove stale native source files" >&2
   exit 1
 fi
 

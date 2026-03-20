@@ -120,7 +120,7 @@ out="${!#}"
 mkdir -p "$(dirname "$out")"
 printf '%s\n' "stub-wav" >"$out"
 
-if [[ "${DICTATE_TEST_FFMPEG_HOLD:-0}" == "1" && "$out" == *"whisper-dictate-"* ]]; then
+if [[ "${DICTATE_TEST_FFMPEG_HOLD:-0}" == "1" && ( "$out" == *"whisper-dictate-"* || "$out" == *"dictate-inline-"* ) ]]; then
   trap 'exit 0' INT TERM
   while :; do sleep 1; done
 fi
@@ -200,7 +200,98 @@ fi
 exit 0
 EOF
 
-  chmod +x "$STUB_DIR/ffmpeg" "$STUB_DIR/whisper-cli" "$STUB_DIR/tmux" "$STUB_DIR/pbcopy" "$STUB_DIR/osascript"
+  cat >"$STUB_DIR/tmux-whisperd" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  serve)
+    socket_path=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --socket)
+          socket_path="${2:-}"
+          shift 2
+          ;;
+        *)
+          echo "unknown arg: $1" >&2
+          exit 2
+          ;;
+      esac
+    done
+    [[ -n "$socket_path" ]] || { echo "missing socket path" >&2; exit 2; }
+    python3 - "$socket_path" <<'PYEOF'
+import json
+import os
+import socket
+import sys
+
+socket_path = sys.argv[1]
+os.makedirs(os.path.dirname(socket_path), exist_ok=True)
+try:
+    os.unlink(socket_path)
+except FileNotFoundError:
+    pass
+
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.bind(socket_path)
+server.listen(5)
+
+while True:
+    conn, _ = server.accept()
+    try:
+        data = b""
+        while b"\n" not in data:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        if not data:
+            continue
+        req = json.loads(data.split(b"\n", 1)[0].decode("utf-8"))
+        if req.get("op") == "ping":
+            resp = {
+                "id": req.get("id"),
+                "ok": True,
+                "engine": "swift_parakeet",
+                "message": "ok",
+            }
+        elif os.environ.get("DICTATE_TEST_SWIFT_DAEMON_FAIL", "0") == "1":
+            resp = {
+                "id": req.get("id"),
+                "ok": False,
+                "engine": "swift_parakeet",
+                "error_code": "forced_error",
+                "message": "forced daemon failure",
+            }
+        else:
+            resp = {
+                "id": req.get("id"),
+                "ok": True,
+                "engine": "swift_parakeet",
+                "model": os.path.basename(req.get("model_path") or "parakeet-test"),
+                "text": os.environ.get("DICTATE_TEST_SWIFT_TEXT", "swift transcript"),
+                "duration_ms": 7,
+            }
+        conn.sendall(json.dumps(resp).encode("utf-8") + b"\n")
+    finally:
+        conn.close()
+PYEOF
+    ;;
+  version|--version)
+    printf '%s\n' "tmux-whisperd test-stub"
+    ;;
+  *)
+    echo "unknown command: $cmd" >&2
+    exit 2
+    ;;
+esac
+EOF
+
+  chmod +x "$STUB_DIR/ffmpeg" "$STUB_DIR/whisper-cli" "$STUB_DIR/tmux" "$STUB_DIR/pbcopy" "$STUB_DIR/osascript" "$STUB_DIR/tmux-whisperd"
 }
 
 CASE_DIR=""
@@ -208,12 +299,17 @@ CASE_DIR=""
 setup_case() {
   local name="$1"
   CASE_DIR="$TMP_ROOT/$name"
-  mkdir -p "$CASE_DIR"/{home,tmp,logs,models,tmux-jobs}
-  mkdir -p "$CASE_DIR/config/modes/code" "$CASE_DIR/config/modes/long"
+  mkdir -p "$CASE_DIR"/{home,tmp,logs,models,tmux-jobs,swift-model}
+  mkdir -p "$CASE_DIR/config/modes/base" "$CASE_DIR/config/modes/chat" "$CASE_DIR/config/modes/code" "$CASE_DIR/config/modes/long"
 
   printf '%s\n' "code" >"$CASE_DIR/config/current-mode"
+  : >"$CASE_DIR/config/modes/base/prompt"
+  : >"$CASE_DIR/config/modes/chat/prompt"
   : >"$CASE_DIR/config/modes/code/prompt"
   : >"$CASE_DIR/config/modes/long/prompt"
+  printf '%s\n' "inline" >"$CASE_DIR/config/modes/base/flows"
+  printf '%s\n' "Messages" >"$CASE_DIR/config/modes/chat/apps"
+  printf '%s\n' "inline" >"$CASE_DIR/config/modes/chat/flows"
   : >"$CASE_DIR/config/vocab"
   : >"$CASE_DIR/models/ggml-test.bin"
 
@@ -232,6 +328,7 @@ setup_case() {
   export DICTATE_CONFIG_FILE="$CASE_DIR/config/config.toml"
   export DICTATE_LIB_PATH="$ROOT/bin/dictate-lib.sh"
   export DICTATE_STATE_FILE="$CASE_DIR/tmux.state"
+  export DICTATE_INLINE_STATE_FILE="$CASE_DIR/inline.state"
   export DICTATE_TMPDIR="$CASE_DIR/tmp"
   export DICTATE_RECORD_LOG="$CASE_DIR/logs/record.log"
   export DICTATE_TRANSCRIBE_LOG="$CASE_DIR/logs/transcribe.log"
@@ -246,6 +343,11 @@ setup_case() {
   export DICTATE_INLINE_PASTE_TARGET=current
   export DICTATE_MODEL="$CASE_DIR/models/ggml-test.bin"
   export DICTATE_TMUX_MODEL="$CASE_DIR/models/ggml-test.bin"
+  unset DICTATE_BACKEND
+  unset DICTATE_SWIFT_PARAKEET_MODEL_PATH
+  unset DICTATE_SWIFT_PARAKEET_MODEL_VERSION
+  unset DICTATE_SWIFT_PARAKEET_SOCKET_PATH
+  unset DICTATE_TMUX_WHISPERD_BIN
 
   export DICTATE_TEST_FFMPEG_LOG="$CASE_DIR/logs/ffmpeg.log"
   export DICTATE_TEST_TMUX_LOG="$CASE_DIR/logs/tmux.log"
@@ -255,6 +357,8 @@ setup_case() {
   export DICTATE_TEST_TMUX_PANE_CMD="bash"
   export DICTATE_TEST_FFMPEG_HOLD=0
   export DICTATE_TEST_WHISPER_TEXT="default transcript"
+  unset DICTATE_TEST_SWIFT_TEXT
+  unset DICTATE_TEST_SWIFT_DAEMON_FAIL
 
   unset CEREBRAS_API_KEY
   unset TMUX
@@ -331,6 +435,91 @@ run_inline_cmd_enter_round() {
   assert_file_contains "inline_osascript_send_cmd_enter" "$DICTATE_TEST_OSASCRIPT_LOG" "key code 36 using command down"
 }
 
+run_inline_auto_mode_round() {
+  setup_case "inline-auto-mode"
+  printf '%s\n' "auto" >"$DICTATE_CONFIG_DIR/current-mode"
+  printf '%s\n' 'plain dictation -> Plain dictation' >"$DICTATE_CONFIG_DIR/modes/base/vocab"
+  printf "%s\n" "what's up -> WhatsApp style" >"$DICTATE_CONFIG_DIR/modes/chat/vocab"
+  export DICTATE_AUTOSEND=1
+
+  export DICTATE_TEST_FRONT_APP="Preview"
+  export DICTATE_TEST_WHISPER_TEXT="plain dictation"
+  local out copied
+  out="$("$DICTATE_BIN" inline)"
+  assert_contains "inline_auto_base_sent" "$out" "Sent"
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_auto_base_vocab" "$copied" "Plain dictation"
+
+  export DICTATE_TEST_FRONT_APP="Messages"
+  export DICTATE_TEST_WHISPER_TEXT="what's up"
+  out="$("$DICTATE_BIN" inline)"
+  assert_contains "inline_auto_chat_sent" "$out" "Sent"
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_auto_chat_vocab" "$copied" "WhatsApp style"
+}
+
+run_inline_toggle_round() {
+  setup_case "inline-toggle"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_WHISPER_TEXT="inline background transcript"
+  export DICTATE_AUTOSEND=1
+
+  local start_out
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_toggle_start" "$start_out" "RECORDING"
+
+  [[ -f "$DICTATE_INLINE_STATE_FILE" ]] || fail "inline_toggle_state_created"
+  pass "inline_toggle_state_created"
+
+  local stop_out
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_toggle_stop" "$stop_out" "STOPPED"
+
+  wait_for_absent "$DICTATE_INLINE_STATE_FILE" || fail "inline_toggle_state_removed"
+  wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "inline background transcript" || fail "inline_toggle_background_complete"
+  wait_for_file_contains "$DICTATE_TEST_OSASCRIPT_LOG" 'keystroke "v" using command down' || fail "inline_toggle_osascript_paste"
+  pass "inline_toggle_osascript_paste"
+  wait_for_file_contains "$DICTATE_TEST_OSASCRIPT_LOG" 'key code 36' || fail "inline_toggle_send_enter"
+  pass "inline_toggle_send_enter"
+}
+
+run_inline_swift_round() {
+  setup_case "inline-swift"
+  export DICTATE_BACKEND=swift_parakeet
+  export DICTATE_TMUX_WHISPERD_BIN="$STUB_DIR/tmux-whisperd"
+  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
+  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$CASE_DIR/tmp/tmux-whisperd.sock"
+  export DICTATE_TEST_SWIFT_TEXT="swift backend transcript"
+  export DICTATE_AUTOSEND=1
+
+  local out
+  out="$("$DICTATE_BIN" inline)"
+  assert_contains "inline_swift_sent" "$out" "Sent"
+
+  local copied
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_swift_transcript" "$copied" "swift backend transcript"
+}
+
+run_inline_swift_fallback_round() {
+  setup_case "inline-swift-fallback"
+  export DICTATE_BACKEND=swift_parakeet
+  export DICTATE_TMUX_WHISPERD_BIN="$CASE_DIR/missing-tmux-whisperd"
+  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
+  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$CASE_DIR/tmp/tmux-whisperd.sock"
+  export DICTATE_TEST_WHISPER_TEXT="whisper fallback transcript"
+  export DICTATE_AUTOSEND=1
+
+  local out
+  out="$("$DICTATE_BIN" inline)"
+  assert_contains "inline_swift_fallback_sent" "$out" "Sent"
+
+  local copied
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_swift_fallback_transcript" "$copied" "whisper fallback transcript"
+  assert_file_contains "inline_swift_fallback_log" "$DICTATE_TMPDIR/whisper-dictate-inline.transcribe.log" "falling back to whisper_cpp"
+}
+
 run_status_postprocess_round() {
   setup_case "status-postprocess"
   export DICTATE_POSTPROCESS=1
@@ -360,12 +549,29 @@ run_status_model_mode_round() {
   assert_contains "status_model_tmux_turbo" "$out" "model.tmux: turbo"
 }
 
+run_status_backend_round() {
+  setup_case "status-backend"
+  export DICTATE_BACKEND=swift_parakeet
+  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
+  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$CASE_DIR/tmp/tmux-whisperd.sock"
+
+  local out
+  out="$("$DICTATE_BIN" status)"
+  assert_contains "status_backend_requested" "$out" "backend.requested: swift_parakeet"
+  assert_contains "status_backend_model" "$out" "swift_parakeet.model: $CASE_DIR/swift-model (v3)"
+}
+
 write_stubs
 run_tmux_round "enter"
 run_tmux_round "codex"
 run_inline_vocab_round
 run_inline_cmd_enter_round
+run_inline_auto_mode_round
+run_inline_toggle_round
+run_inline_swift_round
+run_inline_swift_fallback_round
 run_status_postprocess_round
 run_status_model_mode_round
+run_status_backend_round
 
 echo "Flow parity tests passed."

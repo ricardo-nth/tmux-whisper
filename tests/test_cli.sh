@@ -16,7 +16,7 @@ chmod +x "$BIN_DIR/tmux-whisper" "$BIN_DIR/dictate-lib.sh"
 # Ensure the default ~/.local/bin path is unavailable and fallback-to-sibling works.
 output="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= "$BIN_DIR/tmux-whisper" --help)"
 
-if [[ "$output" != *"tmux-whisper: local whisper.cpp dictation"* ]]; then
+if [[ "$output" != *"tmux-whisper: local dictation with pluggable ASR backends"* ]]; then
   echo "Expected help output from tmux-whisper command" >&2
   exit 1
 fi
