@@ -2,6 +2,14 @@ where's term::WezTerm
 wez term::WezTerm
 west term::WezTerm
 wheres term::WezTerm
+ray cast::Raycast
+swift bar::SwiftBar
+tmux whisper::tmux-whisper
+teamux whisper::tmux-whisper
+teamux::tmux
+team ux::tmux
+qwen three point five::Qwen 3.5
+qwen three dot five::Qwen 3.5
 health lag::help flag
 health like::help flag
 amp code::Amp
@@ -10,13 +18,14 @@ P N P M::pnpm
 you V::uv
 you vee::uv
 get hub::GitHub
-get::git
-source::src
 java script::JavaScript
 type script::TypeScript
 jason::JSON
 yam ul::YAML
-a sink::async
-a weight::await
+source slash::src/
+source forward slash::src/
+at source slash::@src/
+a sink function::async function
+a weight keyword::await
 goasty::Ghostty
 ghost tea::Ghostty

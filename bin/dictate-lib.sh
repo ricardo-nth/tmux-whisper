@@ -218,9 +218,47 @@ dictate_lib_apply_vocab_corrections() {
       my @paths = grep { defined($_) && length($_) } split(/\n/, ($ENV{DICTATE_VOCAB_FILES} // ""));
       @rules = ();
 
+      sub compact_spelled_acronyms {
+        my ($text) = @_;
+        $text =~ s{
+          (?<![[:alnum:]_])
+          ((?:[A-Za-z](?:[\s._-]+)){2,7}[A-Za-z])
+          (?![[:alnum:]_])
+        }{
+          my $seq = $1;
+          my @letters = ($seq =~ /([A-Za-z])/g);
+          my %uniq = map { lc($_) => 1 } @letters;
+          if (@letters >= 3 && @letters <= 8 && scalar(keys %uniq) > 1) {
+            my $joined = join("", @letters);
+            $joined = lc($joined) if $seq eq lc($seq);
+            $joined = uc($joined) if $seq eq uc($seq);
+            $joined;
+          } else {
+            $seq;
+          }
+        }gex;
+        return $text;
+      }
+
+      sub build_rule_regex {
+        my ($left) = @_;
+        my @parts = grep { length($_) } split(/\s+/, $left);
+        my $pattern = join("\\s+", map { quotemeta($_) } @parts);
+        my $first = substr($left, 0, 1);
+        my $last = substr($left, -1);
+        if ($first =~ /[A-Za-z0-9_]/) {
+          $pattern = "(?<![A-Za-z0-9_.-])" . $pattern;
+        }
+        if ($last =~ /[A-Za-z0-9_]/) {
+          $pattern .= "(?![A-Za-z0-9_.-])";
+        }
+        return qr/$pattern/i;
+      }
+
       for my $path (@paths) {
         next unless -f $path;
         open(my $fh, "<:encoding(UTF-8)", $path) or next;
+        my @path_rules = ();
         while (my $line = <$fh>) {
           chomp($line);
           $line =~ s/^\s+//;
@@ -242,23 +280,28 @@ dictate_lib_apply_vocab_corrections() {
           $right =~ s/\s+$//;
           next if $left eq "" || $right eq "";
 
-          my $pattern = quotemeta($left);
-          if ($left =~ /^[A-Za-z0-9_]/) {
-            $pattern = "\\b" . $pattern;
-          }
-          if ($left =~ /[A-Za-z0-9_]$/) {
-            $pattern .= "\\b";
-          }
-          push(@rules, [qr/$pattern/i, $right]);
+          push(@path_rules, [$left, $right]);
         }
         close($fh);
+
+        @path_rules = sort {
+          length($b->[0]) <=> length($a->[0]) || $a->[0] cmp $b->[0]
+        } @path_rules;
+        for my $entry (@path_rules) {
+          my ($left, $right) = @$entry;
+          push(@rules, [build_rule_regex($left), $right]);
+        }
       }
     }
 
+    $_ = compact_spelled_acronyms($_);
     for my $rule (@rules) {
       my ($rx, $replacement) = @$rule;
       s/$rx/$replacement/ge;
     }
+    s/[ \t]{2,}/ /g;
+    s/^[ \t]+//mg;
+    s/[ \t]+$//mg;
   '
 }
 

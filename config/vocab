@@ -4,3 +4,10 @@
 # tmux -> tmux
 # open ai -> OpenAI
 # whisper cpp -> whisper.cpp
+
+ggml -> GGML
+qwen -> Qwen
+parakeet -> Parakeet
+cerebras -> Cerebras
+open ai -> OpenAI
+whisper cpp -> whisper.cpp

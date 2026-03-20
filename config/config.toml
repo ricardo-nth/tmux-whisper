@@ -17,6 +17,7 @@ repeats_level = 1
 
 [whisper]
 models_dir = "~/.local/share/whisper/models"
+backend = "swift_parakeet"
 model = "base"
 threads = 5
 beam_size = 1
@@ -26,6 +27,11 @@ vad_threshold = 0.5
 vad_min_speech_ms = 250
 vad_min_silence_ms = 100
 vad_speech_pad_ms = 30
+
+[swift_parakeet]
+model_path = ""
+model_version = ""
+socket_path = "~/.config/dictate/.cache/tmux-whisperd.sock"
 
 [postprocess]
 enabled = false

@@ -51,6 +51,9 @@ CONFIG_DIR="${DICTATE_CONFIG_DIR:-$HOME/.config/dictate}"
 SWIFTBAR_DIR="${DICTATE_SWIFTBAR_DIR:-$HOME/.config/swiftbar/plugins}"
 INSTALL_SWIFTBAR="${DICTATE_INSTALL_SWIFTBAR:-1}"
 SOUND_DIR="${DICTATE_SOUNDS_DIR:-$HOME/.local/share/sounds/dictate}"
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+NATIVE_DIR="${DICTATE_NATIVE_DIR:-$XDG_DATA_HOME/tmux-whisper/native}"
+PARAKEET_MODELS_DIR="${DICTATE_PARAKEET_MODELS_DIR:-$XDG_DATA_HOME/tmux-whisper/models}"
 
 copy_if_missing() {
   local src="$1"
@@ -58,16 +61,21 @@ copy_if_missing() {
   [[ -e "$dst" ]] || cp -R "$src" "$dst"
 }
 
-migrate_mode_short_to_code() {
+migrate_legacy_mode_names() {
   local modes_dir="$CONFIG_DIR/modes"
   if [[ -d "$modes_dir/short" && ! -e "$modes_dir/code" ]]; then
     mv "$modes_dir/short" "$modes_dir/code"
+  fi
+  if [[ -d "$modes_dir/fast" && ! -e "$modes_dir/base" ]]; then
+    mv "$modes_dir/fast" "$modes_dir/base"
   fi
   if [[ -f "$CONFIG_DIR/current-mode" ]]; then
     local current_mode
     current_mode="$(tr -d '[:space:]' < "$CONFIG_DIR/current-mode" 2>/dev/null || true)"
     if [[ "$current_mode" == "short" ]]; then
       printf '%s\n' "code" > "$CONFIG_DIR/current-mode"
+    elif [[ "$current_mode" == "fast" ]]; then
+      printf '%s\n' "base" > "$CONFIG_DIR/current-mode"
     fi
   fi
   if [[ -f "$CONFIG_DIR/config.toml" ]]; then
@@ -100,19 +108,26 @@ install_default_modes_preserving_local() {
   local modes_preexisting="0"
   [[ -d "$CONFIG_DIR/modes" ]] && modes_preexisting="1"
   mkdir -p "$CONFIG_DIR/modes"
-  migrate_mode_short_to_code
+  migrate_legacy_mode_names
   if [[ "$modes_preexisting" == "0" ]]; then
     cp -R "$REPO_ROOT/config/modes/." "$CONFIG_DIR/modes/"
     return 0
   fi
-  # Existing installs keep local mode set; only ensure the core code mode exists.
+  # Existing installs keep local mode set; only ensure the core inline/tmux modes exist.
+  copy_if_missing "$REPO_ROOT/config/modes/base" "$CONFIG_DIR/modes/base"
   copy_if_missing "$REPO_ROOT/config/modes/code" "$CONFIG_DIR/modes/code"
 }
 
 mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$CONFIG_DIR/integrations/raycast"
+mkdir -p "$NATIVE_DIR/tmux-whisperd"
+mkdir -p "$PARAKEET_MODELS_DIR"
 
 install -m 0755 "$REPO_ROOT/bin/tmux-whisper" "$BIN_DIR/tmux-whisper"
 install -m 0755 "$REPO_ROOT/bin/dictate-lib.sh" "$BIN_DIR/dictate-lib.sh"
+install -m 0644 "$REPO_ROOT/native/tmux-whisperd/Package.swift" "$NATIVE_DIR/tmux-whisperd/Package.swift"
+rm -rf "$NATIVE_DIR/tmux-whisperd/Sources"
+mkdir -p "$NATIVE_DIR/tmux-whisperd/Sources"
+cp -R "$REPO_ROOT/native/tmux-whisperd/Sources/." "$NATIVE_DIR/tmux-whisperd/Sources/"
 
 # Preserve user config and local mode edits on every install, including --force.
 # `--force` remains a convenience for reinstalling binaries/integrations.
@@ -141,6 +156,8 @@ fi
 
 echo "Installed tmux-whisper to: $BIN_DIR/tmux-whisper"
 echo "Config path: $CONFIG_DIR"
+echo "Native backend source: $NATIVE_DIR/tmux-whisperd"
+echo "Parakeet models dir: $PARAKEET_MODELS_DIR"
 if [[ "$INSTALL_SWIFTBAR" == "1" ]]; then
   echo "SwiftBar plugin: $SWIFTBAR_DIR/tmux-whisper-status.0.2s.sh"
 else
