@@ -84,7 +84,7 @@ load_config() {
   if [[ -f "$CONFIG_CACHE" ]]; then
     # shellcheck disable=SC1090
     source "$CONFIG_CACHE" 2>/dev/null || true
-    if [[ "${CFG_CACHE_SIG:-}" == "$cache_sig" && -n "${CFG_AUDIO_SILENCE_TRIM:-}" && -n "${CFG_CLEAN_REPEATS_LEVEL:-}" && -n "${CFG_TMUX_PROCESS_SOUND:-}" && -n "${CFG_SWIFTBAR_ENABLED:-}" ]]; then
+    if [[ "${CFG_CACHE_SIG:-}" == "$cache_sig" && -n "${CFG_AUDIO_SILENCE_TRIM:-}" && -n "${CFG_CLEAN_REPEATS_LEVEL:-}" && -n "${CFG_INLINE_PROCESS_SOUND:-}" && -n "${CFG_TMUX_PROCESS_SOUND:-}" && -n "${CFG_SWIFTBAR_ENABLED:-}" ]]; then
       return 0
     fi
   fi
@@ -127,6 +127,7 @@ parakeet_model_path = str(get("swift_parakeet.model_path", ""))
 print(f"CFG_CACHE_MTIME={shlex.quote(str(int(os.path.getmtime(path)) if os.path.exists(path) else 0))}")
 print(f"CFG_POSTPROCESS_ENABLED={shlex.quote(post_enabled)}")
 print(f"CFG_INLINE_AUTOSEND={shlex.quote(autosend)}")
+print(f"CFG_INLINE_PROCESS_SOUND={shlex.quote('1' if b(get('inline.process_sound', True), True) else '0')}")
 print(f"CFG_INLINE_PASTE_TARGET={shlex.quote(str(get('inline.paste_target', 'restore')))}")
 print(f"CFG_WHISPER_BACKEND={shlex.quote(whisper_backend)}")
 print(f"CFG_SWIFT_PARAKEET_MODEL_PATH={shlex.quote(parakeet_model_path)}")
@@ -383,15 +384,9 @@ resolve_inline_mode() {
 
 emit_inline_modes_menu() {
   local saved_mode_raw="${1:-auto}"
-  local effective_mode="${2:-$(default_inline_mode)}"
-  local auto_label="auto"
-  if [[ -n "$effective_mode" ]]; then
-    auto_label="auto -> $(mode_display_name "$effective_mode")"
-  fi
-  if [[ -z "$saved_mode_raw" || "$saved_mode_raw" == "auto" ]]; then
-    echo "-- ✓ $auto_label | bash=$DICTATE_BIN param1=mode param2=auto terminal=false refresh=true"
-  else
-    echo "-- $auto_label | bash=$DICTATE_BIN param1=mode param2=auto terminal=false refresh=true"
+  local selected_mode="$saved_mode_raw"
+  if [[ -z "$selected_mode" || "$selected_mode" == "auto" ]]; then
+    selected_mode="${2:-$(default_inline_mode)}"
   fi
   local mode_name
   while IFS= read -r mode_name; do
@@ -401,7 +396,7 @@ emit_inline_modes_menu() {
     fi
     local mode_label
     mode_label="$(mode_display_name "$mode_name")"
-    if [[ "$mode_name" == "$saved_mode_raw" ]]; then
+    if [[ "$mode_name" == "$selected_mode" ]]; then
       echo "-- ✓ $mode_label | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
     else
       echo "-- $mode_label | bash=$DICTATE_BIN param1=mode param2=$mode_name terminal=false refresh=true"
@@ -607,11 +602,7 @@ saved_mode="$(resolve_inline_mode "$saved_mode_raw")"
 
 # Determine mode icon display
 current_mode_icon="$(mode_icon "$saved_mode")"
-if [[ -z "$saved_mode_raw" || "$saved_mode_raw" == "auto" ]]; then
-  mode_display="auto -> $(mode_display_name "$saved_mode")"
-else
-  mode_display="$(mode_display_name "$saved_mode")"
-fi
+mode_display="$(mode_display_name "$saved_mode")"
 
 # Check if recording (either tmux or inline mode)
 if [[ -f "$STATE_FILE" ]] || [[ -f "$INLINE_STATE" ]]; then
@@ -726,6 +717,8 @@ fi
 autosend_val="${CFG_INLINE_AUTOSEND:-1}"
 [[ -z "$autosend_val" ]] && autosend_val="1"
 [[ "$autosend_val" == "1" ]] && autosend_label="ON" || autosend_label="OFF"
+inline_process_sound_val="${CFG_INLINE_PROCESS_SOUND:-1}"
+[[ "$inline_process_sound_val" == "1" ]] && inline_process_sound_label="ON" || inline_process_sound_label="OFF"
 tmux_postprocess_val="${CFG_TMUX_POSTPROCESS:-0}"
 if [[ "$tmux_postprocess_val" == "1" && "$key_set" == "1" ]]; then
   tmux_postprocess_label="ON"
@@ -764,6 +757,7 @@ fi
 [[ "$keep_logs_val" == "1" ]] && keep_logs_label="ON" || keep_logs_label="OFF"
 # Toggle commands (tmux-whisper uses on/off)
 autosend_toggle_val=$([[ "$autosend_val" == "1" ]] && echo "off" || echo "on")
+inline_process_sound_toggle_val=$([[ "$inline_process_sound_val" == "1" ]] && echo "off" || echo "on")
 postprocess_toggle_val=$([[ "$postprocess_val" == "1" ]] && echo "off" || echo "on")
 tmux_autosend_toggle_val=$([[ "$tmux_autosend_val" == "1" ]] && echo "off" || echo "on")
 tmux_postprocess_toggle_val=$([[ "$tmux_postprocess_val" == "1" ]] && echo "off" || echo "on")
@@ -773,6 +767,7 @@ inline_target_toggle_val=$([[ "$inline_target_val" == "origin" ]] && echo "curre
 keep_logs_toggle_val=$([[ "$keep_logs_val" == "1" ]] && echo "off" || echo "on")
 
 echo "-- Postprocess: $postprocess_label | bash=$DICTATE_BIN param1=postprocess param2=$postprocess_toggle_val terminal=false refresh=true"
+echo "-- Process sound: $inline_process_sound_label | bash=$DICTATE_BIN param1=inline param2=process-sound param3=$inline_process_sound_toggle_val terminal=false refresh=true"
 echo "-- Autosend: $autosend_label | bash=$DICTATE_BIN param1=autosend param2=$autosend_toggle_val terminal=false refresh=true"
 echo "Tmux"
 echo "-- Modes"
@@ -781,7 +776,6 @@ echo "-- Settings"
 echo "-- Postprocess: $tmux_postprocess_label | bash=$DICTATE_BIN param1=tmux param2=postprocess param3=$tmux_postprocess_toggle_val terminal=false refresh=true"
 echo "-- Process sound: $tmux_process_sound_label | bash=$DICTATE_BIN param1=tmux param2=process-sound param3=$tmux_process_sound_toggle_val terminal=false refresh=true"
 echo "-- Autosend: $tmux_autosend_label | bash=$DICTATE_BIN param1=tmux param2=autosend param3=$tmux_autosend_toggle_val terminal=false refresh=true"
-echo "-- Target: $tmux_target_val | bash=$DICTATE_BIN param1=tmux param2=target param3=$tmux_target_toggle_val terminal=false refresh=true"
 echo "Advanced"
 echo "-- Global | color=gray"
 echo "-- SwiftBar integration: $swiftbar_label | bash=$DICTATE_BIN param1=swiftbar param2=$swiftbar_toggle_val terminal=false refresh=true"
@@ -789,6 +783,7 @@ echo "-- Keep logs: $keep_logs_label | bash=$DICTATE_BIN param1=keep-logs param2
 echo "-- Inline | color=gray"
 echo "-- Paste target: $inline_target_val | bash=$DICTATE_BIN param1=target param2=$inline_target_toggle_val terminal=false refresh=true"
 echo "-- Tmux | color=gray"
+echo "-- Paste target: $tmux_target_val | bash=$DICTATE_BIN param1=tmux param2=target param3=$tmux_target_toggle_val terminal=false refresh=true"
 echo "-- Send mode"
 if [[ "auto" == "$tmux_send_mode_val" ]]; then
   echo "---- ✓ auto (detect Codex) | bash=$DICTATE_BIN param1=tmux param2=send-mode param3=auto terminal=false refresh=true"
