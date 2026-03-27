@@ -8,6 +8,7 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 BIN_DIR="$TMP_ROOT/bin"
 HOME_DIR="$TMP_ROOT/home"
 mkdir -p "$BIN_DIR" "$HOME_DIR"
+OPLOG="$TMP_ROOT/daemon-ops.log"
 
 cp "$ROOT/bin/tmux-whisper" "$BIN_DIR/tmux-whisper"
 cp "$ROOT/bin/dictate-lib.sh" "$BIN_DIR/dictate-lib.sh"
@@ -62,6 +63,7 @@ except FileNotFoundError:
 server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 server.bind(socket_path)
 server.listen(8)
+log_path = os.environ.get("DICTATE_TEST_CLI_OPLOG", "")
 
 while True:
     conn, _ = server.accept()
@@ -75,6 +77,9 @@ while True:
         raw = data.split(b"\n", 1)[0]
         request = json.loads(raw.decode("utf-8"))
         op = request.get("op")
+        if log_path:
+            with open(log_path, "a", encoding="utf-8") as fh:
+                fh.write(f"{op}\n")
         if op == "ping":
             response = {
                 "id": request.get("id", "stub"),
@@ -92,6 +97,16 @@ while True:
                 "duration_ms": 12,
                 "message": "warmed",
             }
+        elif op == "transcribe":
+            response = {
+                "id": request.get("id", "stub"),
+                "ok": True,
+                "engine": "swift_parakeet",
+                "model": os.path.basename(request.get("model_path", "")),
+                "text": "",
+                "duration_ms": 4,
+                "message": None,
+            }
         else:
             response = {
                 "id": request.get("id", "stub"),
@@ -101,7 +116,7 @@ while True:
                 "message": op or "unknown",
             }
         conn.sendall(json.dumps(response).encode("utf-8") + b"\n")
-        if op == "warmup":
+        if op == "transcribe":
             break
     finally:
         conn.close()
@@ -115,11 +130,17 @@ PYEOF
 EOF
 chmod +x "$BIN_DIR/tmux-whisperd"
 
-warmup_output="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIG_DIR" DICTATE_CONFIG_FILE="$CONFIG_DIR/config.toml" DICTATE_TMUX_WHISPERD_BIN="$BIN_DIR/tmux-whisperd" "$BIN_DIR/tmux-whisper" warmup)"
+warmup_output="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIG_DIR" DICTATE_CONFIG_FILE="$CONFIG_DIR/config.toml" DICTATE_TMUX_WHISPERD_BIN="$BIN_DIR/tmux-whisperd" DICTATE_TEST_CLI_OPLOG="$OPLOG" "$BIN_DIR/tmux-whisper" warmup)"
 
 if [[ "$warmup_output" != *"Warmup: ready (model=parakeet-tdt-0.6b-v3-coreml, duration=12ms)"* ]]; then
   echo "Expected warmup output from tmux-whisper command" >&2
   echo "$warmup_output" >&2
+  exit 1
+fi
+
+if ! grep -Fxq "warmup" "$OPLOG" || ! grep -Fxq "transcribe" "$OPLOG"; then
+  echo "Expected warmup command to prime with a synthetic transcribe" >&2
+  cat "$OPLOG" >&2 || true
   exit 1
 fi
 

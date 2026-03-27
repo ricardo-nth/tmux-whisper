@@ -113,6 +113,7 @@ Install behavior:
 - Installs Raycast scripts to `~/.config/dictate/integrations/raycast`.
 - Installs SwiftBar plugin to `~/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh`.
 - Installs sample sounds to `~/.local/share/sounds/dictate`.
+- Runs a best-effort backend warm-up after install/update, including a tiny synthetic prime transcription so the next real dictation is closer to warm.
 - Note: config and sounds paths remain under `dictate` during the branding transition (`~/.config/dictate`, `~/.local/share/sounds/dictate`).
 
 Useful install flags:

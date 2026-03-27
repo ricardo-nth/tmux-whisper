@@ -72,6 +72,18 @@ assert_file_not_contains() {
   pass "$name"
 }
 
+assert_equals() {
+  local name="$1"
+  local actual="$2"
+  local expected="$3"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Expected: $expected" >&2
+    echo "Actual:   $actual" >&2
+    fail "$name"
+  fi
+  pass "$name"
+}
+
 wait_for_file_contains() {
   local file="$1"
   local needle="$2"
@@ -239,6 +251,9 @@ except FileNotFoundError:
 server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 server.bind(socket_path)
 server.listen(5)
+transcribe_count = 0
+delay_values = [s.strip() for s in os.environ.get("DICTATE_TEST_SWIFT_DELAY_SEQUENCE", "").split("|")]
+text_values = [s for s in os.environ.get("DICTATE_TEST_SWIFT_TEXT_SEQUENCE", "").split("|")]
 
 while True:
     conn, _ = server.accept()
@@ -268,12 +283,28 @@ while True:
                 "message": "forced daemon failure",
             }
         else:
+            if req.get("op") == "transcribe" and req.get("flow") != "warmup":
+                transcribe_count += 1
+                idx = transcribe_count - 1
+                if idx < len(delay_values) and delay_values[idx]:
+                    try:
+                        import time
+                        time.sleep(float(delay_values[idx]))
+                    except Exception:
+                        pass
+                text_value = os.environ.get("DICTATE_TEST_SWIFT_TEXT", "swift transcript")
+                if idx < len(text_values) and text_values[idx]:
+                    text_value = text_values[idx]
+            elif req.get("op") == "transcribe":
+                text_value = ""
+            else:
+                text_value = os.environ.get("DICTATE_TEST_SWIFT_TEXT", "swift transcript")
             resp = {
                 "id": req.get("id"),
                 "ok": True,
                 "engine": "swift_parakeet",
                 "model": os.path.basename(req.get("model_path") or "parakeet-test"),
-                "text": os.environ.get("DICTATE_TEST_SWIFT_TEXT", "swift transcript"),
+                "text": text_value,
                 "duration_ms": 7,
             }
         conn.sendall(json.dumps(resp).encode("utf-8") + b"\n")
@@ -501,6 +532,45 @@ run_inline_swift_round() {
   assert_contains "inline_swift_transcript" "$copied" "swift backend transcript"
 }
 
+run_inline_swift_superseded_round() {
+  setup_case "inline-swift-superseded"
+  export DICTATE_BACKEND=swift_parakeet
+  export DICTATE_TMUX_WHISPERD_BIN="$STUB_DIR/tmux-whisperd"
+  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
+  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/iss.sock"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_AUTOSEND=1
+  export DICTATE_TEST_SWIFT_TEXT_SEQUENCE="first cold transcript|second fresh transcript"
+  export DICTATE_TEST_SWIFT_DELAY_SEQUENCE="0.35|0"
+
+  local out
+  out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_swift_superseded_start_first" "$out" "RECORDING"
+  out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_swift_superseded_stop_first" "$out" "STOPPED"
+
+  out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_swift_superseded_start_second" "$out" "RECORDING"
+  out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_swift_superseded_stop_second" "$out" "STOPPED"
+
+  wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "second fresh transcript" || fail "inline_swift_superseded_second_complete"
+  sleep 0.5
+
+  local copied paste_count send_count
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_swift_superseded_final_clipboard" "$copied" "second fresh transcript"
+  if [[ "$copied" == *"first cold transcript"* ]]; then
+    fail "inline_swift_superseded_old_clipboard_suppressed"
+  fi
+  pass "inline_swift_superseded_old_clipboard_suppressed"
+
+  paste_count="$(grep -c 'keystroke "v" using command down' "$DICTATE_TEST_OSASCRIPT_LOG" 2>/dev/null || true)"
+  send_count="$(grep -c 'key code 36' "$DICTATE_TEST_OSASCRIPT_LOG" 2>/dev/null || true)"
+  assert_equals "inline_swift_superseded_single_paste" "$paste_count" "1"
+  assert_equals "inline_swift_superseded_single_send" "$send_count" "1"
+}
+
 run_inline_swift_fallback_round() {
   setup_case "inline-swift-fallback"
   export DICTATE_BACKEND=swift_parakeet
@@ -570,6 +640,7 @@ run_inline_cmd_enter_round
 run_inline_auto_mode_round
 run_inline_toggle_round
 run_inline_swift_round
+run_inline_swift_superseded_round
 run_inline_swift_fallback_round
 run_status_postprocess_round
 run_status_model_mode_round

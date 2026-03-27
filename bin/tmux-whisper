@@ -315,6 +315,7 @@ mkdir -p "$DICTATE_CONFIG_DIR"
 AUDIO_CACHE_DIR="$DICTATE_CONFIG_DIR/.cache"
 AUDIO_INDEX_CACHE="$AUDIO_CACHE_DIR/audio-index.sh"
 BACKEND_RUNTIME_CACHE="$AUDIO_CACHE_DIR/backend-state.sh"
+INLINE_SESSION_CACHE="$AUDIO_CACHE_DIR/inline-session.sh"
 DICTATE_LAST_AUDIO_INDEX_SOURCE=""
 DICTATE_LAST_AUDIO_INDEX_MS="0"
 DICTATE_LAST_BACKEND_REQUESTED=""
@@ -357,6 +358,44 @@ write_audio_index_cache() {
 
 clear_audio_index_cache() {
   rm -f "$AUDIO_INDEX_CACHE" 2>/dev/null || true
+}
+
+generate_inline_session_id() {
+  printf 'inline-%s-%s-%s\n' "$(date +%s)" "$$" "$RANDOM"
+}
+
+write_inline_latest_session() {
+  local session_id="${1:-}"
+  [[ -n "$session_id" ]] || return 0
+
+  mkdir -p "$AUDIO_CACHE_DIR" 2>/dev/null || return 0
+  local tmp
+  tmp="$(mktemp "$AUDIO_CACHE_DIR/.inline-session.XXXXXX" 2>/dev/null || true)"
+  [[ -n "$tmp" ]] || return 0
+
+  umask 077
+  printf 'INLINE_LATEST_SESSION_ID=%q\nINLINE_LATEST_SESSION_AT=%q\n' \
+    "$session_id" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >"$tmp" 2>/dev/null || {
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  }
+  mv -f "$tmp" "$INLINE_SESSION_CACHE" 2>/dev/null || true
+}
+
+load_inline_latest_session() {
+  [[ -f "$INLINE_SESSION_CACHE" ]] || return 1
+  # shellcheck disable=SC1090
+  source "$INLINE_SESSION_CACHE" 2>/dev/null || return 1
+  [[ -n "${INLINE_LATEST_SESSION_ID:-}" ]]
+}
+
+inline_session_is_current() {
+  local session_id="${1:-}"
+  [[ -n "$session_id" ]] || return 0
+  if ! load_inline_latest_session; then
+    return 0
+  fi
+  [[ "${INLINE_LATEST_SESSION_ID:-}" == "$session_id" ]]
 }
 
 load_backend_runtime_cache() {
@@ -1727,6 +1766,95 @@ ensure_swift_parakeet_daemon() {
   return 1
 }
 
+maybe_warmup_swift_parakeet_in_background() {
+  local backend_requested socket_path
+  backend_requested="$(resolve_transcribe_backend)"
+  [[ "$backend_requested" == "swift_parakeet" ]] || return 0
+
+  socket_path="$(resolve_swift_parakeet_socket_path 2>/dev/null || true)"
+  if [[ -n "$socket_path" ]] && swift_parakeet_ping "$socket_path"; then
+    return 0
+  fi
+
+  (
+    trap '' HUP
+    warmup_backend --best-effort >/dev/null 2>>"${TRANSCRIBE_LOG:-/dev/null}" || true
+  ) &
+}
+
+create_silent_wav() {
+  local wav_path="${1:-}"
+  local duration_ms="${2:-160}"
+  [[ -n "$wav_path" ]] || return 1
+  [[ "$duration_ms" =~ ^[0-9]+$ ]] || duration_ms=160
+
+  python3 - "$wav_path" "$duration_ms" <<'PYEOF'
+import sys
+import wave
+
+path = sys.argv[1]
+duration_ms = max(1, int(sys.argv[2]))
+sample_rate = 16000
+samples = max(1, int(sample_rate * duration_ms / 1000))
+
+with wave.open(path, "wb") as wav_file:
+    wav_file.setnchannels(1)
+    wav_file.setsampwidth(2)
+    wav_file.setframerate(sample_rate)
+    wav_file.writeframes(b"\x00\x00" * samples)
+PYEOF
+}
+
+swift_parakeet_prime_cli() {
+  local socket_path=""
+  local model_path=""
+  local model_version=""
+  local response=""
+  local shell_vars=""
+  local tmp_wav=""
+  local prime_ms="${DICTATE_WARMUP_PRIME_MS:-160}"
+
+  socket_path="$(resolve_swift_parakeet_socket_path)"
+  model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
+  [[ -n "$model_path" ]] || return 1
+  model_version="$(resolve_swift_parakeet_model_version "$model_path")"
+
+  ensure_swift_parakeet_daemon "$socket_path" || return 1
+  tmp_wav="$(mktemp "${TMPDIR:-/tmp}/tmux-whisper-prime.XXXXXX.wav" 2>/dev/null || true)"
+  [[ -n "$tmp_wav" ]] || return 1
+
+  if ! create_silent_wav "$tmp_wav" "$prime_ms"; then
+    rm -f "$tmp_wav" 2>/dev/null || true
+    return 1
+  fi
+
+  response="$(swift_parakeet_request_json "transcribe" "$socket_path" "$tmp_wav" "en" "warmup" "$model_path" "$model_version")" || true
+  rm -f "$tmp_wav" 2>/dev/null || true
+  [[ -n "$response" ]] || return 1
+
+  shell_vars="$(daemon_response_to_shell "$response" 2>/dev/null || true)"
+  [[ -n "$shell_vars" ]] || return 1
+  eval "$shell_vars"
+
+  if [[ "${RESP_OK:-0}" != "1" ]]; then
+    log_transcribe_event "swift_parakeet: daemon prime error ${RESP_ERROR_CODE:-unknown}: ${RESP_MESSAGE:-unknown error}"
+    return 1
+  fi
+
+  log_transcribe_event "swift_parakeet: prime transcribe ok (${RESP_DURATION_MS:-0}ms)"
+  DICTATE_LAST_BACKEND_ENGINE="${RESP_ENGINE:-swift_parakeet}"
+  DICTATE_LAST_BACKEND_MODEL="${RESP_MODEL:-$(basename "$model_path")}"
+  return 0
+}
+
+maybe_prime_swift_parakeet_after_warmup() {
+  local enabled="${DICTATE_WARMUP_PRIME_TRANSCRIBE:-1}"
+  if ! bool_is_on "$enabled"; then
+    return 0
+  fi
+  swift_parakeet_prime_cli || true
+}
+
 swift_parakeet_warmup_cli() {
   local socket_path=""
   local model_path=""
@@ -1823,6 +1951,8 @@ warmup_backend() {
     fi
     die "failed to warm up the swift_parakeet backend"
   fi
+
+  maybe_prime_swift_parakeet_after_warmup
 
   IFS=$'\t' read -r model_name duration_ms message <<<"$result"
   echo "Warmup: ready (model=${model_name:-$(basename "$model_path")}, duration=${duration_ms:-0}ms)"
@@ -4324,6 +4454,7 @@ process_inline_recording() {
   local startup_ffmpeg_live_ms="${7:-0}"
   local startup_target_ms="${8:-0}"
   local startup_audio_source="${9:-}"
+  local inline_session_id="${10:-}"
 
   need ffmpeg
 
@@ -4432,6 +4563,16 @@ process_inline_recording() {
     detected_mode="$(default_inline_mode)"
   fi
 
+  if ! inline_session_is_current "$inline_session_id"; then
+    echo "Skipping stale inline result because a newer recording started."
+    total_ms=$(( $(now_ms) - flow_started_ms ))
+    append_bench_entry "inline" "superseded" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    local history_app="${target_app:-current}"
+    ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" ) >/dev/null 2>&1 &
+    return 0
+  fi
+
   if [[ "$do_postprocess" == "1" ]]; then
     stage_started_ms="$(now_ms)"
     echo "🤖 Post-processing ($detected_mode mode)..."
@@ -4461,6 +4602,16 @@ process_inline_recording() {
   txt="$(printf "%s" "$txt" | apply_mode_cleanup "$detected_mode")"
 
   txt="$(printf "%s" "$txt" | normalize_british_spelling)"
+
+  if ! inline_session_is_current "$inline_session_id"; then
+    echo "Skipping stale inline result because a newer recording started."
+    total_ms=$(( $(now_ms) - flow_started_ms ))
+    append_bench_entry "inline" "superseded" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" \
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    local history_app="${target_app:-current}"
+    ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" ) >/dev/null 2>&1 &
+    return 0
+  fi
   
   stage_started_ms="$(now_ms)"
   # Copy to clipboard
@@ -4563,6 +4714,9 @@ inline_start() {
   [[ ! -f "$INLINE_STATE_FILE" ]] || die "already recording. Run: tmux-whisper inline stop"
 
   local model_id="${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-}}"
+  local inline_session_id
+  inline_session_id="$(generate_inline_session_id)"
+  write_inline_latest_session "$inline_session_id"
   local startup_started_ms startup_total_ms startup_audio_ms startup_target_ms startup_ffmpeg_live_ms startup_audio_source
   startup_started_ms="$(now_ms)"
   startup_total_ms=0
@@ -4636,9 +4790,11 @@ inline_start() {
     die "recording failed (ffmpeg exited immediately)"
   fi
 
-  printf 'pid=%q\nwav=%q\ntarget_app=%q\nmodel_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\n' \
+  printf 'pid=%q\nwav=%q\ntarget_app=%q\nmodel_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\ninline_session_id=%q\n' \
     "$pid" "$wav" "$target_app" "$model_id" "$record_started_ms" \
-    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" >"$INLINE_STATE_FILE"
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "$inline_session_id" >"$INLINE_STATE_FILE"
+
+  maybe_warmup_swift_parakeet_in_background
 
   play_sound start
   echo "🎙️ RECORDING → inline"
@@ -4675,7 +4831,7 @@ inline_stop() {
       play_sound process
     fi
     process_inline_recording "$wav" "${target_app:-}" "${model_id:-${CFG_WHISPER_MODEL:-}}" "$record_ms" \
-      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}"
   ) >"$TMPDIR/whisper-dictate-inline.transcribe.log" 2>&1 &
 
   echo "⏹️ STOPPED → transcribing → inline"
@@ -4701,6 +4857,9 @@ inline() {
   need ffmpeg
 
   local model_id="${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-}}"
+  local inline_session_id
+  inline_session_id="$(generate_inline_session_id)"
+  write_inline_latest_session "$inline_session_id"
   local startup_started_ms startup_total_ms startup_audio_ms startup_target_ms startup_ffmpeg_live_ms startup_audio_source
   startup_started_ms="$(now_ms)"
   startup_total_ms=0
@@ -4746,6 +4905,7 @@ inline() {
   record_started_ms="$(now_ms)"
   startup_total_ms=$(( record_started_ms - startup_started_ms ))
   (( startup_total_ms < 0 )) && startup_total_ms=0
+  maybe_warmup_swift_parakeet_in_background
   trap 'echo ""' INT
   : >"$record_log" 2>/dev/null || true
   ffmpeg -hide_banner -loglevel error \
@@ -4759,7 +4919,7 @@ inline() {
   (( record_ms < 0 )) && record_ms=0
 
   process_inline_recording "$wav" "$target_app" "$model_id" "$record_ms" \
-    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "$inline_session_id"
 }
 
 status() {
