@@ -14,11 +14,13 @@ Tmux Whisper is **tmux-first**.
 
 - `bin/tmux-whisper`: main CLI / orchestration layer
 - `bin/dictate-lib.sh`: shared helper library used by CLI and integrations
+- `tmux-whisperd/`: local Swift daemon package used by the default backend
 - `config/`: default config, modes, and vocab
 - `integrations/raycast/`: Raycast scripts (`inline`, `toggle`, `cancel`)
 - `integrations/tmux-whisper-status.0.2s.sh`: SwiftBar plugin
 - `assets/sounds/dictate/`: tiny sample WAV sound pack
 - `install.sh`: local installer
+- `docs/plans/`: planning/history notes kept separate from active operator docs
 - `tests/`: deterministic bash tests and install smoke tests
 - `.github/workflows/ci.yml`: CI for syntax + tests
 
@@ -234,6 +236,13 @@ tmux-whisper debug
 tmux-whisper bench 10
 tmux-whisper bench-matrix 1
 ```
+
+## Repo Layout
+
+- `bin/tmux-whisper` is the main product orchestration layer.
+- `tmux-whisperd/` contains the Swift/CoreML daemon package for the Parakeet backend.
+- `install.sh`, `config/`, `integrations/`, and `tests/` are active first-class parts of the app, not support-only extras.
+- `docs/` keeps active operator docs at the top level, while longer-term planning notes live under `docs/plans/`.
 
 ## Testing and CI
 

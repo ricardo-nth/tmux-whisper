@@ -8,7 +8,7 @@
 history/
 .cache/
 archive/
-native/tmux-whisperd/.build/
+tmux-whisperd/.build/
 
 # Editor/OS
 .vscode/
