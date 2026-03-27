@@ -1596,7 +1596,7 @@ resolve_tmux_whisperd_root() {
 
   for candidate in \
     "${DICTATE_TMUX_WHISPERD_ROOT:-}" \
-    "$script_dir/../native/tmux-whisperd" \
+    "$script_dir/../tmux-whisperd" \
     "$XDG_DATA_HOME/tmux-whisper/native/tmux-whisperd"
   do
     [[ -n "$candidate" ]] || continue

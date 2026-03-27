@@ -144,10 +144,10 @@ mkdir -p "$PARAKEET_MODELS_DIR"
 
 install -m 0755 "$REPO_ROOT/bin/tmux-whisper" "$BIN_DIR/tmux-whisper"
 install -m 0755 "$REPO_ROOT/bin/dictate-lib.sh" "$BIN_DIR/dictate-lib.sh"
-install -m 0644 "$REPO_ROOT/native/tmux-whisperd/Package.swift" "$NATIVE_DIR/tmux-whisperd/Package.swift"
+install -m 0644 "$REPO_ROOT/tmux-whisperd/Package.swift" "$NATIVE_DIR/tmux-whisperd/Package.swift"
 rm -rf "$NATIVE_DIR/tmux-whisperd/Sources"
 mkdir -p "$NATIVE_DIR/tmux-whisperd/Sources"
-cp -R "$REPO_ROOT/native/tmux-whisperd/Sources/." "$NATIVE_DIR/tmux-whisperd/Sources/"
+cp -R "$REPO_ROOT/tmux-whisperd/Sources/." "$NATIVE_DIR/tmux-whisperd/Sources/"
 
 # Preserve user config and local mode edits on every install, including --force.
 # `--force` remains a convenience for reinstalling binaries/integrations.

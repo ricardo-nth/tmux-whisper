@@ -120,7 +120,7 @@ BACKEND_MODEL="$BACKEND_HOME/models/parakeet-tdt-0.6b-v3-coreml"
 mkdir -p "$BACKEND_BIN" "$BACKEND_CFG" "$BACKEND_NATIVE" "$BACKEND_MODEL"
 cp "$ROOT/bin/tmux-whisper" "$BACKEND_BIN/tmux-whisper"
 cp "$ROOT/bin/dictate-lib.sh" "$BACKEND_BIN/dictate-lib.sh"
-cp -R "$ROOT/native/tmux-whisperd/." "$BACKEND_NATIVE/"
+cp -R "$ROOT/tmux-whisperd/." "$BACKEND_NATIVE/"
 chmod +x "$BACKEND_BIN/tmux-whisper" "$BACKEND_BIN/dictate-lib.sh"
 cat >"$BACKEND_CFG/config.toml" <<EOF
 [meta]
