@@ -98,6 +98,16 @@ while True:
                 "message": "warmed",
             }
         elif op == "transcribe":
+            wav_path = request.get("wav_path", "")
+            if not wav_path or not os.path.exists(wav_path):
+                raise SystemExit("missing warmup wav_path")
+            import wave
+            with wave.open(wav_path, "rb") as wav_file:
+                frames = wav_file.getnframes()
+                sample_rate = wav_file.getframerate()
+            duration_ms = int((frames / sample_rate) * 1000)
+            if duration_ms < 1000:
+                raise SystemExit(f"warmup prime audio too short: {duration_ms}ms")
             response = {
                 "id": request.get("id", "stub"),
                 "ok": True,

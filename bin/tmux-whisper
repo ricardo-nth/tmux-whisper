@@ -1812,7 +1812,12 @@ swift_parakeet_prime_cli() {
   local response=""
   local shell_vars=""
   local tmp_wav=""
-  local prime_ms="${DICTATE_WARMUP_PRIME_MS:-160}"
+  local prime_ms="${DICTATE_WARMUP_PRIME_MS:-1000}"
+
+  # FluidAudio warmup transcribes require at least 1 second of 16kHz audio.
+  if [[ ! "$prime_ms" =~ ^[0-9]+$ ]] || (( prime_ms < 1000 )); then
+    prime_ms=1000
+  fi
 
   socket_path="$(resolve_swift_parakeet_socket_path)"
   model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
