@@ -1815,6 +1815,9 @@ swift_parakeet_prime_cli() {
   local prime_ms="${DICTATE_WARMUP_PRIME_MS:-1000}"
 
   # FluidAudio warmup transcribes require at least 1 second of 16kHz audio.
+  if [[ "$prime_ms" =~ ^[0-9]+$ ]]; then
+    prime_ms=$((10#$prime_ms))
+  fi
   if [[ ! "$prime_ms" =~ ^[0-9]+$ ]] || (( prime_ms < 1000 )); then
     prime_ms=1000
   fi

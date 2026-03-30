@@ -105,6 +105,8 @@ while True:
             with wave.open(wav_path, "rb") as wav_file:
                 frames = wav_file.getnframes()
                 sample_rate = wav_file.getframerate()
+            if sample_rate != 16000:
+                raise SystemExit(f"warmup prime sample rate mismatch: {sample_rate}")
             duration_ms = int((frames / sample_rate) * 1000)
             if duration_ms < 1000:
                 raise SystemExit(f"warmup prime audio too short: {duration_ms}ms")
@@ -150,6 +152,22 @@ fi
 
 if ! grep -Fxq "warmup" "$OPLOG" || ! grep -Fxq "transcribe" "$OPLOG"; then
   echo "Expected warmup command to prime with a synthetic transcribe" >&2
+  cat "$OPLOG" >&2 || true
+  exit 1
+fi
+
+rm -f "$OPLOG"
+
+warmup_output="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIG_DIR" DICTATE_CONFIG_FILE="$CONFIG_DIR/config.toml" DICTATE_TMUX_WHISPERD_BIN="$BIN_DIR/tmux-whisperd" DICTATE_TEST_CLI_OPLOG="$OPLOG" DICTATE_WARMUP_PRIME_MS=0800 "$BIN_DIR/tmux-whisper" warmup)"
+
+if [[ "$warmup_output" != *"Warmup: ready (model=parakeet-tdt-0.6b-v3-coreml, duration=12ms)"* ]]; then
+  echo "Expected warmup output with leading-zero prime duration override" >&2
+  echo "$warmup_output" >&2
+  exit 1
+fi
+
+if ! grep -Fxq "warmup" "$OPLOG" || ! grep -Fxq "transcribe" "$OPLOG"; then
+  echo "Expected warmup command with leading-zero override to complete prime transcribe" >&2
   cat "$OPLOG" >&2 || true
   exit 1
 fi
