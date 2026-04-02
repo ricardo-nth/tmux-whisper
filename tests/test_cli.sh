@@ -21,6 +21,10 @@ if [[ "$output" != *"tmux-whisper: local dictation with pluggable ASR backends"*
   echo "Expected help output from tmux-whisper command" >&2
   exit 1
 fi
+if [[ "$output" != *"DICTATE_STOP_GRACE_MS=250"* ]]; then
+  echo "Expected help output to document stop grace tuning" >&2
+  exit 1
+fi
 
 MODEL_DIR="$TMP_ROOT/parakeet-tdt-0.6b-v3-coreml"
 CONFIG_DIR="$HOME_DIR/.config/dictate"

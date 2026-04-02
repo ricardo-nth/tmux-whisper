@@ -197,6 +197,7 @@ ENV OPTIONS:
   DICTATE_AUDIO_SOURCE=auto|external|mac|iphone|name # source strategy override
   DICTATE_AUDIO_INDEX=N      # audio device index
   DICTATE_AUDIO_NAME="X"     # preferred device name substring (more stable than index)
+  DICTATE_STOP_GRACE_MS=250 # keep recording briefly after stop to catch trailing words
   DICTATE_GPU="-ng"          # disable GPU (CPU only)
   DICTATE_THREADS=5          # whisper thread count
   DICTATE_BEAM_SIZE=1        # whisper decode beam size
@@ -4364,10 +4365,23 @@ stop() {
 terminate_recording_pid() {
   local target_pid="${1:-}"
   local attempt
+  local stop_grace_ms="${DICTATE_STOP_GRACE_MS:-250}"
+  local int_wait_attempts="60"
+  local term_wait_attempts="40"
   [[ -n "$target_pid" && "$target_pid" =~ ^[0-9]+$ ]] || return 0
 
+  if keep_logs_enabled; then
+    printf "[%s] stop_recording: pid=%s grace_ms=%s int_wait_ms=%s term_wait_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$stop_grace_ms" \
+      "$(( int_wait_attempts * 50 ))" "$(( term_wait_attempts * 50 ))" \
+      >>"${RECORD_LOG:-/dev/null}" 2>/dev/null || true
+  fi
+
+  # A small grace window makes hotkey stop feel less "hard cut" when the user
+  # finishes the last word right as they trigger stop.
+  sleep_ms "$stop_grace_ms"
   kill -INT "$target_pid" 2>/dev/null || true
-  for attempt in {1..20}; do
+  for ((attempt=1; attempt<=int_wait_attempts; attempt++)); do
     if ! kill -0 "$target_pid" 2>/dev/null; then
       return 0
     fi
@@ -4375,7 +4389,7 @@ terminate_recording_pid() {
   done
 
   kill -TERM "$target_pid" 2>/dev/null || true
-  for attempt in {1..20}; do
+  for ((attempt=1; attempt<=term_wait_attempts; attempt++)); do
     if ! kill -0 "$target_pid" 2>/dev/null; then
       return 0
     fi
