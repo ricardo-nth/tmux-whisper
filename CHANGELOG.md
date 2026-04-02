@@ -13,6 +13,7 @@
 ### Planned next (v0.5 queue)
 
 - mode/config UX validation polish (`dictate doctor`, mode checks, clearer fix hints)
+- audio-device cache observability follow-up: consider a lightweight debug/log note when a stale cached AVFoundation index is invalidated and re-resolved after device-order changes
 - vocab workflow safety pass (import/export ergonomics, normalize/dedupe guardrails)
 - docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
 - CLI naming transition: move user-facing command language from legacy `dictate ...` toward `tmux-whisper ...` and update aliases/docs after the current UI/config cleanup settles

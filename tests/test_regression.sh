@@ -622,4 +622,52 @@ assert_contains "bench_matrix_budget_obs_profiles" "$bench_matrix_obs_out" "prof
 assert_contains "bench_matrix_budget_obs_max_tokens" "$bench_matrix_obs_out" "max_tokens: n="
 assert_contains "bench_matrix_budget_obs_chunk_count" "$bench_matrix_obs_out" "chunk_count: n="
 
+# --- Regression 15: stale cached audio indices should be ignored when ffmpeg devices change. ---
+AUDIOCACHE_HOME="$TMP_ROOT/home-audiocache"
+AUDIOCACHE_BIN="$AUDIOCACHE_HOME/.local/bin"
+AUDIOCACHE_CFG="$AUDIOCACHE_HOME/.config/dictate"
+AUDIOCACHE_CACHE="$AUDIOCACHE_CFG/.cache"
+mkdir -p "$AUDIOCACHE_BIN" "$AUDIOCACHE_CFG" "$AUDIOCACHE_CACHE"
+cp "$ROOT/bin/tmux-whisper" "$AUDIOCACHE_BIN/tmux-whisper"
+cp "$ROOT/bin/dictate-lib.sh" "$AUDIOCACHE_BIN/dictate-lib.sh"
+chmod +x "$AUDIOCACHE_BIN/tmux-whisper" "$AUDIOCACHE_BIN/dictate-lib.sh"
+cat >"$AUDIOCACHE_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "mac"
+mac_name = "MacBook Air Microphone"
+EOF
+cat >"$AUDIOCACHE_CACHE/audio-index.sh" <<'EOF'
+CACHED_AUDIO_KEY=source=mac\;preferred=MacBook\ Air\ Microphone\;mac=MacBook\ Air\ Microphone\;iphone=
+CACHED_AUDIO_NAME=MacBook\ Air\ Microphone
+CACHED_AUDIO_MATCH=mac
+CACHED_AUDIO_INDEX=1
+CACHED_AUDIO_AT=2026-03-20T08:47:56Z
+EOF
+cat >"$AUDIOCACHE_BIN/ffmpeg" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"-list_devices true"* ]]; then
+  cat >&2 <<'OUT'
+[AVFoundation indev @ 0x1] AVFoundation video devices:
+[AVFoundation indev @ 0x1] [0] FaceTime HD Camera
+[AVFoundation indev @ 0x1] [1] Capture screen 0
+[AVFoundation indev @ 0x1] AVFoundation audio devices:
+[AVFoundation indev @ 0x1] [0] MacBook Air Microphone
+OUT
+  exit 0
+fi
+exit 0
+EOF
+cat >"$AUDIOCACHE_BIN/whisper-cli" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$AUDIOCACHE_BIN/ffmpeg" "$AUDIOCACHE_BIN/whisper-cli"
+
+audiocache_debug="$(HOME="$AUDIOCACHE_HOME" PATH="$AUDIOCACHE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$AUDIOCACHE_CFG" DICTATE_CONFIG_FILE="$AUDIOCACHE_CFG/config.toml" tmux-whisper debug)"
+assert_contains "audio_cache_stale_refreshed" "$audiocache_debug" "Resolved audio index: 0 (source: detect:source(mac):match(mac):name(MacBook Air Microphone))"
+
 echo "Regression tests passed."
