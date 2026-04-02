@@ -15,20 +15,23 @@
 
 - [ ] Create release tag in `tmux-whisper` (`vX.Y.Z`).
 - [ ] Push tag to origin.
-- [ ] Verify GitHub tarball URL and checksum.
+- [ ] Verify GitHub tarball URL and checksum:
+  - [ ] `tools/update-homebrew-formula.sh vX.Y.Z`
 
 ## Homebrew Update
 
-- [ ] Update `homebrew-tap/Formula/tmux-whisper.rb`:
-  - [ ] `url` -> new tag
-  - [ ] `sha256` -> new archive checksum
+- [ ] Update `homebrew-tap/Formula/tmux-whisper.rb` from the tagged tarball:
+  - [ ] `tools/update-homebrew-formula.sh vX.Y.Z --write`
+  - [ ] Review diff in `../homebrew-tap/Formula/tmux-whisper.rb`
 - [ ] Run:
+  - [ ] `git -C ../homebrew-tap status --short`
   - [ ] `brew update`
   - [ ] `brew audit --new --strict --online ricardo-nth/tap/tmux-whisper`
   - [ ] `brew install/upgrade ricardo-nth/tap/tmux-whisper`
 - [ ] Validate command:
   - [ ] `tmux-whisper --help`
   - [ ] `tmux-whisper debug`
+- [ ] Commit/push tap repo update (`../homebrew-tap`) after formula validation passes.
 
 ## Post-release
 
