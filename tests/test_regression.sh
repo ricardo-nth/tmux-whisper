@@ -106,6 +106,8 @@ custom_doctor="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LI
 assert_contains "doctor_install_sanity_section" "$custom_doctor" "Install sanity:"
 assert_contains "doctor_channel_present" "$custom_doctor" "install channel: "
 assert_contains "doctor_schema_ok" "$custom_doctor" "config schema: v1 (expected v1, status=ok)"
+assert_contains "doctor_legacy_section" "$custom_doctor" "Legacy compatibility:"
+assert_not_contains "doctor_whisper_not_required" "$custom_doctor" "whisper-cli: missing"
 
 # --- Regression 2: install-channel detection should work for local user installs. ---
 LOCAL_HOME="$TMP_ROOT/home-local"

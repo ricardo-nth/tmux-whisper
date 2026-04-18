@@ -28,11 +28,10 @@ Tmux Whisper is **tmux-first**.
 
 - macOS
 - `ffmpeg`
-- `whisper-cli` (from whisper.cpp)
 - `python3` (with `tomllib`, Python 3.11+ recommended)
 - `swift` + Xcode toolchain (for building the local `tmux-whisperd` backend)
 - Optional: `tmux`, Raycast, SwiftBar
-- Optional legacy fallback/backend comparison path: `whisper-cli` (from whisper.cpp)
+- Optional legacy compatibility path: `whisper-cli` (from whisper.cpp) plus local GGML models
 - Optional for LLM postprocess: `CEREBRAS_API_KEY`
 
 ## Install
@@ -53,19 +52,7 @@ Preferred Parakeet model home:
 
 Tmux Whisper now expects Parakeet models to live in that owned path so the backend does not depend on another app being installed.
 
-If you want to keep the legacy Whisper CPP path available for comparison or fallback, `whisper-cpp` installs the `whisper-cli` binary without downloading model files.
-That path uses local GGML models (`.bin`) in `~/.local/share/whisper/models`.
-
-For the legacy Whisper CPP backend, common models are:
-
-- `ggml-base.en.bin` for `tmux-whisper model base`
-- `ggml-small.en.bin` for `tmux-whisper model small`
-- `ggml-large-v3-turbo-q5_0.bin` for `tmux-whisper model turbo`
-
-Model sources:
-
-- <https://huggingface.co/ggerganov/whisper.cpp/tree/main>
-- <https://ggml.ggerganov.com/>
+Legacy `whisper.cpp` compatibility still exists in the runtime for comparison and fallback testing, but it is no longer part of the primary install story. If you intentionally want that path, install `whisper-cpp` and add GGML models under `~/.local/share/whisper/models`.
 
 Or one-line bootstrap:
 
@@ -85,7 +72,6 @@ First run:
 tmux-whisper debug
 tmux-whisper doctor
 tmux-whisper status
-tmux-whisper model
 tmux-whisper --help
 ```
 

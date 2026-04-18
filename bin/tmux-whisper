@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # GUI launchers (SwiftBar/Raycast) often run with a minimal PATH.
-# Prefer Homebrew for python3 (tomllib), ffmpeg, and whisper-cli.
+# Prefer Homebrew for python3 (tomllib) and ffmpeg; keep legacy whisper-cli
+# reachable too if it is installed for compatibility testing.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 
 if [[ -f "$HOME/.zshenv" ]]; then
@@ -25,7 +26,7 @@ mkdir -p "$DEFAULT_WHISPER_MODELS_DIR"
 
 usage() {
   cat <<'EOF'
-tmux-whisper: local dictation with pluggable ASR backends, tmux routing, and mode-aware cleanup.
+tmux-whisper: local dictation for macOS with a warm Swift/CoreML Parakeet backend, tmux routing, and mode-aware cleanup.
 
 RECORDING:
   tmux-whisper                    # toggle: start/stop recording (tmux mode)
@@ -82,11 +83,11 @@ SOUNDS:
   tmux-whisper sound process on|off # toggle process sound
   tmux-whisper sound error on|off # toggle error sound
 
-WHISPER MODEL:
-  tmux-whisper model              # show current model + list all
-  tmux-whisper model base         # 141 MB - fast, good accuracy (default)
-  tmux-whisper model small        # 465 MB - slower, better accuracy
-  tmux-whisper model turbo        # 547 MB - large-v3-turbo-q5, fast+accurate
+LEGACY WHISPER CPP (compatibility only):
+  tmux-whisper model              # show legacy whisper.cpp model aliases
+  tmux-whisper model base         # legacy GGML base alias
+  tmux-whisper model small        # legacy GGML small alias
+  tmux-whisper model turbo        # legacy GGML turbo alias
 
 LLM POST-PROCESSING (Cerebras API):
   tmux-whisper postprocess        # show current setting
@@ -150,7 +151,7 @@ TMUX OPTIONS:
   tmux-whisper tmux process-sound on|off # tmux: play processing SFX before transcribe
   tmux-whisper tmux send-mode auto|enter|codex # tmux autosend strategy
   tmux-whisper tmux mode <name>   # tmux: force mode for postprocess (default: code)
-  tmux-whisper tmux model <name>  # tmux: whisper model (default: base)
+  tmux-whisper tmux model <name>  # tmux: legacy whisper.cpp model (compatibility only)
 
 KEYBINDS (reference for display in SwiftBar):
   tmux-whisper keybind            # show current keybinds
@@ -170,6 +171,7 @@ HISTORY (saved transcripts, auto-cleanup after 7 days):
 
 ENV OPTIONS:
   DICTATE_CLEAN=1            # regex filler removal (fast, no LLM)
+  DICTATE_BACKEND=swift_parakeet|whisper_cpp # backend override (legacy whisper_cpp is compatibility only)
   DICTATE_POSTPROCESS=1      # LLM cleanup via Cerebras (inline/global default)
   DICTATE_VOCAB_CLEAN=1      # apply vocab-only corrections when postprocess is OFF
   DICTATE_TRIM_WITH_POSTPROCESS=1 # keep silence-trim enabled even when postprocess is ON
@@ -187,23 +189,16 @@ ENV OPTIONS:
   DICTATE_INLINE_SEND_MODE=enter|ctrl_j|cmd_enter # inline autosend key strategy (default: enter)
   DICTATE_TMUX_PROCESS_SOUND=1 # tmux-only processing sound toggle
   DICTATE_TMUX_MODE=code     # tmux-only forced mode
-  DICTATE_TMUX_MODEL=base    # tmux-only whisper model
   DICTATE_LLM_MODEL=...      # override Cerebras model id (one-off)
   DICTATE_LLM_MAX_TOKENS=3000 # cap postprocess output tokens
   DICTATE_LLM_CHUNK_WORDS=700 # chunk long postprocess input
   DICTATE_BRITISH_SPELLING=1 # enforce UK spellings (default on; set 0 to disable)
   DICTATE_PARAGRAPH_MIN_WORDS=80 # auto split long short/long outputs into paragraphs
-  DICTATE_MODEL=/path/...    # override whisper model path
   DICTATE_AUDIO_SOURCE=auto|external|mac|iphone|name # source strategy override
   DICTATE_AUDIO_INDEX=N      # audio device index
   DICTATE_AUDIO_NAME="X"     # preferred device name substring (more stable than index)
   DICTATE_STOP_GRACE_MS=700 # keep recording briefly after stop to catch trailing words
   DICTATE_TRANSCRIBE_TAIL_PAD_MS=500 # append a little silence before ASR to preserve final words
-  DICTATE_GPU="-ng"          # disable GPU (CPU only)
-  DICTATE_THREADS=5          # whisper thread count
-  DICTATE_BEAM_SIZE=1        # whisper decode beam size
-  DICTATE_BEST_OF=1          # whisper decode candidates
-  DICTATE_VAD=1              # whisper-cli voice activity detection (skip silences)
   DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
   DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
   DICTATE_BENCH_MATRIX_MODE=code # force mode used by bench-matrix cleanup/postprocess
@@ -211,8 +206,17 @@ ENV OPTIONS:
   DICTATE_BENCH_MATRIX_PROGRESS=1 # show per-combo progress lines (set 0 for summary-only output)
   CEREBRAS_API_KEY=...       # required for postprocess
 
+  LEGACY COMPATIBILITY OPTIONS (whisper.cpp only):
+  DICTATE_TMUX_MODEL=base    # tmux-only legacy GGML model alias/path
+  DICTATE_MODEL=/path/...    # override legacy whisper model path
+  DICTATE_GPU="-ng"          # disable GPU (CPU only) for whisper.cpp
+  DICTATE_THREADS=5          # whisper.cpp thread count
+  DICTATE_BEAM_SIZE=1        # whisper.cpp decode beam size
+  DICTATE_BEST_OF=1          # whisper.cpp decode candidates
+  DICTATE_VAD=1              # whisper-cli voice activity detection (skip silences)
+
 CONFIG FILES (~/.config/dictate/):
-  config.toml                # main settings (model, postprocess, autosend, keybind refs, icons)
+  config.toml                # main settings (backend, postprocess, autosend, keybind refs, icons)
   vocab                      # global corrections (one per line: wrong → right)
   current-mode               # mode selection (code/email/etc)
   modes/<mode>/apps          # apps that trigger this mode (one per line)

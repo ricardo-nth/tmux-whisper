@@ -32,7 +32,7 @@ debug() {
   echo "Binaries:"
   echo "  tmux-whisper: ${dictate_bin:-'(not found)'}"
   echo "  ffmpeg:  ${ffmpeg_bin:-'(not found)'}"
-  echo "  whisper: ${whisper_bin:-'(not found)'}"
+  echo "  whisper-cli (legacy): ${whisper_bin:-'(not found, optional)'}"
   echo "  python3: ${python_bin:-'(not found)'}"
   echo "  swift:   ${swift_bin:-'(not found)'}"
   echo "  channel: $install_channel"
@@ -50,8 +50,25 @@ debug() {
   swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
   swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
   local model_count="0"
+  local show_legacy_runtime="0"
   if [[ -d "$models_dir" ]]; then
     model_count="$(find "$models_dir" -maxdepth 1 -type f -name 'ggml-*.bin' | wc -l | tr -d ' ')"
+  fi
+  if [[ "$backend_requested" != "swift_parakeet" ]]; then
+    show_legacy_runtime="1"
+  else
+    local legacy_override
+    for legacy_override in \
+      DICTATE_MODEL DICTATE_TMUX_MODEL \
+      DICTATE_THREADS DICTATE_BEAM_SIZE DICTATE_BEST_OF DICTATE_GPU \
+      DICTATE_VAD DICTATE_VAD_MODEL DICTATE_VAD_THRESHOLD \
+      DICTATE_VAD_MIN_SPEECH_MS DICTATE_VAD_MIN_SILENCE_MS DICTATE_VAD_SPEECH_PAD_MS
+    do
+      if [[ -n "${!legacy_override-}" ]]; then
+        show_legacy_runtime="1"
+        break
+      fi
+    done
   fi
 
   echo "Paths:"
@@ -59,7 +76,7 @@ debug() {
   echo "  config_file:  $DICTATE_CONFIG_FILE $([[ -f "$DICTATE_CONFIG_FILE" ]] && echo '(ok)' || echo '(missing)')"
   echo "  modes_dir:    $DICTATE_CONFIG_DIR/modes $([[ -d "$DICTATE_CONFIG_DIR/modes" ]] && echo '(ok)' || echo '(missing)')"
   echo "  vocab_file:   $DICTATE_CONFIG_DIR/vocab $([[ -f "$DICTATE_CONFIG_DIR/vocab" ]] && echo '(ok)' || echo '(missing)')"
-  echo "  models_dir:   $models_dir ($model_count models)"
+  echo "  legacy_models_dir: $models_dir ($model_count models)"
   echo "  parakeet_dir: $swift_models_dir"
   echo "  backend:      $backend_requested"
   echo "  whisperd_src: ${swift_root:-<none>} $([[ -n "$swift_root" && -f "$swift_root/Package.swift" ]] && echo '(ok)' || echo '(missing)')"
@@ -125,16 +142,18 @@ debug() {
   cfg_schema_status="$(config_schema_status)"
   cfg_schema_version="$(config_schema_version_label)"
   echo "  meta.config_version=${cfg_schema_version} (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=${cfg_schema_status})"
-  echo "  whisper.backend=${CFG_WHISPER_BACKEND:-swift_parakeet}"
-  echo "  whisper.threads=${CFG_WHISPER_THREADS:-5}"
-  echo "  whisper.beam_size=${CFG_WHISPER_BEAM_SIZE:-1}"
-  echo "  whisper.best_of=${CFG_WHISPER_BEST_OF:-1}"
-  echo "  whisper.vad=${CFG_WHISPER_VAD_ENABLED:-0}"
-  echo "  whisper.vad_model=${CFG_WHISPER_VAD_MODEL:-}"
-  echo "  whisper.vad_threshold=${CFG_WHISPER_VAD_THRESHOLD:-0.5}"
-  echo "  whisper.vad_min_speech_ms=${CFG_WHISPER_VAD_MIN_SPEECH_MS:-250}"
-  echo "  whisper.vad_min_silence_ms=${CFG_WHISPER_VAD_MIN_SILENCE_MS:-100}"
-  echo "  whisper.vad_speech_pad_ms=${CFG_WHISPER_VAD_SPEECH_PAD_MS:-30}"
+  if [[ "$show_legacy_runtime" == "1" ]]; then
+    echo "  whisper.backend=${CFG_WHISPER_BACKEND:-swift_parakeet}"
+    echo "  whisper.threads=${CFG_WHISPER_THREADS:-5}"
+    echo "  whisper.beam_size=${CFG_WHISPER_BEAM_SIZE:-1}"
+    echo "  whisper.best_of=${CFG_WHISPER_BEST_OF:-1}"
+    echo "  whisper.vad=${CFG_WHISPER_VAD_ENABLED:-0}"
+    echo "  whisper.vad_model=${CFG_WHISPER_VAD_MODEL:-}"
+    echo "  whisper.vad_threshold=${CFG_WHISPER_VAD_THRESHOLD:-0.5}"
+    echo "  whisper.vad_min_speech_ms=${CFG_WHISPER_VAD_MIN_SPEECH_MS:-250}"
+    echo "  whisper.vad_min_silence_ms=${CFG_WHISPER_VAD_MIN_SILENCE_MS:-100}"
+    echo "  whisper.vad_speech_pad_ms=${CFG_WHISPER_VAD_SPEECH_PAD_MS:-30}"
+  fi
   echo "  swift_parakeet.model_path=${CFG_SWIFT_PARAKEET_MODEL_PATH:-}"
   echo "  swift_parakeet.model_version=${CFG_SWIFT_PARAKEET_MODEL_VERSION:-}"
   echo "  swift_parakeet.socket_path=${CFG_SWIFT_PARAKEET_SOCKET_PATH:-$DICTATE_CONFIG_DIR/.cache/tmux-whisperd.sock}"
@@ -152,7 +171,9 @@ debug() {
   echo "  tmux.postprocess=${CFG_TMUX_POSTPROCESS:-0}"
   echo "  tmux.process_sound=${CFG_TMUX_PROCESS_SOUND:-0}"
   echo "  tmux.mode=${CFG_TMUX_MODE:-code}"
-  echo "  tmux.model=${CFG_TMUX_MODEL:-base}"
+  if [[ "$show_legacy_runtime" == "1" ]]; then
+    echo "  tmux.model=${CFG_TMUX_MODEL:-base}"
+  fi
   echo "  tmux.send_mode=${CFG_TMUX_SEND_MODE:-auto}"
   echo "  integrations.swiftbar.enabled=${CFG_SWIFTBAR_ENABLED:-1}"
   echo "  debug.keep_logs=${CFG_DEBUG_KEEP_LOGS:-0}"
@@ -203,6 +224,9 @@ doctor() {
   local issues=0
   local warnings=0
   local suggestions=()
+  local backend_requested backend_last_used
+  backend_requested="$(resolve_transcribe_backend)"
+  backend_last_used="${DICTATE_LAST_BACKEND_USED:-}"
 
   local add_suggestion
   add_suggestion() {
@@ -226,7 +250,7 @@ doctor() {
       case "$dep" in
         python3) add_suggestion "Install python3: brew install python" ;;
         ffmpeg) add_suggestion "Install ffmpeg: brew install ffmpeg" ;;
-        whisper-cli) add_suggestion "Install whisper-cli: brew install whisper-cpp" ;;
+        whisper-cli) add_suggestion "Install whisper-cli legacy fallback: brew install whisper-cpp" ;;
       esac
     fi
   }
@@ -241,14 +265,29 @@ doctor() {
       warnings=$((warnings + 1))
       case "$dep" in
         tmux) add_suggestion "Install tmux (optional, recommended): brew install tmux" ;;
+        swift) add_suggestion "Install Swift/Xcode so tmux-whisperd can be built" ;;
       esac
+    fi
+  }
+
+  local check_compat_dep
+  check_compat_dep() {
+    local dep="$1"
+    if command -v "$dep" >/dev/null 2>&1; then
+      echo "  - $dep: ok (legacy compatibility)"
+    else
+      echo "  - $dep: not installed (optional legacy compatibility)"
     fi
   }
 
   echo "Dependencies:"
   check_required_dep python3
   check_required_dep ffmpeg
-  check_required_dep whisper-cli
+  if [[ "$backend_requested" == "whisper_cpp" ]]; then
+    check_required_dep whisper-cli
+  else
+    check_compat_dep whisper-cli
+  fi
   check_optional_dep tmux
   check_optional_dep swift
   echo ""
@@ -311,8 +350,7 @@ doctor() {
     fi
   fi
   echo "  - swiftbar plugin: $swiftbar_plugin ($swiftbar_state)"
-  local backend_requested swift_root swift_binary swift_socket_path swift_model_path swift_model_version swift_models_dir
-  backend_requested="$(resolve_transcribe_backend)"
+  local swift_root swift_binary swift_socket_path swift_model_path swift_model_version swift_models_dir
   swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
   swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
   swift_socket_path="$(resolve_swift_parakeet_socket_path)"
@@ -320,8 +358,14 @@ doctor() {
   swift_model_version="$(resolve_swift_parakeet_model_version "${swift_model_path:-}")"
   swift_models_dir="$(expand_path "$DEFAULT_SWIFT_PARAKEET_MODELS_DIR")"
   echo "  - backend requested: $backend_requested"
-  echo "  - backend last used: ${DICTATE_LAST_BACKEND_USED:-<none>}"
+  echo "  - backend last used: ${backend_last_used:-<none>}"
   [[ -n "${DICTATE_LAST_BACKEND_FALLBACK_REASON:-}" ]] && echo "  - backend last fallback: ${DICTATE_LAST_BACKEND_FALLBACK_REASON}"
+  if [[ "$backend_requested" == "swift_parakeet" && "$backend_last_used" == "whisper_cpp" ]]; then
+    warnings=$((warnings + 1))
+    echo "  - backend runtime note: recent dictation used legacy whisper.cpp fallback"
+    add_suggestion "Run tmux-whisper warmup to verify the native Parakeet backend"
+    add_suggestion "Check swift_parakeet.model_path in ~/.config/dictate/config.toml"
+  fi
   if [[ "$backend_requested" == "swift_parakeet" ]]; then
     echo "  - tmux-whisperd source: ${swift_root:-missing}"
     if [[ -z "$swift_root" ]]; then
@@ -414,23 +458,37 @@ doctor() {
   fi
   echo ""
 
-  echo "Models:"
+  echo "Legacy compatibility:"
   local models_dir
   models_dir="$(expand_path "${CFG_WHISPER_MODELS_DIR:-$DEFAULT_WHISPER_MODELS_DIR}")"
   local model_count=0
+  local whisper_bin
+  whisper_bin="$(command -v whisper-cli 2>/dev/null || true)"
   if [[ -d "$models_dir" ]]; then
     model_count="$(find "$models_dir" -maxdepth 1 -type f -name 'ggml-*.bin' | wc -l | tr -d ' ')"
   fi
+  echo "  - whisper-cli: ${whisper_bin:-not installed (optional)}"
   echo "  - dir: $models_dir"
   echo "  - ggml models: $model_count"
-  if [[ "$model_count" -eq 0 ]]; then
-    warnings=$((warnings + 1))
-    echo "  - hint: whisper-cpp installs whisper-cli, but GGML models (.bin) must be downloaded separately"
-    echo "  - hint: place ggml-*.bin models in the models dir, then run: tmux-whisper model"
-    echo "  - sources:"
-    echo "      https://huggingface.co/ggerganov/whisper.cpp/tree/main"
-    echo "      https://ggml.ggerganov.com/"
-    add_suggestion "Add at least one ggml model to $models_dir (for example ggml-base.en.bin)"
+  if [[ "$backend_requested" == "whisper_cpp" ]]; then
+    echo "  - status: active by request"
+    if [[ -z "$whisper_bin" ]]; then
+      issues=$((issues + 1))
+      add_suggestion "Install whisper-cli legacy fallback: brew install whisper-cpp"
+    fi
+    if [[ "$model_count" -eq 0 ]]; then
+      issues=$((issues + 1))
+      echo "  - hint: whisper.cpp needs local GGML model files when you force the legacy backend"
+      echo "  - hint: place ggml-*.bin models in the models dir, then run: tmux-whisper model"
+      echo "  - sources:"
+      echo "      https://huggingface.co/ggerganov/whisper.cpp/tree/main"
+      echo "      https://ggml.ggerganov.com/"
+      add_suggestion "Add at least one ggml model to $models_dir (for example ggml-base.en.bin)"
+    fi
+  elif [[ -n "$whisper_bin" || "$model_count" -gt 0 || "$backend_last_used" == "whisper_cpp" ]]; then
+    echo "  - status: available for legacy fallback/testing"
+  else
+    echo "  - status: not installed (healthy for a Parakeet-first setup)"
   fi
   echo ""
 

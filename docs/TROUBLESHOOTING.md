@@ -27,36 +27,50 @@ Schema mismatch:
 
 Missing dependencies:
 
-- `python3`, `ffmpeg`, `whisper-cli` are required.
+- `python3` and `ffmpeg` are required.
+- `swift` is required when the local `tmux-whisperd` binary needs to be built or rebuilt.
+- `whisper-cli` is optional legacy compatibility only.
 - Typical Homebrew installs:
 
 ```bash
-brew install python ffmpeg whisper-cpp
+brew install python ffmpeg
 ```
 
-Missing GGML model files:
+Recent fallback to the legacy backend:
 
-- Symptom in `tmux-whisper doctor`: `ggml models: 0`
-- Symptom at runtime: `model not found: .../ggml-*.bin`
-- `whisper-cpp` installs `whisper-cli`, but model files are now a separate manual download.
+- Symptom in `tmux-whisper doctor`: `backend runtime note: recent dictation used legacy whisper.cpp fallback`
+- Symptom in `tmux-whisper status`: `backend.last_fallback: ...`
 - Fix:
-  - create the models directory if needed: `mkdir -p ~/.local/share/whisper/models`
-  - download at least one `.bin` model there:
-    - `ggml-base.en.bin` for `tmux-whisper model base`
-    - `ggml-small.en.bin` for `tmux-whisper model small`
-    - `ggml-large-v3-turbo-q5_0.bin` for `tmux-whisper model turbo`
-  - model sources:
-    - <https://huggingface.co/ggerganov/whisper.cpp/tree/main>
-    - <https://ggml.ggerganov.com/>
-  - verify with: `tmux-whisper doctor`
+  - run `tmux-whisper warmup`
+  - run `tmux-whisper debug`
+  - verify `swift_parakeet.model_path` in `~/.config/dictate/config.toml`
+  - reinstall runtime bits if needed: `./install.sh --force`
+
+If you intentionally use the legacy `whisper.cpp` backend:
+
+- Install the compatibility binary:
+
+```bash
+brew install whisper-cpp
+```
+
+- Create the models directory if needed: `mkdir -p ~/.local/share/whisper/models`
+- Download at least one `.bin` model there:
+  - `ggml-base.en.bin` for `tmux-whisper model base`
+  - `ggml-small.en.bin` for `tmux-whisper model small`
+  - `ggml-large-v3-turbo-q5_0.bin` for `tmux-whisper model turbo`
+- Model sources:
+  - <https://huggingface.co/ggerganov/whisper.cpp/tree/main>
+  - <https://ggml.ggerganov.com/>
+- Verify with: `tmux-whisper doctor`
 
 ## 3) Mode configuration issues
 
 Invalid fixed mode fallback:
 
-- Symptom: `mode.current: <name> (invalid, fallback=code)`
+- Symptom: `mode.current: <name> (invalid, fallback=auto)`
 - Fix either:
-  - reset to built-in mode: `tmux-whisper mode code`
+  - reset to auto-detect: `tmux-whisper mode auto`
   - create missing custom mode: `tmux-whisper mode create "<name>"`
 
 Invalid tmux mode fallback:
