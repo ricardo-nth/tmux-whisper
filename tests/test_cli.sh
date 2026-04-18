@@ -10,9 +10,18 @@ HOME_DIR="$TMP_ROOT/home"
 mkdir -p "$BIN_DIR" "$HOME_DIR"
 OPLOG="$TMP_ROOT/daemon-ops.log"
 
-cp "$ROOT/bin/tmux-whisper" "$BIN_DIR/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$BIN_DIR/dictate-lib.sh"
-chmod +x "$BIN_DIR/tmux-whisper" "$BIN_DIR/dictate-lib.sh"
+install_test_runtime() {
+  local dest_bin="$1"
+  mkdir -p "$dest_bin"
+  cp "$ROOT/bin/tmux-whisper" "$dest_bin/tmux-whisper"
+  cp "$ROOT/bin/dictate-lib.sh" "$dest_bin/dictate-lib.sh"
+  rm -rf "$dest_bin/tmux-whisper-lib"
+  mkdir -p "$dest_bin/tmux-whisper-lib"
+  cp -R "$ROOT/bin/tmux-whisper-lib/." "$dest_bin/tmux-whisper-lib/"
+  chmod +x "$dest_bin/tmux-whisper" "$dest_bin/dictate-lib.sh"
+}
+
+install_test_runtime "$BIN_DIR"
 
 # Ensure the default ~/.local/bin path is unavailable and fallback-to-sibling works.
 output="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= "$BIN_DIR/tmux-whisper" --help)"

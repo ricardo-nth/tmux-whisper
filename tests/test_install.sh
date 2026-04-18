@@ -29,6 +29,8 @@ install_output="$("$ROOT/install.sh" --with-sounds)"
 
 assert_exec "$HOME/.local/bin/tmux-whisper"
 assert_exec "$HOME/.local/bin/dictate-lib.sh"
+assert_file "$HOME/.local/bin/tmux-whisper-lib/history.sh"
+assert_file "$HOME/.local/bin/tmux-whisper-lib/diagnostics.sh"
 assert_file "$HOME/.config/dictate/config.toml"
 assert_file "$HOME/.config/dictate/current-mode"
 assert_file "$HOME/.config/dictate/vocab"

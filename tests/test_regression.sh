@@ -78,13 +78,22 @@ assert_file_exists() {
   echo "PASS: $name"
 }
 
+install_test_runtime() {
+  local dest_bin="$1"
+  mkdir -p "$dest_bin"
+  cp "$ROOT/bin/tmux-whisper" "$dest_bin/tmux-whisper"
+  cp "$ROOT/bin/dictate-lib.sh" "$dest_bin/dictate-lib.sh"
+  rm -rf "$dest_bin/tmux-whisper-lib"
+  mkdir -p "$dest_bin/tmux-whisper-lib"
+  cp -R "$ROOT/bin/tmux-whisper-lib/." "$dest_bin/tmux-whisper-lib/"
+  chmod +x "$dest_bin/tmux-whisper" "$dest_bin/dictate-lib.sh"
+}
+
 # --- Regression 1: install-channel detection should work for custom paths. ---
 CUSTOM_HOME="$TMP_ROOT/home-custom"
 CUSTOM_BIN="$TMP_ROOT/custom-bin"
 mkdir -p "$CUSTOM_HOME" "$CUSTOM_BIN"
-cp "$ROOT/bin/tmux-whisper" "$CUSTOM_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$CUSTOM_BIN/dictate-lib.sh"
-chmod +x "$CUSTOM_BIN/tmux-whisper" "$CUSTOM_BIN/dictate-lib.sh"
+install_test_runtime "$CUSTOM_BIN"
 CUSTOM_DICTATE_CONFIG_DIR="$CUSTOM_HOME/.config/dictate"
 CUSTOM_DICTATE_CONFIG_FILE="$CUSTOM_DICTATE_CONFIG_DIR/config.toml"
 
@@ -102,9 +111,7 @@ assert_contains "doctor_schema_ok" "$custom_doctor" "config schema: v1 (expected
 LOCAL_HOME="$TMP_ROOT/home-local"
 LOCAL_BIN="$LOCAL_HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
-cp "$ROOT/bin/tmux-whisper" "$LOCAL_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$LOCAL_BIN/dictate-lib.sh"
-chmod +x "$LOCAL_BIN/tmux-whisper" "$LOCAL_BIN/dictate-lib.sh"
+install_test_runtime "$LOCAL_BIN"
 LOCAL_DICTATE_CONFIG_DIR="$LOCAL_HOME/.config/dictate"
 LOCAL_DICTATE_CONFIG_FILE="$LOCAL_DICTATE_CONFIG_DIR/config.toml"
 
@@ -118,10 +125,8 @@ BACKEND_CFG="$BACKEND_HOME/.config/dictate"
 BACKEND_NATIVE="$BACKEND_HOME/.local/share/tmux-whisper/native/tmux-whisperd"
 BACKEND_MODEL="$BACKEND_HOME/models/parakeet-tdt-0.6b-v3-coreml"
 mkdir -p "$BACKEND_BIN" "$BACKEND_CFG" "$BACKEND_NATIVE" "$BACKEND_MODEL"
-cp "$ROOT/bin/tmux-whisper" "$BACKEND_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$BACKEND_BIN/dictate-lib.sh"
+install_test_runtime "$BACKEND_BIN"
 cp -R "$ROOT/tmux-whisperd/." "$BACKEND_NATIVE/"
-chmod +x "$BACKEND_BIN/tmux-whisper" "$BACKEND_BIN/dictate-lib.sh"
 cat >"$BACKEND_CFG/config.toml" <<EOF
 [meta]
 config_version = 1
@@ -158,9 +163,7 @@ MISMATCH_HOME="$TMP_ROOT/home-mismatch"
 MISMATCH_BIN="$MISMATCH_HOME/.local/bin"
 MISMATCH_CFG="$MISMATCH_HOME/.config/dictate"
 mkdir -p "$MISMATCH_BIN" "$MISMATCH_CFG"
-cp "$ROOT/bin/tmux-whisper" "$MISMATCH_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$MISMATCH_BIN/dictate-lib.sh"
-chmod +x "$MISMATCH_BIN/tmux-whisper" "$MISMATCH_BIN/dictate-lib.sh"
+install_test_runtime "$MISMATCH_BIN"
 cat >"$MISMATCH_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 0
@@ -179,9 +182,7 @@ MODECHECK_HOME="$TMP_ROOT/home-modecheck"
 MODECHECK_BIN="$MODECHECK_HOME/.local/bin"
 MODECHECK_CFG="$MODECHECK_HOME/.config/dictate"
 mkdir -p "$MODECHECK_BIN" "$MODECHECK_CFG/modes/code" "$MODECHECK_CFG/modes/long"
-cp "$ROOT/bin/tmux-whisper" "$MODECHECK_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$MODECHECK_BIN/dictate-lib.sh"
-chmod +x "$MODECHECK_BIN/tmux-whisper" "$MODECHECK_BIN/dictate-lib.sh"
+install_test_runtime "$MODECHECK_BIN"
 cat >"$MODECHECK_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 1
@@ -207,9 +208,7 @@ MODEAUTO_HOME="$TMP_ROOT/home-modeauto"
 MODEAUTO_BIN="$MODEAUTO_HOME/.local/bin"
 MODEAUTO_CFG="$MODEAUTO_HOME/.config/dictate"
 mkdir -p "$MODEAUTO_BIN" "$MODEAUTO_CFG/modes/base" "$MODEAUTO_CFG/modes/chat" "$MODEAUTO_CFG/modes/code"
-cp "$ROOT/bin/tmux-whisper" "$MODEAUTO_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$MODEAUTO_BIN/dictate-lib.sh"
-chmod +x "$MODEAUTO_BIN/tmux-whisper" "$MODEAUTO_BIN/dictate-lib.sh"
+install_test_runtime "$MODEAUTO_BIN"
 cat >"$MODEAUTO_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 1
@@ -282,9 +281,7 @@ SWIFTBAR_TOGGLE_HOME="$TMP_ROOT/home-swiftbar-toggle"
 SWIFTBAR_TOGGLE_BIN="$SWIFTBAR_TOGGLE_HOME/.local/bin"
 SWIFTBAR_TOGGLE_CFG="$SWIFTBAR_TOGGLE_HOME/.config/dictate"
 mkdir -p "$SWIFTBAR_TOGGLE_BIN" "$SWIFTBAR_TOGGLE_CFG"
-cp "$ROOT/bin/tmux-whisper" "$SWIFTBAR_TOGGLE_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$SWIFTBAR_TOGGLE_BIN/dictate-lib.sh"
-chmod +x "$SWIFTBAR_TOGGLE_BIN/tmux-whisper" "$SWIFTBAR_TOGGLE_BIN/dictate-lib.sh"
+install_test_runtime "$SWIFTBAR_TOGGLE_BIN"
 cat >"$SWIFTBAR_TOGGLE_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 1
@@ -314,9 +311,7 @@ SWIFTBAR_MODES_HOME="$TMP_ROOT/home-swiftbar-modes"
 SWIFTBAR_MODES_BIN="$SWIFTBAR_MODES_HOME/.local/bin"
 SWIFTBAR_MODES_CFG="$SWIFTBAR_MODES_HOME/.config/dictate"
 mkdir -p "$SWIFTBAR_MODES_BIN" "$SWIFTBAR_MODES_CFG/modes/base" "$SWIFTBAR_MODES_CFG/modes/code" "$SWIFTBAR_MODES_CFG/modes/email" "$SWIFTBAR_MODES_CFG/modes/long"
-cp "$ROOT/bin/tmux-whisper" "$SWIFTBAR_MODES_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
-chmod +x "$SWIFTBAR_MODES_BIN/tmux-whisper" "$SWIFTBAR_MODES_BIN/dictate-lib.sh"
+install_test_runtime "$SWIFTBAR_MODES_BIN"
 cat >"$SWIFTBAR_MODES_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 1
@@ -365,9 +360,7 @@ BUDGET_BIN="$BUDGET_HOME/.local/bin"
 BUDGET_CFG="$BUDGET_HOME/.config/dictate"
 BUDGET_STUBS="$TMP_ROOT/budget-stubs"
 mkdir -p "$BUDGET_BIN" "$BUDGET_CFG/modes/code" "$BUDGET_CFG/modes/long" "$BUDGET_STUBS"
-cp "$ROOT/bin/tmux-whisper" "$BUDGET_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$BUDGET_BIN/dictate-lib.sh"
-chmod +x "$BUDGET_BIN/tmux-whisper" "$BUDGET_BIN/dictate-lib.sh"
+install_test_runtime "$BUDGET_BIN"
 cat >"$BUDGET_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 1
@@ -486,9 +479,7 @@ HISTOBS_BIN="$HISTOBS_HOME/.local/bin"
 HISTOBS_CFG="$HISTOBS_HOME/.config/dictate"
 HISTOBS_HISTORY="$HISTOBS_CFG/history"
 mkdir -p "$HISTOBS_BIN" "$HISTOBS_HISTORY"
-cp "$ROOT/bin/tmux-whisper" "$HISTOBS_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$HISTOBS_BIN/dictate-lib.sh"
-chmod +x "$HISTOBS_BIN/tmux-whisper" "$HISTOBS_BIN/dictate-lib.sh"
+install_test_runtime "$HISTOBS_BIN"
 cat >"$HISTOBS_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 1
@@ -557,9 +548,7 @@ VOCAB_HOME="$TMP_ROOT/home-vocab"
 VOCAB_BIN="$VOCAB_HOME/.local/bin"
 VOCAB_CFG="$VOCAB_HOME/.config/dictate"
 mkdir -p "$VOCAB_BIN" "$VOCAB_CFG"
-cp "$ROOT/bin/tmux-whisper" "$VOCAB_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$VOCAB_BIN/dictate-lib.sh"
-chmod +x "$VOCAB_BIN/tmux-whisper" "$VOCAB_BIN/dictate-lib.sh"
+install_test_runtime "$VOCAB_BIN"
 
 IMPORT_FILE="$TMP_ROOT/vocab-import.txt"
 cat >"$IMPORT_FILE" <<'EOF'
@@ -590,9 +579,7 @@ BENCH_HOME="$TMP_ROOT/home-bench"
 BENCH_BIN="$BENCH_HOME/.local/bin"
 BENCH_CFG="$BENCH_HOME/.config/dictate"
 mkdir -p "$BENCH_BIN" "$BENCH_CFG"
-cp "$ROOT/bin/tmux-whisper" "$BENCH_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$BENCH_BIN/dictate-lib.sh"
-chmod +x "$BENCH_BIN/tmux-whisper" "$BENCH_BIN/dictate-lib.sh"
+install_test_runtime "$BENCH_BIN"
 
 bench_bad_n_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" CEREBRAS_API_KEY= tmux-whisper bench-matrix nope 2>&1 || true)"
 assert_contains "bench_matrix_invalid_n_usage" "$bench_bad_n_out" "usage: tmux-whisper bench-matrix [N] [phrase_file]"
@@ -628,9 +615,7 @@ AUDIOCACHE_BIN="$AUDIOCACHE_HOME/.local/bin"
 AUDIOCACHE_CFG="$AUDIOCACHE_HOME/.config/dictate"
 AUDIOCACHE_CACHE="$AUDIOCACHE_CFG/.cache"
 mkdir -p "$AUDIOCACHE_BIN" "$AUDIOCACHE_CFG" "$AUDIOCACHE_CACHE"
-cp "$ROOT/bin/tmux-whisper" "$AUDIOCACHE_BIN/tmux-whisper"
-cp "$ROOT/bin/dictate-lib.sh" "$AUDIOCACHE_BIN/dictate-lib.sh"
-chmod +x "$AUDIOCACHE_BIN/tmux-whisper" "$AUDIOCACHE_BIN/dictate-lib.sh"
+install_test_runtime "$AUDIOCACHE_BIN"
 cat >"$AUDIOCACHE_CFG/config.toml" <<'EOF'
 [meta]
 config_version = 1
