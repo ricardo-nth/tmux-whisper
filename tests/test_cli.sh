@@ -38,6 +38,10 @@ if [[ "$output" != *"DICTATE_TRANSCRIBE_TAIL_PAD_MS=500"* ]]; then
   echo "Expected help output to document transcription tail padding" >&2
   exit 1
 fi
+if [[ "$output" != *"tmux-whisper last [--json]"* ]]; then
+  echo "Expected help output to document the last command" >&2
+  exit 1
+fi
 
 MODEL_DIR="$TMP_ROOT/parakeet-tdt-0.6b-v3-coreml"
 CONFIG_DIR="$HOME_DIR/.config/dictate"

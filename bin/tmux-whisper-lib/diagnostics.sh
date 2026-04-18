@@ -15,18 +15,334 @@ detect_install_channel() {
   esac
 }
 
+resolve_running_tmux_whisper_bin() {
+  local candidate="${DICTATE_BIN:-$0}"
+  if [[ -n "$candidate" && "$candidate" == */* ]]; then
+    local dir base
+    dir="$(cd "$(dirname "$candidate")" 2>/dev/null && pwd)"
+    base="$(basename "$candidate")"
+    if [[ -n "$dir" && -e "$dir/$base" ]]; then
+      printf '%s/%s\n' "$dir" "$base"
+      return 0
+    fi
+  fi
+  command -v tmux-whisper 2>/dev/null || true
+}
+
+file_age_seconds() {
+  local f="${1:-}"
+  [[ -f "$f" ]] || { echo "-"; return 0; }
+  local now mtime
+  now="$(date +%s)"
+  mtime="$(stat -f %m "$f" 2>/dev/null || true)"
+  [[ "$mtime" =~ ^[0-9]+$ ]] || mtime="$(stat -c %Y "$f" 2>/dev/null || true)"
+  [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
+  if [[ "$mtime" -le 0 ]]; then
+    echo "?"
+    return 0
+  fi
+  echo $((now - mtime))
+}
+
+collect_set_env_overrides() {
+  local var val
+  for var in "$@"; do
+    val="${!var-}"
+    [[ -n "$val" ]] || continue
+    if [[ "$var" == "CEREBRAS_API_KEY" ]]; then
+      printf '%s\t%s\n' "$var" "<set>"
+    else
+      printf '%s\t%s\n' "$var" "$val"
+    fi
+  done
+}
+
+state_file_summary_tsv() {
+  local label="${1:-}"
+  local file="${2:-}"
+  [[ -n "$label" && -n "$file" ]] || return 1
+
+  if [[ ! -f "$file" ]]; then
+    printf 'idle\t\t\t\t\t\t\n'
+    return 0
+  fi
+
+  local st_pid st_target st_app st_model st_lang st_age st_display st_state
+  st_pid="$( ( source "$file" 2>/dev/null || true; printf "%s" "${pid:-}" ) 2>/dev/null || true)"
+  st_target="$( ( source "$file" 2>/dev/null || true; printf "%s" "${target_pane:-}" ) 2>/dev/null || true)"
+  st_app="$( ( source "$file" 2>/dev/null || true; printf "%s" "${target_app:-}" ) 2>/dev/null || true)"
+  st_model="$( ( source "$file" 2>/dev/null || true; printf "%s" "${model_id:-}" ) 2>/dev/null || true)"
+  st_lang="$( ( source "$file" 2>/dev/null || true; printf "%s" "${language:-}" ) 2>/dev/null || true)"
+  st_age="$(file_age_seconds "$file")"
+
+  if [[ "$label" == "tmux" ]]; then
+    st_display="$st_target"
+    [[ -n "$st_target" ]] && st_display="$(tmux_describe_pane "$st_target")"
+  else
+    st_display="${st_app:-n/a}"
+  fi
+
+  if [[ -n "$st_pid" ]] && kill -0 "$st_pid" 2>/dev/null; then
+    st_state="active"
+  else
+    st_state="stale"
+  fi
+
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$st_state" "$st_pid" "$st_age" "$st_display" "$st_model" "$st_lang" "${st_target:-$st_app}"
+}
+
 debug() {
-  echo "Tmux Whisper debug"
-  echo ""
+  local output_format="text"
+  if [[ "${1:-}" == "--json" ]]; then
+    output_format="json"
+  fi
 
   load_backend_runtime_cache >/dev/null 2>&1 || true
 
   local dictate_bin ffmpeg_bin python_bin swift_bin install_channel
-  dictate_bin="$(command -v tmux-whisper 2>/dev/null || true)"
+  dictate_bin="$(resolve_running_tmux_whisper_bin)"
   ffmpeg_bin="$(command -v ffmpeg 2>/dev/null || true)"
   python_bin="$(command -v python3 2>/dev/null || true)"
   swift_bin="$(command -v swift 2>/dev/null || true)"
   install_channel="$(detect_install_channel "$dictate_bin")"
+
+  local backend_requested swift_model_path swift_model_version swift_socket_path swift_root swift_binary swift_models_dir
+  swift_models_dir="$(expand_path "$DEFAULT_SWIFT_PARAKEET_MODELS_DIR")"
+  backend_requested="$(resolve_transcribe_backend)"
+  swift_model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
+  swift_model_version="$(resolve_swift_parakeet_model_version "${swift_model_path:-}")"
+  swift_socket_path="$(resolve_swift_parakeet_socket_path)"
+  swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
+  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
+  local cfg_schema_status cfg_schema_version
+  cfg_schema_status="$(config_schema_status)"
+  cfg_schema_version="$(config_schema_version_label)"
+
+  local src="(none)"
+  local idx="${DICTATE_AUDIO_INDEX:-}"
+  if [[ -n "$idx" ]]; then
+    src="env:DICTATE_AUDIO_INDEX"
+  elif [[ -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
+    idx="$CFG_AUDIO_DEVICE_INDEX"
+    src="config:audio.device_index"
+  else
+    if [[ -n "$ffmpeg_bin" && -n "$python_bin" ]]; then
+      local detect_meta detect_src
+      detect_meta="$(detect_audio_index 2>/dev/null || true)"
+      IFS=$'\t' read -r idx detect_src _ <<<"$detect_meta"
+      if [[ -n "$idx" ]]; then
+        src="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
+      fi
+    else
+      src="detect skipped (missing ffmpeg/python3)"
+    fi
+  fi
+
+  local env_override_lines ffmpeg_devices_output
+  env_override_lines="$(collect_set_env_overrides \
+    DICTATE_AUDIO_SOURCE DICTATE_AUDIO_INDEX DICTATE_AUDIO_NAME \
+    DICTATE_SILENCE_TRIM DICTATE_TRIM_WITH_POSTPROCESS \
+    DICTATE_REPEATS_LEVEL DICTATE_REPEATS_WITH_POSTPROCESS \
+    DICTATE_POSTPROCESS DICTATE_VOCAB_CLEAN DICTATE_TMUX_POSTPROCESS \
+    DICTATE_TMUX_AUTOSEND DICTATE_TMUX_PASTE_TARGET DICTATE_TMUX_SEND_MODE \
+    DICTATE_TMUX_SEND_DELAY_MS DICTATE_TMUX_CODEX_TAB_DELAY_MS \
+    DICTATE_INLINE_PROCESS_SOUND DICTATE_INLINE_PASTE_TARGET \
+    DICTATE_INLINE_ACTIVATE_DELAY_MS DICTATE_INLINE_SEND_DELAY_MS \
+    DICTATE_INLINE_SEND_MODE DICTATE_TMUX_PROCESS_SOUND DICTATE_TMUX_MODE \
+    DICTATE_SWIFT_PARAKEET_MODEL_PATH DICTATE_SWIFT_PARAKEET_MODEL_VERSION \
+    DICTATE_SWIFT_PARAKEET_SOCKET_PATH DICTATE_LLM_MAX_TOKENS \
+    DICTATE_LLM_CHUNK_WORDS DICTATE_BRITISH_SPELLING DICTATE_KEEP_LOGS \
+    DICTATE_TARGET_APP DICTATE_TARGET_PANE
+  )"
+  if [[ -n "$ffmpeg_bin" ]]; then
+    ffmpeg_devices_output="$(devices 2>/dev/null || true)"
+  else
+    ffmpeg_devices_output=""
+  fi
+
+  if [[ "$output_format" == "json" ]]; then
+    env \
+      JSON_DICTATE_BIN="$dictate_bin" \
+      JSON_FFMPEG_BIN="$ffmpeg_bin" \
+      JSON_PYTHON_BIN="$python_bin" \
+      JSON_SWIFT_BIN="$swift_bin" \
+      JSON_INSTALL_CHANNEL="$install_channel" \
+      JSON_LIB_PATH="$DICTATE_LIB_PATH" \
+      JSON_INTERNAL_LIB_DIR="$DICTATE_INTERNAL_LIB_DIR" \
+      JSON_CONFIG_DIR="$DICTATE_CONFIG_DIR" \
+      JSON_CONFIG_FILE="$DICTATE_CONFIG_FILE" \
+      JSON_MODES_DIR="$DICTATE_CONFIG_DIR/modes" \
+      JSON_VOCAB_FILE="$DICTATE_CONFIG_DIR/vocab" \
+      JSON_PARAKEET_DIR="$swift_models_dir" \
+      JSON_BACKEND="$backend_requested" \
+      JSON_WHISPERD_SRC="$swift_root" \
+      JSON_WHISPERD_BIN="$swift_binary" \
+      JSON_WHISPERD_SOCKET="$swift_socket_path" \
+      JSON_PARAKEET_MODEL="$swift_model_path" \
+      JSON_PARAKEET_MODEL_VERSION="$swift_model_version" \
+      JSON_RAYCAST_DIR="$DICTATE_CONFIG_DIR/integrations/raycast" \
+      JSON_SWIFTBAR_PLUGIN="$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh" \
+      JSON_BACKEND_MODEL="${DICTATE_LAST_BACKEND_MODEL:-$(current_transcribe_model_label)}" \
+      JSON_ENV_OVERRIDES="$env_override_lines" \
+      JSON_CFG_AUDIO_SOURCE="${CFG_AUDIO_SOURCE:-auto}" \
+      JSON_CFG_AUDIO_DEVICE_NAME="${CFG_AUDIO_DEVICE_NAME:-}" \
+      JSON_CFG_AUDIO_MAC_NAME="${CFG_AUDIO_MAC_NAME:-}" \
+      JSON_CFG_AUDIO_IPHONE_NAME="${CFG_AUDIO_IPHONE_NAME:-}" \
+      JSON_CFG_AUDIO_DEVICE_INDEX="${CFG_AUDIO_DEVICE_INDEX:-}" \
+      JSON_CFG_AUDIO_SILENCE_TRIM="${CFG_AUDIO_SILENCE_TRIM:-0}" \
+      JSON_CFG_AUDIO_SILENCE_TRIM_MODE="${CFG_AUDIO_SILENCE_TRIM_MODE:-edges}" \
+      JSON_CFG_AUDIO_SILENCE_THRESHOLD_DB="${CFG_AUDIO_SILENCE_THRESHOLD_DB:--60}" \
+      JSON_CFG_AUDIO_SILENCE_MIN_MS="${CFG_AUDIO_SILENCE_MIN_MS:-250}" \
+      JSON_CFG_AUDIO_SILENCE_KEEP_MS="${CFG_AUDIO_SILENCE_KEEP_MS:-50}" \
+      JSON_CFG_CLEAN_REPEATS_LEVEL="${CFG_CLEAN_REPEATS_LEVEL:-1}" \
+      JSON_CFG_SCHEMA_VERSION="$cfg_schema_version" \
+      JSON_CFG_SCHEMA_STATUS="$cfg_schema_status" \
+      JSON_CFG_SCHEMA_EXPECTED="$DICTATE_CONFIG_SCHEMA_VERSION" \
+      JSON_CFG_SWIFT_MODEL_PATH="${CFG_SWIFT_PARAKEET_MODEL_PATH:-}" \
+      JSON_CFG_SWIFT_MODEL_VERSION="${CFG_SWIFT_PARAKEET_MODEL_VERSION:-}" \
+      JSON_CFG_SWIFT_SOCKET_PATH="${CFG_SWIFT_PARAKEET_SOCKET_PATH:-$DICTATE_CONFIG_DIR/.cache/tmux-whisperd.sock}" \
+      JSON_CFG_POSTPROCESS_ENABLED="${CFG_POSTPROCESS_ENABLED:-0}" \
+      JSON_CFG_POSTPROCESS_LLM="${CFG_POSTPROCESS_LLM:-}" \
+      JSON_CFG_POSTPROCESS_MAX_TOKENS="${CFG_POSTPROCESS_MAX_TOKENS:-}" \
+      JSON_CFG_POSTPROCESS_CHUNK_WORDS="${CFG_POSTPROCESS_CHUNK_WORDS:-}" \
+      JSON_CFG_POSTPROCESS_BUDGET_THRESHOLD="${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}" \
+      JSON_CFG_INLINE_AUTOSEND="${CFG_INLINE_AUTOSEND:-1}" \
+      JSON_CFG_INLINE_PROCESS_SOUND="${CFG_INLINE_PROCESS_SOUND:-1}" \
+      JSON_CFG_INLINE_PASTE_TARGET="$(inline_paste_target_label "${CFG_INLINE_PASTE_TARGET:-restore}")" \
+      JSON_CFG_INLINE_SEND_MODE="$(inline_send_mode_label "${CFG_INLINE_SEND_MODE:-enter}")" \
+      JSON_CFG_TMUX_AUTOSEND="${CFG_TMUX_AUTOSEND:-1}" \
+      JSON_CFG_TMUX_PASTE_TARGET="${CFG_TMUX_PASTE_TARGET:-origin}" \
+      JSON_CFG_TMUX_POSTPROCESS="${CFG_TMUX_POSTPROCESS:-0}" \
+      JSON_CFG_TMUX_PROCESS_SOUND="${CFG_TMUX_PROCESS_SOUND:-0}" \
+      JSON_CFG_TMUX_MODE="${CFG_TMUX_MODE:-code}" \
+      JSON_CFG_TMUX_SEND_MODE="${CFG_TMUX_SEND_MODE:-auto}" \
+      JSON_CFG_SWIFTBAR_ENABLED="${CFG_SWIFTBAR_ENABLED:-1}" \
+      JSON_CFG_DEBUG_KEEP_LOGS="${CFG_DEBUG_KEEP_LOGS:-0}" \
+      JSON_AUDIO_INDEX="$idx" \
+      JSON_AUDIO_SOURCE_RESOLVED="$src" \
+      JSON_FFMPEG_DEVICES="$ffmpeg_devices_output" \
+      python3 - <<'PYEOF'
+import json
+import os
+
+def s(name: str) -> str:
+    return os.environ.get(name, "")
+
+def maybe(name: str):
+    value = s(name)
+    return value if value else None
+
+def to_int(name: str):
+    value = s(name)
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+def to_bool_flag(name: str) -> bool:
+    return s(name) == "1"
+
+overrides = {}
+for line in s("JSON_ENV_OVERRIDES").splitlines():
+    if not line:
+        continue
+    key, value = line.split("\t", 1)
+    overrides[key] = value
+
+data = {
+    "command": "debug",
+    "binaries": {
+        "tmux_whisper": {"path": maybe("JSON_DICTATE_BIN"), "found": maybe("JSON_DICTATE_BIN") is not None},
+        "ffmpeg": {"path": maybe("JSON_FFMPEG_BIN"), "found": maybe("JSON_FFMPEG_BIN") is not None},
+        "python3": {"path": maybe("JSON_PYTHON_BIN"), "found": maybe("JSON_PYTHON_BIN") is not None},
+        "swift": {"path": maybe("JSON_SWIFT_BIN"), "found": maybe("JSON_SWIFT_BIN") is not None},
+        "channel": s("JSON_INSTALL_CHANNEL"),
+        "shared_lib": {"path": s("JSON_LIB_PATH"), "ok": os.path.isfile(s("JSON_LIB_PATH"))},
+        "internal_lib": {"path": s("JSON_INTERNAL_LIB_DIR"), "ok": os.path.isdir(s("JSON_INTERNAL_LIB_DIR"))},
+    },
+    "paths": {
+        "config_dir": {"path": s("JSON_CONFIG_DIR"), "ok": os.path.isdir(s("JSON_CONFIG_DIR"))},
+        "config_file": {"path": s("JSON_CONFIG_FILE"), "ok": os.path.isfile(s("JSON_CONFIG_FILE"))},
+        "modes_dir": {"path": s("JSON_MODES_DIR"), "ok": os.path.isdir(s("JSON_MODES_DIR"))},
+        "vocab_file": {"path": s("JSON_VOCAB_FILE"), "ok": os.path.isfile(s("JSON_VOCAB_FILE"))},
+        "parakeet_dir": {"path": s("JSON_PARAKEET_DIR"), "ok": os.path.isdir(s("JSON_PARAKEET_DIR"))},
+        "backend": s("JSON_BACKEND"),
+        "whisperd_src": {"path": maybe("JSON_WHISPERD_SRC"), "ok": bool(s("JSON_WHISPERD_SRC")) and os.path.isfile(os.path.join(s("JSON_WHISPERD_SRC"), "Package.swift"))},
+        "whisperd_bin": {"path": maybe("JSON_WHISPERD_BIN"), "ok": bool(s("JSON_WHISPERD_BIN")) and os.path.isfile(s("JSON_WHISPERD_BIN")) and os.access(s("JSON_WHISPERD_BIN"), os.X_OK)},
+        "whisperd_socket": {"path": maybe("JSON_WHISPERD_SOCKET"), "live": bool(s("JSON_WHISPERD_SOCKET")) and os.path.exists(s("JSON_WHISPERD_SOCKET"))},
+        "parakeet_model": {"path": maybe("JSON_PARAKEET_MODEL"), "ok": bool(s("JSON_PARAKEET_MODEL")) and os.path.isdir(s("JSON_PARAKEET_MODEL")), "version": maybe("JSON_PARAKEET_MODEL_VERSION")},
+        "raycast_dir": {"path": s("JSON_RAYCAST_DIR"), "ok": os.path.isdir(s("JSON_RAYCAST_DIR"))},
+        "swiftbar_plugin": {"path": s("JSON_SWIFTBAR_PLUGIN"), "ok": os.path.isfile(s("JSON_SWIFTBAR_PLUGIN"))},
+        "backend_model": maybe("JSON_BACKEND_MODEL"),
+    },
+    "env_overrides": overrides,
+    "config": {
+        "audio": {
+            "source": s("JSON_CFG_AUDIO_SOURCE"),
+            "device_name": maybe("JSON_CFG_AUDIO_DEVICE_NAME"),
+            "mac_name": maybe("JSON_CFG_AUDIO_MAC_NAME"),
+            "iphone_name": maybe("JSON_CFG_AUDIO_IPHONE_NAME"),
+            "device_index": to_int("JSON_CFG_AUDIO_DEVICE_INDEX"),
+            "silence_trim": to_bool_flag("JSON_CFG_AUDIO_SILENCE_TRIM"),
+            "silence_trim_mode": s("JSON_CFG_AUDIO_SILENCE_TRIM_MODE"),
+            "silence_threshold_db": to_int("JSON_CFG_AUDIO_SILENCE_THRESHOLD_DB"),
+            "silence_min_ms": to_int("JSON_CFG_AUDIO_SILENCE_MIN_MS"),
+            "silence_keep_ms": to_int("JSON_CFG_AUDIO_SILENCE_KEEP_MS"),
+        },
+        "clean": {"repeats_level": to_int("JSON_CFG_CLEAN_REPEATS_LEVEL")},
+        "meta": {
+            "config_version": s("JSON_CFG_SCHEMA_VERSION"),
+            "expected_version": f"v{s('JSON_CFG_SCHEMA_EXPECTED')}",
+            "schema_status": s("JSON_CFG_SCHEMA_STATUS"),
+        },
+        "backend": "swift_parakeet",
+        "swift_parakeet": {
+            "model_path": maybe("JSON_CFG_SWIFT_MODEL_PATH"),
+            "model_version": maybe("JSON_CFG_SWIFT_MODEL_VERSION"),
+            "socket_path": maybe("JSON_CFG_SWIFT_SOCKET_PATH"),
+        },
+        "postprocess": {
+            "enabled": to_bool_flag("JSON_CFG_POSTPROCESS_ENABLED"),
+            "llm": maybe("JSON_CFG_POSTPROCESS_LLM"),
+            "max_tokens": to_int("JSON_CFG_POSTPROCESS_MAX_TOKENS"),
+            "chunk_words": to_int("JSON_CFG_POSTPROCESS_CHUNK_WORDS"),
+            "budget_long_words_threshold": to_int("JSON_CFG_POSTPROCESS_BUDGET_THRESHOLD"),
+        },
+        "inline": {
+            "autosend": to_bool_flag("JSON_CFG_INLINE_AUTOSEND"),
+            "process_sound": to_bool_flag("JSON_CFG_INLINE_PROCESS_SOUND"),
+            "paste_target": maybe("JSON_CFG_INLINE_PASTE_TARGET"),
+            "send_mode": maybe("JSON_CFG_INLINE_SEND_MODE"),
+        },
+        "tmux": {
+            "autosend": to_bool_flag("JSON_CFG_TMUX_AUTOSEND"),
+            "paste_target": maybe("JSON_CFG_TMUX_PASTE_TARGET"),
+            "postprocess": to_bool_flag("JSON_CFG_TMUX_POSTPROCESS"),
+            "process_sound": to_bool_flag("JSON_CFG_TMUX_PROCESS_SOUND"),
+            "mode": maybe("JSON_CFG_TMUX_MODE"),
+            "send_mode": maybe("JSON_CFG_TMUX_SEND_MODE"),
+        },
+        "integrations": {"swiftbar_enabled": to_bool_flag("JSON_CFG_SWIFTBAR_ENABLED")},
+        "debug": {"keep_logs": to_bool_flag("JSON_CFG_DEBUG_KEEP_LOGS")},
+    },
+    "audio_resolution": {
+        "index": to_int("JSON_AUDIO_INDEX"),
+        "source": maybe("JSON_AUDIO_SOURCE_RESOLVED"),
+    },
+    "ffmpeg_devices": maybe("JSON_FFMPEG_DEVICES"),
+    "tips": ([] if maybe("JSON_AUDIO_INDEX") is not None else [
+        "If microphone device enumeration fails, grant Microphone permission to the launching app in System Settings -> Privacy & Security -> Microphone."
+    ]),
+}
+
+print(json.dumps(data, indent=2, sort_keys=True))
+PYEOF
+    return
+  fi
+
+  echo "Tmux Whisper debug"
+  echo ""
 
   echo "Binaries:"
   echo "  tmux-whisper: ${dictate_bin:-'(not found)'}"
@@ -37,15 +353,6 @@ debug() {
   echo "  lib:     $DICTATE_LIB_PATH $([[ -r "$DICTATE_LIB_PATH" ]] && echo '(ok)' || echo '(missing)')"
   echo "  internal_lib: $DICTATE_INTERNAL_LIB_DIR $([[ -d "$DICTATE_INTERNAL_LIB_DIR" ]] && echo '(ok)' || echo '(missing)')"
   echo ""
-
-  local backend_requested swift_model_path swift_model_version swift_socket_path swift_root swift_binary swift_models_dir
-  swift_models_dir="$(expand_path "$DEFAULT_SWIFT_PARAKEET_MODELS_DIR")"
-  backend_requested="$(resolve_transcribe_backend)"
-  swift_model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
-  swift_model_version="$(resolve_swift_parakeet_model_version "${swift_model_path:-}")"
-  swift_socket_path="$(resolve_swift_parakeet_socket_path)"
-  swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
-  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
 
   echo "Paths:"
   echo "  config_dir:   $DICTATE_CONFIG_DIR $([[ -d "$DICTATE_CONFIG_DIR" ]] && echo '(ok)' || echo '(missing)')"
@@ -109,9 +416,6 @@ debug() {
   echo "  audio.silence_min_ms=${CFG_AUDIO_SILENCE_MIN_MS:-250}"
   echo "  audio.silence_keep_ms=${CFG_AUDIO_SILENCE_KEEP_MS:-50}"
   echo "  clean.repeats_level=${CFG_CLEAN_REPEATS_LEVEL:-1}"
-  local cfg_schema_status cfg_schema_version
-  cfg_schema_status="$(config_schema_status)"
-  cfg_schema_version="$(config_schema_version_label)"
   echo "  meta.config_version=${cfg_schema_version} (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=${cfg_schema_status})"
   echo "  backend=swift_parakeet"
   echo "  swift_parakeet.model_path=${CFG_SWIFT_PARAKEET_MODEL_PATH:-}"
@@ -138,31 +442,11 @@ debug() {
 
   echo "ffmpeg devices (trimmed):"
   if [[ -n "$ffmpeg_bin" ]]; then
-    devices
+    printf '%s\n' "$ffmpeg_devices_output"
   else
     echo "  ffmpeg not found; skipping device enumeration."
   fi
   echo ""
-
-  local src="(none)"
-  local idx="${DICTATE_AUDIO_INDEX:-}"
-  if [[ -n "$idx" ]]; then
-    src="env:DICTATE_AUDIO_INDEX"
-  elif [[ -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
-    idx="$CFG_AUDIO_DEVICE_INDEX"
-    src="config:audio.device_index"
-  else
-    if [[ -n "$ffmpeg_bin" && -n "$python_bin" ]]; then
-      local detect_meta detect_src
-      detect_meta="$(detect_audio_index 2>/dev/null || true)"
-      IFS=$'\t' read -r idx detect_src _ <<<"$detect_meta"
-      if [[ -n "$idx" ]]; then
-        src="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
-      fi
-    else
-      src="detect skipped (missing ffmpeg/python3)"
-    fi
-  fi
 
   echo "Resolved audio index: ${idx:-<none>} (source: $src)"
   if [[ -z "$idx" ]]; then
@@ -172,7 +456,521 @@ debug() {
   fi
 }
 
+doctor_json() {
+  load_backend_runtime_cache >/dev/null 2>&1 || true
+
+  local issues=0
+  local warnings=0
+  local suggestions=()
+
+  doctor_json_add_suggestion() {
+    local suggestion="${1:-}"
+    [[ -n "$suggestion" ]] || return 0
+    local existing
+    for existing in "${suggestions[@]-}"; do
+      [[ "$existing" == "$suggestion" ]] && return 0
+    done
+    suggestions+=("$suggestion")
+  }
+
+  local dependency_lines=""
+  local dep_path=""
+  dep_path="$(command -v python3 2>/dev/null || true)"
+  if [[ -n "$dep_path" ]]; then
+    dependency_lines="${dependency_lines}python3	required	ok	${dep_path}"$'\n'
+  else
+    dependency_lines="${dependency_lines}python3	required	missing	"$'\n'
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Install python3: brew install python"
+  fi
+  dep_path="$(command -v ffmpeg 2>/dev/null || true)"
+  if [[ -n "$dep_path" ]]; then
+    dependency_lines="${dependency_lines}ffmpeg	required	ok	${dep_path}"$'\n'
+  else
+    dependency_lines="${dependency_lines}ffmpeg	required	missing	"$'\n'
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Install ffmpeg: brew install ffmpeg"
+  fi
+  dep_path="$(command -v tmux 2>/dev/null || true)"
+  if [[ -n "$dep_path" ]]; then
+    dependency_lines="${dependency_lines}tmux	optional	ok	${dep_path}"$'\n'
+  else
+    dependency_lines="${dependency_lines}tmux	optional	missing	"$'\n'
+    warnings=$((warnings + 1))
+    doctor_json_add_suggestion "Install tmux (optional, recommended): brew install tmux"
+  fi
+  dep_path="$(command -v swift 2>/dev/null || true)"
+  if [[ -n "$dep_path" ]]; then
+    dependency_lines="${dependency_lines}swift	optional	ok	${dep_path}"$'\n'
+  else
+    dependency_lines="${dependency_lines}swift	optional	missing	"$'\n'
+    warnings=$((warnings + 1))
+    doctor_json_add_suggestion "Install Swift/Xcode so tmux-whisperd can be built"
+  fi
+
+  local dictate_bin install_channel
+  dictate_bin="$(resolve_running_tmux_whisper_bin)"
+  install_channel="$(detect_install_channel "$dictate_bin")"
+  [[ -n "$dictate_bin" ]] || {
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Install Tmux Whisper from this repo: ./install.sh --force"
+  }
+
+  local shared_lib_ok="0" internal_lib_ok="0" config_file_ok="0" raycast_inline_ok="0"
+  [[ -r "$DICTATE_LIB_PATH" ]] && shared_lib_ok="1"
+  if [[ "$shared_lib_ok" != "1" ]]; then
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Repair Tmux Whisper install: ./install.sh --force"
+  fi
+  if [[ -r "$DICTATE_INTERNAL_LIB_DIR/history.sh" && -r "$DICTATE_INTERNAL_LIB_DIR/diagnostics.sh" ]]; then
+    internal_lib_ok="1"
+  else
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Repair internal runtime modules: ./install.sh --force"
+  fi
+  if [[ -f "$DICTATE_CONFIG_FILE" ]]; then
+    config_file_ok="1"
+  else
+    warnings=$((warnings + 1))
+    doctor_json_add_suggestion "Create default config: ./install.sh --force"
+  fi
+  local cfg_schema_status cfg_schema_version
+  cfg_schema_status="$(config_schema_status)"
+  cfg_schema_version="$(config_schema_version_label)"
+  if [[ "$cfg_schema_status" == "mismatch" ]]; then
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Replace config with repo defaults (manual): cp config/config.toml ~/.config/dictate/config.toml"
+    doctor_json_add_suggestion "Or refresh via bootstrap: curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force"
+  fi
+  local raycast_inline_path
+  raycast_inline_path="$DICTATE_CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh"
+  [[ -f "$raycast_inline_path" ]] && raycast_inline_ok="1"
+
+  local swiftbar_plugin swiftbar_enabled swiftbar_state swiftbar_present="0"
+  swiftbar_plugin="$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh"
+  swiftbar_enabled="${CFG_SWIFTBAR_ENABLED:-1}"
+  [[ -f "$swiftbar_plugin" ]] && swiftbar_present="1"
+  if [[ "$swiftbar_enabled" == "1" ]]; then
+    if [[ "$swiftbar_present" == "1" ]]; then
+      swiftbar_state="ok, enabled"
+    else
+      swiftbar_state="missing, enabled"
+      warnings=$((warnings + 1))
+      doctor_json_add_suggestion "Install SwiftBar plugin: ./install.sh --force"
+      doctor_json_add_suggestion "Or disable SwiftBar integration: tmux-whisper swiftbar off"
+    fi
+  else
+    if [[ "$swiftbar_present" == "1" ]]; then
+      swiftbar_state="ok, disabled"
+    else
+      swiftbar_state="missing, disabled"
+    fi
+  fi
+
+  local swift_root swift_binary swift_socket_path swift_model_path swift_model_version swift_models_dir
+  swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
+  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
+  swift_socket_path="$(resolve_swift_parakeet_socket_path)"
+  swift_model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
+  swift_model_version="$(resolve_swift_parakeet_model_version "${swift_model_path:-}")"
+  swift_models_dir="$(expand_path "$DEFAULT_SWIFT_PARAKEET_MODELS_DIR")"
+  local swift_root_ok="0" swift_binary_ok="0" swift_socket_live="0" swift_model_ok="0"
+  [[ -n "$swift_root" ]] && swift_root_ok="1"
+  if [[ "$swift_root_ok" != "1" ]]; then
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Reinstall native backend sources: ./install.sh --force"
+  fi
+  [[ -n "$swift_binary" && -x "$swift_binary" ]] && swift_binary_ok="1"
+  if [[ -z "$(command -v swift 2>/dev/null || true)" && "$swift_binary_ok" != "1" ]]; then
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Install Swift/Xcode so tmux-whisperd can be built"
+  fi
+  [[ -S "$swift_socket_path" ]] && swift_socket_live="1"
+  [[ -n "$swift_model_path" && -d "$swift_model_path" ]] && swift_model_ok="1"
+  if [[ "$swift_model_ok" != "1" ]]; then
+    issues=$((issues + 1))
+    doctor_json_add_suggestion "Set swift_parakeet.model_path in ~/.config/dictate/config.toml to your local CoreML Parakeet model directory"
+  elif [[ "$swift_model_path" == "$HOME/Library/Application Support/FluidAudio/Models/"* ]]; then
+    doctor_json_add_suggestion "Move or copy the Parakeet model into $swift_models_dir so tmux-whisper does not depend on Spokenly/FluidAudio being installed"
+  fi
+
+  local inline_mode_requested inline_mode_effective inline_mode_source inline_mode_status
+  if [[ -f "$MODE_FILE" ]]; then
+    inline_mode_requested="$(head -n 1 "$MODE_FILE" 2>/dev/null | tr -d '\r' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  else
+    inline_mode_requested="auto"
+  fi
+  if [[ -z "$inline_mode_requested" ]]; then
+    inline_mode_effective="$(default_inline_mode)"
+    inline_mode_source="fixed"
+    inline_mode_status="invalid_empty"
+    warnings=$((warnings + 1))
+    doctor_json_add_suggestion "Set inline mode policy: tmux-whisper mode auto"
+  elif [[ "$inline_mode_requested" == "auto" ]]; then
+    inline_mode_effective="$(get_current_mode 2>/dev/null || true)"
+    [[ -n "$inline_mode_effective" ]] || inline_mode_effective="$(default_inline_mode)"
+    inline_mode_source="auto"
+    inline_mode_status="ok"
+  elif [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$inline_mode_requested")" ]]; then
+    inline_mode_effective="$(canonical_mode_name "$inline_mode_requested")"
+    inline_mode_source="fixed"
+    inline_mode_status="ok"
+  else
+    inline_mode_effective="$(default_inline_mode)"
+    inline_mode_source="fixed"
+    inline_mode_status="invalid"
+    warnings=$((warnings + 1))
+    doctor_json_add_suggestion "Set inline mode policy: tmux-whisper mode auto"
+    doctor_json_add_suggestion "Or create the missing mode: tmux-whisper mode create \"$inline_mode_requested\""
+  fi
+
+  local tmux_mode_requested tmux_mode_effective tmux_mode_status
+  tmux_mode_requested="${DICTATE_TMUX_MODE:-${CFG_TMUX_MODE:-code}}"
+  tmux_mode_effective="$(canonical_mode_name "$tmux_mode_requested")"
+  if [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$tmux_mode_effective")" ]]; then
+    tmux_mode_status="ok"
+  else
+    tmux_mode_status="invalid"
+    warnings=$((warnings + 1))
+    doctor_json_add_suggestion "Set tmux mode to a valid mode: tmux-whisper tmux mode code"
+  fi
+
+  local mode_prompt_lines="" required_mode required_prompt required_mode_label any_modes_present
+  any_modes_present="0"
+  while IFS= read -r required_mode; do
+    [[ -n "$required_mode" ]] || continue
+    any_modes_present="1"
+    required_prompt="$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$required_mode")/prompt"
+    required_mode_label="$(mode_display_name "$required_mode")"
+    if [[ -s "$required_prompt" ]]; then
+      mode_prompt_lines="${mode_prompt_lines}${required_mode}	${required_mode_label}	ok	${required_prompt}"$'\n'
+    elif [[ -f "$required_prompt" ]]; then
+      mode_prompt_lines="${mode_prompt_lines}${required_mode}	${required_mode_label}	empty	${required_prompt}"$'\n'
+      warnings=$((warnings + 1))
+      doctor_json_add_suggestion "Populate $required_mode_label prompt: tmux-whisper mode edit $required_mode_label"
+    else
+      mode_prompt_lines="${mode_prompt_lines}${required_mode}	${required_mode_label}	missing	${required_prompt}"$'\n'
+      warnings=$((warnings + 1))
+      doctor_json_add_suggestion "Repair mode defaults: ./install.sh --force"
+    fi
+  done < <(list_modes "")
+  if [[ "$any_modes_present" != "1" ]]; then
+    warnings=$((warnings + 1))
+    doctor_json_add_suggestion "Repair mode defaults: ./install.sh --force"
+  fi
+
+  local state_tmux_summary state_inline_summary stale_state_paths=""
+  state_tmux_summary="$(state_file_summary_tsv tmux "$STATE_FILE")"
+  state_inline_summary="$(state_file_summary_tsv inline "$INLINE_STATE_FILE")"
+  local state_status
+  IFS=$'\t' read -r state_status _ <<<"$state_tmux_summary"
+  if [[ "$state_status" == "stale" ]]; then
+    warnings=$((warnings + 1))
+    stale_state_paths="${stale_state_paths}${STATE_FILE}"$'\n'
+  fi
+  IFS=$'\t' read -r state_status _ <<<"$state_inline_summary"
+  if [[ "$state_status" == "stale" ]]; then
+    warnings=$((warnings + 1))
+    stale_state_paths="${stale_state_paths}${INLINE_STATE_FILE}"$'\n'
+  fi
+  if [[ -n "$stale_state_paths" ]]; then
+    doctor_json_add_suggestion "Clean stale state files: rm -f ${stale_state_paths//$'\n'/ }"
+  fi
+
+  local proc_dir="/tmp/dictate-processing"
+  local proc_total=0
+  local proc_live=0
+  local proc_stale=0
+  if [[ -d "$proc_dir" ]]; then
+    local pf marker_pid line
+    for pf in "$proc_dir"/*; do
+      [[ -f "$pf" ]] || continue
+      proc_total=$((proc_total + 1))
+      marker_pid=""
+      line="$(head -n 1 "$pf" 2>/dev/null || true)"
+      if [[ "$line" =~ ^pid=([0-9]+)$ ]]; then
+        marker_pid="${BASH_REMATCH[1]}"
+      elif [[ "$line" =~ ^[0-9]+$ ]]; then
+        marker_pid="$line"
+      fi
+      if [[ -n "$marker_pid" ]] && kill -0 "$marker_pid" 2>/dev/null; then
+        proc_live=$((proc_live + 1))
+      else
+        proc_stale=$((proc_stale + 1))
+      fi
+    done
+  fi
+  if [[ "$proc_stale" -gt 0 ]]; then
+    warnings=$((warnings + 1))
+    doctor_json_add_suggestion "Clean stale processing markers: rm -rf $proc_dir"
+  fi
+
+  local tmux_total=0
+  local tmux_rec=0
+  local tmux_proc=0
+  local tmux_stale=0
+  local jf st marker_pid now mtime age
+  now="$(date +%s)"
+  if [[ -d "$TMUX_JOBS_DIR" ]]; then
+    for jf in "$TMUX_JOBS_DIR"/*; do
+      [[ -f "$jf" ]] || continue
+      st="$(sed -n 's/^status=//p' "$jf" 2>/dev/null | head -n 1 || true)"
+      marker_pid="$(sed -n 's/^pid=//p' "$jf" 2>/dev/null | head -n 1 || true)"
+      mtime="$(stat -f %m "$jf" 2>/dev/null || true)"
+      [[ "$mtime" =~ ^[0-9]+$ ]] || mtime="$(stat -c %Y "$jf" 2>/dev/null || true)"
+      [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
+      age=$((now - mtime))
+      case "$st" in
+        recording|processing)
+          if [[ -z "$marker_pid" || ! "$marker_pid" =~ ^[0-9]+$ ]]; then
+            warnings=$((warnings + 1))
+            tmux_stale=$((tmux_stale + 1))
+            doctor_json_add_suggestion "Clean stale tmux job markers: rm -rf $TMUX_JOBS_DIR"
+            continue
+          fi
+          if ! kill -0 "$marker_pid" 2>/dev/null; then
+            warnings=$((warnings + 1))
+            tmux_stale=$((tmux_stale + 1))
+            doctor_json_add_suggestion "Clean stale tmux job markers: rm -rf $TMUX_JOBS_DIR"
+            continue
+          fi
+          ;;
+      esac
+      tmux_total=$((tmux_total + 1))
+      case "$st" in
+        recording) tmux_rec=$((tmux_rec + 1)) ;;
+        processing) tmux_proc=$((tmux_proc + 1)) ;;
+      esac
+    done
+  fi
+
+  local summary_status
+  if [[ "$issues" -eq 0 && "$warnings" -eq 0 ]]; then
+    summary_status="healthy"
+  elif [[ "$issues" -eq 0 ]]; then
+    summary_status="ok with warnings"
+  else
+    summary_status="needs attention"
+  fi
+
+  local suggestions_blob=""
+  if [[ "${#suggestions[@]}" -gt 0 ]]; then
+    suggestions_blob="$(printf '%s\n' "${suggestions[@]}")"
+  fi
+
+  env \
+    JSON_STATE_FILE_PATH="$STATE_FILE" \
+    JSON_INLINE_STATE_FILE_PATH="$INLINE_STATE_FILE" \
+    JSON_DEPENDENCIES="$dependency_lines" \
+    JSON_INSTALL_TMUX_WHISPER="$dictate_bin" \
+    JSON_INSTALL_CHANNEL="$install_channel" \
+    JSON_SHARED_LIB_PATH="$DICTATE_LIB_PATH" \
+    JSON_SHARED_LIB_OK="$shared_lib_ok" \
+    JSON_INTERNAL_LIB_DIR="$DICTATE_INTERNAL_LIB_DIR" \
+    JSON_INTERNAL_LIB_OK="$internal_lib_ok" \
+    JSON_CONFIG_FILE="$DICTATE_CONFIG_FILE" \
+    JSON_CONFIG_FILE_OK="$config_file_ok" \
+    JSON_CONFIG_SCHEMA_VERSION="$cfg_schema_version" \
+    JSON_CONFIG_SCHEMA_EXPECTED="v$DICTATE_CONFIG_SCHEMA_VERSION" \
+    JSON_CONFIG_SCHEMA_STATUS="$cfg_schema_status" \
+    JSON_RAYCAST_INLINE_PATH="$raycast_inline_path" \
+    JSON_RAYCAST_INLINE_OK="$raycast_inline_ok" \
+    JSON_SWIFTBAR_PLUGIN_PATH="$swiftbar_plugin" \
+    JSON_SWIFTBAR_ENABLED="$swiftbar_enabled" \
+    JSON_SWIFTBAR_PRESENT="$swiftbar_present" \
+    JSON_SWIFTBAR_STATE="$swiftbar_state" \
+    JSON_BACKEND="swift_parakeet" \
+    JSON_TMUX_WHISPERD_SOURCE="$swift_root" \
+    JSON_TMUX_WHISPERD_SOURCE_OK="$swift_root_ok" \
+    JSON_TMUX_WHISPERD_BIN="$swift_binary" \
+    JSON_TMUX_WHISPERD_BIN_OK="$swift_binary_ok" \
+    JSON_TMUX_WHISPERD_SOCKET="$swift_socket_path" \
+    JSON_TMUX_WHISPERD_SOCKET_LIVE="$swift_socket_live" \
+    JSON_PARAKEET_DIR="$swift_models_dir" \
+    JSON_PARAKEET_MODEL="$swift_model_path" \
+    JSON_PARAKEET_MODEL_OK="$swift_model_ok" \
+    JSON_PARAKEET_MODEL_VERSION="$swift_model_version" \
+    JSON_MODE_INLINE_REQUESTED="$inline_mode_requested" \
+    JSON_MODE_INLINE_EFFECTIVE="$inline_mode_effective" \
+    JSON_MODE_INLINE_DISPLAY="$(mode_display_name "$inline_mode_effective")" \
+    JSON_MODE_INLINE_SOURCE="$inline_mode_source" \
+    JSON_MODE_INLINE_STATUS="$inline_mode_status" \
+    JSON_MODE_TMUX_REQUESTED="$tmux_mode_requested" \
+    JSON_MODE_TMUX_EFFECTIVE="$tmux_mode_effective" \
+    JSON_MODE_TMUX_DISPLAY="$(mode_display_name "$tmux_mode_effective")" \
+    JSON_MODE_TMUX_STATUS="$tmux_mode_status" \
+    JSON_MODE_PROMPTS="$mode_prompt_lines" \
+    JSON_ANY_MODES_PRESENT="$any_modes_present" \
+    JSON_STATE_TMUX="$state_tmux_summary" \
+    JSON_STATE_INLINE="$state_inline_summary" \
+    JSON_STALE_STATE_FILES="$stale_state_paths" \
+    JSON_PROC_DIR="$proc_dir" \
+    JSON_PROC_TOTAL="$proc_total" \
+    JSON_PROC_LIVE="$proc_live" \
+    JSON_PROC_STALE="$proc_stale" \
+    JSON_TMUX_JOBS_DIR="$TMUX_JOBS_DIR" \
+    JSON_TMUX_TOTAL="$tmux_total" \
+    JSON_TMUX_RECORDING="$tmux_rec" \
+    JSON_TMUX_PROCESSING="$tmux_proc" \
+    JSON_TMUX_STALE="$tmux_stale" \
+    JSON_ISSUES="$issues" \
+    JSON_WARNINGS="$warnings" \
+    JSON_SUMMARY_STATUS="$summary_status" \
+    JSON_SUGGESTIONS="$suggestions_blob" \
+    python3 - <<'PYEOF'
+import json
+import os
+
+def s(name: str) -> str:
+    return os.environ.get(name, "")
+
+def maybe(name: str):
+    value = s(name)
+    return value if value else None
+
+def to_int(name: str):
+    value = s(name)
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+def to_bool_flag(name: str) -> bool:
+    return s(name) == "1"
+
+def parse_state(line: str, path_name: str):
+    cols = line.split("\t") if line else []
+    cols += [""] * (7 - len(cols))
+    state, pid, age, display, model, language, raw_target = cols[:7]
+    parsed_age = None
+    try:
+        parsed_age = int(age)
+    except Exception:
+        parsed_age = None
+    return {
+        "path": path_name,
+        "state": state or "idle",
+        "pid": int(pid) if pid.isdigit() else None,
+        "age_seconds": parsed_age,
+        "display_target": display or None,
+        "model": model or None,
+        "language": language or None,
+        "raw_target": raw_target or None,
+        "active": (state == "active"),
+        "stale": (state == "stale"),
+    }
+
+dependencies = {}
+for line in s("JSON_DEPENDENCIES").splitlines():
+    if not line:
+        continue
+    name, kind, status, path = (line.split("\t") + ["", "", "", ""])[:4]
+    dependencies[name] = {
+        "required": kind == "required",
+        "status": status,
+        "found": status == "ok",
+        "path": path or None,
+    }
+
+mode_prompts = []
+for line in s("JSON_MODE_PROMPTS").splitlines():
+    if not line:
+        continue
+    mode, label, status, prompt_path = (line.split("\t") + ["", "", "", ""])[:4]
+    mode_prompts.append(
+        {
+            "mode": mode,
+            "label": label,
+            "status": status,
+            "path": prompt_path or None,
+        }
+    )
+
+data = {
+    "command": "doctor",
+    "dependencies": dependencies,
+    "install_sanity": {
+        "tmux_whisper_binary": maybe("JSON_INSTALL_TMUX_WHISPER"),
+        "install_channel": s("JSON_INSTALL_CHANNEL"),
+        "shared_library": {"path": s("JSON_SHARED_LIB_PATH"), "ok": to_bool_flag("JSON_SHARED_LIB_OK")},
+        "internal_library_dir": {"path": s("JSON_INTERNAL_LIB_DIR"), "ok": to_bool_flag("JSON_INTERNAL_LIB_OK")},
+        "config_file": {"path": s("JSON_CONFIG_FILE"), "ok": to_bool_flag("JSON_CONFIG_FILE_OK")},
+        "config_schema": {
+            "version": s("JSON_CONFIG_SCHEMA_VERSION"),
+            "expected": s("JSON_CONFIG_SCHEMA_EXPECTED"),
+            "status": s("JSON_CONFIG_SCHEMA_STATUS"),
+        },
+        "raycast_inline": {"path": s("JSON_RAYCAST_INLINE_PATH"), "ok": to_bool_flag("JSON_RAYCAST_INLINE_OK")},
+        "swiftbar": {
+            "path": s("JSON_SWIFTBAR_PLUGIN_PATH"),
+            "enabled": to_bool_flag("JSON_SWIFTBAR_ENABLED"),
+            "present": to_bool_flag("JSON_SWIFTBAR_PRESENT"),
+            "state": s("JSON_SWIFTBAR_STATE"),
+        },
+        "backend": s("JSON_BACKEND"),
+        "tmux_whisperd_source": {"path": maybe("JSON_TMUX_WHISPERD_SOURCE"), "ok": to_bool_flag("JSON_TMUX_WHISPERD_SOURCE_OK")},
+        "tmux_whisperd_binary": {"path": maybe("JSON_TMUX_WHISPERD_BIN"), "ok": to_bool_flag("JSON_TMUX_WHISPERD_BIN_OK")},
+        "tmux_whisperd_socket": {"path": maybe("JSON_TMUX_WHISPERD_SOCKET"), "live": to_bool_flag("JSON_TMUX_WHISPERD_SOCKET_LIVE")},
+        "preferred_parakeet_dir": s("JSON_PARAKEET_DIR"),
+        "parakeet_model": {
+            "path": maybe("JSON_PARAKEET_MODEL"),
+            "ok": to_bool_flag("JSON_PARAKEET_MODEL_OK"),
+            "version": maybe("JSON_PARAKEET_MODEL_VERSION"),
+        },
+    },
+    "mode_config": {
+        "inline": {
+            "requested": maybe("JSON_MODE_INLINE_REQUESTED"),
+            "effective": maybe("JSON_MODE_INLINE_EFFECTIVE"),
+            "effective_display": maybe("JSON_MODE_INLINE_DISPLAY"),
+            "source": s("JSON_MODE_INLINE_SOURCE"),
+            "status": s("JSON_MODE_INLINE_STATUS"),
+        },
+        "tmux": {
+            "requested": maybe("JSON_MODE_TMUX_REQUESTED"),
+            "effective": maybe("JSON_MODE_TMUX_EFFECTIVE"),
+            "effective_display": maybe("JSON_MODE_TMUX_DISPLAY"),
+            "status": s("JSON_MODE_TMUX_STATUS"),
+        },
+        "modes_present": s("JSON_ANY_MODES_PRESENT") == "1",
+        "prompts": mode_prompts,
+    },
+    "state_files": {
+        "tmux": parse_state(s("JSON_STATE_TMUX"), s("JSON_STATE_FILE_PATH")),
+        "inline": parse_state(s("JSON_STATE_INLINE"), s("JSON_INLINE_STATE_FILE_PATH")),
+        "stale_paths": [line for line in s("JSON_STALE_STATE_FILES").splitlines() if line],
+    },
+    "processing_markers": {
+        "path": s("JSON_PROC_DIR"),
+        "total": to_int("JSON_PROC_TOTAL") or 0,
+        "live": to_int("JSON_PROC_LIVE") or 0,
+        "stale": to_int("JSON_PROC_STALE") or 0,
+    },
+    "tmux_queue": {
+        "path": s("JSON_TMUX_JOBS_DIR"),
+        "total": to_int("JSON_TMUX_TOTAL") or 0,
+        "recording": to_int("JSON_TMUX_RECORDING") or 0,
+        "processing": to_int("JSON_TMUX_PROCESSING") or 0,
+        "stale": to_int("JSON_TMUX_STALE") or 0,
+    },
+    "summary": {
+        "issues": to_int("JSON_ISSUES") or 0,
+        "warnings": to_int("JSON_WARNINGS") or 0,
+        "status": s("JSON_SUMMARY_STATUS"),
+    },
+    "suggestions": [line for line in s("JSON_SUGGESTIONS").splitlines() if line],
+}
+
+print(json.dumps(data, indent=2, sort_keys=True))
+PYEOF
+}
+
 doctor() {
+  if [[ "${1:-}" == "--json" ]]; then
+    doctor_json
+    return 0
+  fi
+
   echo "Tmux Whisper doctor"
   echo ""
 
@@ -232,7 +1030,7 @@ doctor() {
 
   echo "Install sanity:"
   local dictate_bin install_channel
-  dictate_bin="$(command -v tmux-whisper 2>/dev/null || true)"
+  dictate_bin="$(resolve_running_tmux_whisper_bin)"
   install_channel="$(detect_install_channel "$dictate_bin")"
   echo "  - tmux-whisper binary: ${dictate_bin:-missing}"
   if [[ -z "$dictate_bin" ]]; then
@@ -532,6 +1330,11 @@ doctor() {
 }
 
 status() {
+  local output_format="text"
+  if [[ "${1:-}" == "--json" ]]; then
+    output_format="json"
+  fi
+
   load_backend_runtime_cache >/dev/null 2>&1 || true
   local inline_state="$INLINE_STATE_FILE"
   local proc_dir="/tmp/dictate-processing"
@@ -787,6 +1590,285 @@ status() {
   local tmux_total tmux_rec tmux_proc
   read -r tmux_total tmux_rec tmux_proc < <(count_tmux_jobs_snapshot)
 
+  local override_vars=(
+    DICTATE_AUDIO_SOURCE DICTATE_AUDIO_INDEX DICTATE_AUDIO_NAME
+    DICTATE_TMUX_MODE
+    DICTATE_SWIFT_PARAKEET_MODEL_PATH DICTATE_SWIFT_PARAKEET_MODEL_VERSION DICTATE_SWIFT_PARAKEET_SOCKET_PATH
+    DICTATE_POSTPROCESS DICTATE_TMUX_POSTPROCESS DICTATE_VOCAB_CLEAN
+    DICTATE_AUTOSEND DICTATE_TMUX_AUTOSEND
+    DICTATE_INLINE_PASTE_TARGET DICTATE_INLINE_SEND_MODE
+    DICTATE_INLINE_ACTIVATE_DELAY_MS DICTATE_INLINE_SEND_DELAY_MS
+    DICTATE_TMUX_PASTE_TARGET DICTATE_TMUX_PROCESS_SOUND
+    DICTATE_TMUX_SEND_MODE
+    DICTATE_TMUX_SEND_DELAY_MS DICTATE_TMUX_CODEX_TAB_DELAY_MS
+    DICTATE_CLEAN DICTATE_REPEATS_LEVEL DICTATE_SILENCE_TRIM
+    DICTATE_TRIM_WITH_POSTPROCESS DICTATE_REPEATS_WITH_POSTPROCESS
+    DICTATE_LLM_MODEL DICTATE_LLM_MAX_TOKENS DICTATE_LLM_CHUNK_WORDS DICTATE_BRITISH_SPELLING
+    DICTATE_LANGUAGE
+    DICTATE_TARGET_APP DICTATE_TARGET_PANE
+    DICTATE_KEEP_LOGS
+    CEREBRAS_API_KEY
+  )
+  local env_override_lines
+  env_override_lines="$(collect_set_env_overrides "${override_vars[@]}")"
+
+  if [[ "$output_format" == "json" ]]; then
+    local state_tmux_summary state_inline_summary postprocess_note=""
+    state_tmux_summary="$(state_file_summary_tsv tmux "$STATE_FILE")"
+    state_inline_summary="$(state_file_summary_tsv inline "$inline_state")"
+    if [[ "$cerebras_key_set" != "1" && ( "$post_inline_requested" == "1" || "$post_tmux_requested" == "1" ) ]]; then
+      postprocess_note="disabled at runtime (CEREBRAS_API_KEY missing)"
+    fi
+
+    env \
+      JSON_STATE_FILE_PATH="$STATE_FILE" \
+      JSON_INLINE_STATE_FILE_PATH="$inline_state" \
+      JSON_STATE_TMUX="$state_tmux_summary" \
+      JSON_STATE_INLINE="$state_inline_summary" \
+      JSON_PROC_TOTAL="$proc_total" \
+      JSON_PROC_LIVE="$proc_live" \
+      JSON_PROC_STALE="$proc_stale" \
+      JSON_PROC_DIR="$proc_dir" \
+      JSON_TMUX_TOTAL="$tmux_total" \
+      JSON_TMUX_RECORDING="$tmux_rec" \
+      JSON_TMUX_PROCESSING="$tmux_proc" \
+      JSON_TMUX_JOBS_DIR="$TMUX_JOBS_DIR" \
+      JSON_BACKEND="$backend_requested" \
+      JSON_MODE_INLINE="$mode_inline" \
+      JSON_MODE_INLINE_DISPLAY="$(mode_display_name "$mode_inline")" \
+      JSON_MODE_INLINE_SOURCE="$mode_inline_source" \
+      JSON_MODE_TMUX="$mode_tmux" \
+      JSON_MODE_TMUX_DISPLAY="$(mode_display_name "$mode_tmux")" \
+      JSON_SWIFT_MODEL_PATH="$swift_model_path" \
+      JSON_SWIFT_MODEL_VERSION="$swift_model_version" \
+      JSON_SWIFT_SOCKET_PATH="$swift_socket_path" \
+      JSON_LANGUAGE="${DICTATE_LANGUAGE:-en}" \
+      JSON_POST_INLINE_REQUESTED="$post_inline_requested" \
+      JSON_POST_INLINE_EFFECTIVE="$post_inline" \
+      JSON_POST_TMUX_REQUESTED="$post_tmux_requested" \
+      JSON_POST_TMUX_EFFECTIVE="$post_tmux" \
+      JSON_POSTPROCESS_NOTE="$postprocess_note" \
+      JSON_CEREBRAS_KEY_SET="$cerebras_key_set" \
+      JSON_LLM_MODEL="$llm_model" \
+      JSON_LLM_MAX_TOKENS="$llm_max_tokens" \
+      JSON_LLM_CHUNK_WORDS="$llm_chunk_words" \
+      JSON_BUDGET_THRESHOLD="${CFG_POSTPROCESS_BUDGET_LONG_WORDS_THRESHOLD:-120}" \
+      JSON_BUDGET_SHORT_LLM="${budget_short_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}}" \
+      JSON_BUDGET_SHORT_MAX="${budget_short_max:-${CFG_POSTPROCESS_MAX_TOKENS:-}}" \
+      JSON_BUDGET_SHORT_CHUNK="${budget_short_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-}}" \
+      JSON_BUDGET_LONG_LLM="${budget_long_llm:-${CFG_POSTPROCESS_LLM:-llama3.1-8b}}" \
+      JSON_BUDGET_LONG_MAX="${budget_long_max:-${CFG_POSTPROCESS_MAX_TOKENS:-}}" \
+      JSON_BUDGET_LONG_CHUNK="${budget_long_chunk:-${CFG_POSTPROCESS_CHUNK_WORDS:-}}" \
+      JSON_BRITISH_SPELLING="${DICTATE_BRITISH_SPELLING:-1}" \
+      JSON_CLEAN_REGEX="$clean_enabled" \
+      JSON_CLEAN_REPEATS_LEVEL="$repeats_level" \
+      JSON_CLEAN_VOCAB_ONLY="$vocab_clean" \
+      JSON_SILENCE_TRIM="$silence_trim" \
+      JSON_SILENCE_TRIM_MODE="${CFG_AUDIO_SILENCE_TRIM_MODE:-edges}" \
+      JSON_INLINE_AUTOSEND="$inline_autosend" \
+      JSON_INLINE_PROCESS_SOUND="$inline_process_sound" \
+      JSON_INLINE_TARGET="$inline_target" \
+      JSON_INLINE_SEND_MODE="$inline_send_mode" \
+      JSON_TMUX_AUTOSEND="$tmux_autosend" \
+      JSON_TMUX_TARGET="$tmux_target" \
+      JSON_TMUX_PROCESS_SOUND="$tmux_process_sound" \
+      JSON_TMUX_SEND_MODE="$tmux_send_mode" \
+      JSON_SWIFTBAR_ENABLED="${CFG_SWIFTBAR_ENABLED:-1}" \
+      JSON_KEEP_LOGS="$keep_logs_val" \
+      JSON_AUDIO_SOURCE="$audio_source_mode" \
+      JSON_AUDIO_DEVICE_NAME="$audio_name" \
+      JSON_AUDIO_MAC_NAME="${CFG_AUDIO_MAC_NAME:-}" \
+      JSON_AUDIO_IPHONE_NAME="${CFG_AUDIO_IPHONE_NAME:-}" \
+      JSON_AUDIO_DEVICE_INDEX_FALLBACK="${CFG_AUDIO_DEVICE_INDEX:-}" \
+      JSON_AUDIO_INDEX_RESOLVED="$audio_idx" \
+      JSON_AUDIO_INDEX_SOURCE="$audio_src" \
+      JSON_SOUND_MASTER="${CFG_AUDIO_SOUNDS_ENABLED:-1}" \
+      JSON_SOUND_START="${CFG_AUDIO_SOUNDS_START_ENABLED:-1}" \
+      JSON_SOUND_STOP="${CFG_AUDIO_SOUNDS_STOP_ENABLED:-1}" \
+      JSON_SOUND_PROCESS="${CFG_AUDIO_SOUNDS_PROCESS_ENABLED:-1}" \
+      JSON_SOUND_ERROR="${CFG_AUDIO_SOUNDS_ERROR_ENABLED:-1}" \
+      JSON_SOUND_CANCEL="${CFG_AUDIO_SOUNDS_CANCEL_ENABLED:-1}" \
+      JSON_KEY_STATUS="$key_status" \
+      JSON_ENV_OVERRIDES="$env_override_lines" \
+      python3 - <<'PYEOF'
+import json
+import os
+
+def s(name: str) -> str:
+    return os.environ.get(name, "")
+
+def maybe(name: str):
+    value = s(name)
+    return value if value else None
+
+def to_int(name: str):
+    value = s(name)
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+def to_bool_flag(name: str) -> bool:
+    return s(name) == "1"
+
+def parse_state(line: str, path_name: str):
+    cols = line.split("\t") if line else []
+    cols += [""] * (7 - len(cols))
+    state, pid, age, display, model, language, raw_target = cols[:7]
+    try:
+        age_value = int(age)
+    except Exception:
+        age_value = None
+    return {
+        "path": path_name,
+        "state": state or "idle",
+        "pid": int(pid) if pid.isdigit() else None,
+        "age_seconds": age_value,
+        "display_target": display or None,
+        "model": model or None,
+        "language": language or None,
+        "raw_target": raw_target or None,
+        "active": state == "active",
+        "stale": state == "stale",
+    }
+
+overrides = {}
+for line in s("JSON_ENV_OVERRIDES").splitlines():
+    if not line:
+        continue
+    key, value = line.split("\t", 1)
+    overrides[key] = value
+
+data = {
+    "command": "status",
+    "runtime": {
+        "tmux": parse_state(s("JSON_STATE_TMUX"), s("JSON_STATE_FILE_PATH")),
+        "inline": parse_state(s("JSON_STATE_INLINE"), s("JSON_INLINE_STATE_FILE_PATH")),
+        "processing_markers": {
+            "path": s("JSON_PROC_DIR"),
+            "total": to_int("JSON_PROC_TOTAL") or 0,
+            "live": to_int("JSON_PROC_LIVE") or 0,
+            "stale": to_int("JSON_PROC_STALE") or 0,
+        },
+        "tmux_queue": {
+            "path": s("JSON_TMUX_JOBS_DIR"),
+            "total": to_int("JSON_TMUX_TOTAL") or 0,
+            "recording": to_int("JSON_TMUX_RECORDING") or 0,
+            "processing": to_int("JSON_TMUX_PROCESSING") or 0,
+        },
+    },
+    "effective_settings": {
+        "backend": s("JSON_BACKEND"),
+        "language": s("JSON_LANGUAGE"),
+        "mode": {
+            "inline": {
+                "name": maybe("JSON_MODE_INLINE"),
+                "display_name": maybe("JSON_MODE_INLINE_DISPLAY"),
+                "source": s("JSON_MODE_INLINE_SOURCE"),
+            },
+            "tmux": {
+                "name": maybe("JSON_MODE_TMUX"),
+                "display_name": maybe("JSON_MODE_TMUX_DISPLAY"),
+            },
+        },
+        "swift_parakeet": {
+            "model": {
+                "path": maybe("JSON_SWIFT_MODEL_PATH"),
+                "version": maybe("JSON_SWIFT_MODEL_VERSION"),
+            },
+            "socket": s("JSON_SWIFT_SOCKET_PATH"),
+        },
+        "postprocess": {
+            "inline": {
+                "requested": to_bool_flag("JSON_POST_INLINE_REQUESTED"),
+                "effective": to_bool_flag("JSON_POST_INLINE_EFFECTIVE"),
+            },
+            "tmux": {
+                "requested": to_bool_flag("JSON_POST_TMUX_REQUESTED"),
+                "effective": to_bool_flag("JSON_POST_TMUX_EFFECTIVE"),
+            },
+            "mode_prompt": {
+                "inline": "active" if to_bool_flag("JSON_POST_INLINE_EFFECTIVE") else "inactive",
+                "tmux": "active" if to_bool_flag("JSON_POST_TMUX_EFFECTIVE") else "inactive",
+            },
+            "cerebras_api_key_set": to_bool_flag("JSON_CEREBRAS_KEY_SET"),
+            "note": maybe("JSON_POSTPROCESS_NOTE"),
+        },
+        "llm": {
+            "model": s("JSON_LLM_MODEL"),
+            "max_tokens": to_int("JSON_LLM_MAX_TOKENS"),
+            "chunk_words": to_int("JSON_LLM_CHUNK_WORDS"),
+        },
+        "budget": {
+            "auto_long_words_threshold": to_int("JSON_BUDGET_THRESHOLD"),
+            "auto_numeric_sizing": "dynamic",
+            "profiles": {
+                "short": {
+                    "llm": maybe("JSON_BUDGET_SHORT_LLM"),
+                    "max_tokens": to_int("JSON_BUDGET_SHORT_MAX"),
+                    "chunk_words": to_int("JSON_BUDGET_SHORT_CHUNK"),
+                },
+                "long": {
+                    "llm": maybe("JSON_BUDGET_LONG_LLM"),
+                    "max_tokens": to_int("JSON_BUDGET_LONG_MAX"),
+                    "chunk_words": to_int("JSON_BUDGET_LONG_CHUNK"),
+                },
+            },
+        },
+        "british_spelling": to_bool_flag("JSON_BRITISH_SPELLING"),
+        "clean": {
+            "regex": to_bool_flag("JSON_CLEAN_REGEX"),
+            "repeats_level": to_int("JSON_CLEAN_REPEATS_LEVEL"),
+            "vocab_only_when_postprocess_off": to_bool_flag("JSON_CLEAN_VOCAB_ONLY"),
+        },
+        "silence_trim": {
+            "enabled": to_bool_flag("JSON_SILENCE_TRIM"),
+            "mode": s("JSON_SILENCE_TRIM_MODE"),
+        },
+        "inline": {
+            "autosend": to_bool_flag("JSON_INLINE_AUTOSEND"),
+            "process_sound": to_bool_flag("JSON_INLINE_PROCESS_SOUND"),
+            "target": maybe("JSON_INLINE_TARGET"),
+            "send_mode": maybe("JSON_INLINE_SEND_MODE"),
+        },
+        "tmux": {
+            "autosend": to_bool_flag("JSON_TMUX_AUTOSEND"),
+            "target": maybe("JSON_TMUX_TARGET"),
+            "process_sound": to_bool_flag("JSON_TMUX_PROCESS_SOUND"),
+            "send_mode": maybe("JSON_TMUX_SEND_MODE"),
+        },
+        "integrations": {"swiftbar_enabled": to_bool_flag("JSON_SWIFTBAR_ENABLED")},
+        "debug": {"keep_logs": to_bool_flag("JSON_KEEP_LOGS")},
+        "audio": {
+            "source": maybe("JSON_AUDIO_SOURCE"),
+            "device_name": maybe("JSON_AUDIO_DEVICE_NAME"),
+            "mac_name": maybe("JSON_AUDIO_MAC_NAME"),
+            "iphone_name": maybe("JSON_AUDIO_IPHONE_NAME"),
+            "device_index_fallback": to_int("JSON_AUDIO_DEVICE_INDEX_FALLBACK"),
+            "index_resolved": {
+                "index": to_int("JSON_AUDIO_INDEX_RESOLVED"),
+                "source": maybe("JSON_AUDIO_INDEX_SOURCE"),
+            },
+        },
+        "sounds": {
+            "master": to_bool_flag("JSON_SOUND_MASTER"),
+            "start": to_bool_flag("JSON_SOUND_START"),
+            "stop": to_bool_flag("JSON_SOUND_STOP"),
+            "process": to_bool_flag("JSON_SOUND_PROCESS"),
+            "error": to_bool_flag("JSON_SOUND_ERROR"),
+            "cancel": to_bool_flag("JSON_SOUND_CANCEL"),
+        },
+        "cerebras_api_key": s("JSON_KEY_STATUS"),
+    },
+    "active_env_overrides": overrides,
+    "more_detail": ["tmux-whisper debug", "tmux-whisper doctor", "tmux-whisper logs"],
+}
+
+print(json.dumps(data, indent=2, sort_keys=True))
+PYEOF
+    return 0
+  fi
+
   echo "Tmux Whisper status"
   echo ""
   echo "Runtime:"
@@ -851,25 +1933,6 @@ status() {
 
   echo ""
   echo "Active env overrides:"
-  local override_vars=(
-    DICTATE_AUDIO_SOURCE DICTATE_AUDIO_INDEX DICTATE_AUDIO_NAME
-    DICTATE_TMUX_MODE
-    DICTATE_SWIFT_PARAKEET_MODEL_PATH DICTATE_SWIFT_PARAKEET_MODEL_VERSION DICTATE_SWIFT_PARAKEET_SOCKET_PATH
-    DICTATE_POSTPROCESS DICTATE_TMUX_POSTPROCESS DICTATE_VOCAB_CLEAN
-    DICTATE_AUTOSEND DICTATE_TMUX_AUTOSEND
-    DICTATE_INLINE_PASTE_TARGET DICTATE_INLINE_SEND_MODE
-    DICTATE_INLINE_ACTIVATE_DELAY_MS DICTATE_INLINE_SEND_DELAY_MS
-    DICTATE_TMUX_PASTE_TARGET DICTATE_TMUX_PROCESS_SOUND
-    DICTATE_TMUX_SEND_MODE
-    DICTATE_TMUX_SEND_DELAY_MS DICTATE_TMUX_CODEX_TAB_DELAY_MS
-    DICTATE_CLEAN DICTATE_REPEATS_LEVEL DICTATE_SILENCE_TRIM
-    DICTATE_TRIM_WITH_POSTPROCESS DICTATE_REPEATS_WITH_POSTPROCESS
-    DICTATE_LLM_MODEL DICTATE_LLM_MAX_TOKENS DICTATE_LLM_CHUNK_WORDS DICTATE_BRITISH_SPELLING
-    DICTATE_LANGUAGE
-    DICTATE_TARGET_APP DICTATE_TARGET_PANE
-    DICTATE_KEEP_LOGS
-    CEREBRAS_API_KEY
-  )
   local shown=0 var val
   for var in "${override_vars[@]}"; do
     val="${!var-}"

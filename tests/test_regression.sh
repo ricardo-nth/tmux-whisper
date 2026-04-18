@@ -55,6 +55,46 @@ assert_equals() {
   echo "PASS: $name"
 }
 
+json_get() {
+  local json_input="$1"
+  local path="$2"
+  JSON_INPUT="$json_input" JSON_PATH="$path" python3 - <<'PYEOF'
+import json
+import os
+
+path = os.environ["JSON_PATH"]
+data = json.loads(os.environ["JSON_INPUT"])
+value = data
+for part in path.split("."):
+    if not part:
+        continue
+    if isinstance(value, list):
+        value = value[int(part)]
+    else:
+        value = value[part]
+if isinstance(value, (dict, list)):
+    print(json.dumps(value, sort_keys=True))
+elif value is True:
+    print("true")
+elif value is False:
+    print("false")
+elif value is None:
+    print("null")
+else:
+    print(value)
+PYEOF
+}
+
+assert_json_equals() {
+  local name="$1"
+  local json_input="$2"
+  local path="$3"
+  local expected="$4"
+  local actual
+  actual="$(json_get "$json_input" "$path")"
+  assert_equals "$name" "$actual" "$expected"
+}
+
 assert_file_contains() {
   local name="$1"
   local file="$2"
@@ -101,6 +141,10 @@ custom_debug="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LIB
 assert_contains "debug_channel_present" "$custom_debug" "channel: "
 assert_contains "debug_paths_section" "$custom_debug" "Paths:"
 assert_contains "debug_install_lib_line" "$custom_debug" "lib:"
+custom_debug_json="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CUSTOM_DICTATE_CONFIG_DIR" DICTATE_CONFIG_FILE="$CUSTOM_DICTATE_CONFIG_FILE" "$CUSTOM_BIN/tmux-whisper" debug --json)"
+assert_json_equals "debug_json_command" "$custom_debug_json" "command" "debug"
+assert_json_equals "debug_json_channel" "$custom_debug_json" "binaries.channel" "custom"
+assert_json_equals "debug_json_backend" "$custom_debug_json" "paths.backend" "swift_parakeet"
 
 custom_doctor="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CUSTOM_DICTATE_CONFIG_DIR" DICTATE_CONFIG_FILE="$CUSTOM_DICTATE_CONFIG_FILE" "$CUSTOM_BIN/tmux-whisper" doctor)"
 assert_contains "doctor_install_sanity_section" "$custom_doctor" "Install sanity:"
@@ -108,6 +152,10 @@ assert_contains "doctor_channel_present" "$custom_doctor" "install channel: "
 assert_contains "doctor_schema_ok" "$custom_doctor" "config schema: v1 (expected v1, status=ok)"
 assert_contains "doctor_backend_declared" "$custom_doctor" "backend: swift_parakeet"
 assert_not_contains "doctor_legacy_section_removed" "$custom_doctor" "Legacy compatibility:"
+custom_doctor_json="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CUSTOM_DICTATE_CONFIG_DIR" DICTATE_CONFIG_FILE="$CUSTOM_DICTATE_CONFIG_FILE" "$CUSTOM_BIN/tmux-whisper" doctor --json)"
+assert_json_equals "doctor_json_command" "$custom_doctor_json" "command" "doctor"
+assert_json_equals "doctor_json_install_channel" "$custom_doctor_json" "install_sanity.install_channel" "custom"
+assert_json_equals "doctor_json_backend" "$custom_doctor_json" "install_sanity.backend" "swift_parakeet"
 
 # --- Regression 2: install-channel detection should work for local user installs. ---
 LOCAL_HOME="$TMP_ROOT/home-local"
@@ -156,6 +204,12 @@ assert_contains "status_backend_inline_process_sound" "$backend_status" "inline.
 assert_not_contains "status_backend_hides_inline_model" "$backend_status" "model.inline:"
 assert_not_contains "status_backend_hides_tmux_model" "$backend_status" "model.tmux:"
 assert_not_contains "status_backend_hides_whisper_knobs" "$backend_status" "whisper.threads/beam/best_of:"
+backend_status_json="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" tmux-whisper status --json)"
+assert_json_equals "status_json_command" "$backend_status_json" "command" "status"
+assert_json_equals "status_json_backend" "$backend_status_json" "effective_settings.backend" "swift_parakeet"
+assert_json_equals "status_json_model_version" "$backend_status_json" "effective_settings.swift_parakeet.model.version" "v3"
+assert_json_equals "status_json_inline_process_sound" "$backend_status_json" "effective_settings.inline.process_sound" "true"
+assert_json_equals "status_json_tmux_queue_total" "$backend_status_json" "runtime.tmux_queue.total" "0"
 
 # --- Regression 4: doctor should fail on schema mismatch. ---
 MISMATCH_HOME="$TMP_ROOT/home-mismatch"
@@ -541,6 +595,20 @@ assert_contains "history_show_budget_section" "$histobs_show_latest" "--- Postpr
 assert_contains "history_show_budget_profile" "$histobs_show_latest" "profile : long"
 assert_contains "history_show_budget_max_tokens" "$histobs_show_latest" "max_tokens : 5555"
 assert_contains "history_show_budget_chunk_count" "$histobs_show_latest" "chunk_count : 2"
+histobs_show_latest_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history --json 1)"
+assert_json_equals "history_show_json_index" "$histobs_show_latest_json" "index" "1"
+assert_json_equals "history_show_json_mode" "$histobs_show_latest_json" "entry.mode" "code"
+assert_json_equals "history_show_json_budget_profile" "$histobs_show_latest_json" "entry.postprocess_budget.profile" "long"
+histobs_stats_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history stats --json)"
+assert_json_equals "history_stats_json_entries" "$histobs_stats_json" "entries" "2"
+assert_json_equals "history_stats_json_budget_entries" "$histobs_stats_json" "postprocess_budget.entries" "2"
+assert_json_equals "history_stats_json_budget_long_count" "$histobs_stats_json" "postprocess_budget.profile_counts.long" "1"
+histobs_last="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper last)"
+assert_contains "history_last_header" "$histobs_last" "Latest dictation"
+assert_contains "history_last_budget" "$histobs_last" "budget: profile=long"
+histobs_last_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper last --json)"
+assert_json_equals "history_last_json_app" "$histobs_last_json" "entry.app" "Ghostty"
+assert_json_equals "history_last_json_budget_profile" "$histobs_last_json" "entry.postprocess_budget.profile" "long"
 
 # --- Regression 13: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"

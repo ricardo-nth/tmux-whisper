@@ -31,7 +31,7 @@ RECORDING:
   tmux-whisper inline start       # start background inline recording
   tmux-whisper inline stop        # stop background inline recording
   tmux-whisper inline toggle      # toggle background inline recording
-  tmux-whisper status             # show runtime + effective settings snapshot
+  tmux-whisper status [--json]    # show runtime + effective settings snapshot
   tmux-whisper stop               # force stop any recording
   tmux-whisper cancel             # cancel recording (discard, no paste)
 
@@ -50,8 +50,8 @@ AUDIO:
   tmux-whisper device iphone-name "<X>" # override iPhone source name hint
 
 DIAGNOSTICS:
-  tmux-whisper debug              # show resolved device + relevant env/config
-  tmux-whisper doctor             # quick health summary (state files, markers, logs)
+  tmux-whisper debug [--json]     # show resolved device + relevant env/config
+  tmux-whisper doctor [--json]    # quick health summary (state files, markers, logs)
   tmux-whisper logs               # show recent logs (record/transcribe)
   tmux-whisper warmup            # preload the Swift Parakeet daemon/model
   tmux-whisper keep-logs          # show persistent log retention setting
@@ -154,7 +154,9 @@ REPLAY (re-process text with different mode):
 
 HISTORY (saved transcripts, auto-cleanup after 7 days):
   tmux-whisper history            # list recent dictations (last 20)
-  tmux-whisper history N          # show entry N (1 = most recent)
+  tmux-whisper history N [--json] # show entry N (1 = most recent)
+  tmux-whisper history stats [--json] # summarize saved dictations + operator timings
+  tmux-whisper last [--json]      # concise summary of the most recent dictation
   tmux-whisper history reprocess N [mode]  # re-run LLM on raw transcript
   tmux-whisper history clear      # delete all history
 
@@ -5356,14 +5358,14 @@ case "$cmd" in
   -h|--help|help) usage ;;
   devices) devices ;;
   device) set_device "${@:2}" ;;
-  debug) debug ;;
-  doctor) doctor ;;
+  debug) debug "${@:2}" ;;
+  doctor) doctor "${@:2}" ;;
   logs) logs ;;
   warmup) warmup_backend "${@:2}" ;;
   bench) bench "${2:-}" ;;
   bench-matrix|bench_matrix) bench_matrix "${2:-}" "${3:-}" ;;
   changelog) changelog ;;
-  status) status ;;
+  status) status "${@:2}" ;;
   stop) stop ;;
   cancel) cancel ;;
   toggle|"") toggle ;;
@@ -5393,6 +5395,13 @@ case "$cmd" in
   keybind) manage_keybind "${2:-}" "${3:-}" ;;
   swiftbar) manage_swiftbar "${2:-}" ;;
   replay) replay "${2:-}" "${@:3}" ;;
-  history) manage_history "${2:-}" "${@:3}" ;;
+  history) manage_history "${@:2}" ;;
+  last)
+    if [[ "${2:-}" == "--json" ]]; then
+      show_last_history "json"
+    else
+      show_last_history
+    fi
+    ;;
   *) die "unknown command: $cmd (run: tmux-whisper --help)" ;;
 esac
