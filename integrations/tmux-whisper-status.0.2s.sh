@@ -5,14 +5,14 @@
 # <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
 # <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
 
-STATE_FILE="/tmp/whisper-dictate.state"
-INLINE_STATE="/tmp/whisper-dictate-inline.state"
-ERROR_FLAG="/tmp/dictate-error.flag"
-PROCESSING_DIR="/tmp/dictate-processing"
-PROCESSED_FLAG="/tmp/dictate-just-processed"
-CANCEL_FLAG="/tmp/dictate-cancelled.flag"
-PROCESSING_LONG_FLAG="/tmp/dictate-inline-processing-long.flag"
-TMUX_JOBS_DIR="/tmp/dictate-tmux-jobs"
+STATE_FILE="${DICTATE_STATE_FILE:-/tmp/whisper-dictate.state}"
+INLINE_STATE="${DICTATE_INLINE_STATE_FILE:-/tmp/whisper-dictate-inline.state}"
+ERROR_FLAG="${DICTATE_ERROR_FLAG:-/tmp/dictate-error.flag}"
+PROCESSING_DIR="${DICTATE_PROCESSING_DIR:-/tmp/dictate-processing}"
+PROCESSED_FLAG="${DICTATE_PROCESSED_FLAG:-/tmp/dictate-just-processed}"
+CANCEL_FLAG="${DICTATE_CANCEL_FLAG:-/tmp/dictate-cancelled.flag}"
+PROCESSING_LONG_FLAG="${DICTATE_PROCESSING_LONG_FLAG:-/tmp/dictate-inline-processing-long.flag}"
+TMUX_JOBS_DIR="${DICTATE_TMUX_JOBS_DIR:-/tmp/dictate-tmux-jobs}"
 
 # Ensure $HOME is set (SwiftBar environment can be minimal).
 if [[ -z "${HOME:-}" ]]; then

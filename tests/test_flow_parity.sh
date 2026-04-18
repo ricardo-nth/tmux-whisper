@@ -530,6 +530,7 @@ run_inline_swift_round() {
   local copied
   copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
   assert_contains "inline_swift_transcript" "$copied" "swift backend transcript"
+  assert_file_contains "inline_swift_tail_pad_ffmpeg" "$DICTATE_TEST_FFMPEG_LOG" "anullsrc=r=16000:cl=mono"
 }
 
 run_inline_swift_superseded_round() {

@@ -92,7 +92,7 @@ tmux-whisper --help
 Pinned to stable tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.4.1/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.5.1/bootstrap.sh | bash
 ```
 
 Pass install flags through bootstrap:

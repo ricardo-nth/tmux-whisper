@@ -274,7 +274,7 @@ assert_contains "raycast_toggle_missing_binary_runtime" "$toggle_out" "tmux-whis
 
 SWIFTBAR_HOME="$TMP_ROOT/home-swiftbar"
 mkdir -p "$SWIFTBAR_HOME"
-swiftbar_out="$(HOME="$SWIFTBAR_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+swiftbar_out="$(HOME="$SWIFTBAR_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" DICTATE_STATE_FILE="$SWIFTBAR_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_missing_binary_runtime" "$swiftbar_out" "Tmux Whisper binary not found"
 
 # --- Regression 10: SwiftBar runtime integration toggle works end-to-end. ---
@@ -305,7 +305,7 @@ assert_contains "swiftbar_cli_on" "$swiftbar_cli_on" "SwiftBar integration: ON"
 swiftbar_cli_toggle="$(HOME="$SWIFTBAR_TOGGLE_HOME" PATH="$SWIFTBAR_TOGGLE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$SWIFTBAR_TOGGLE_CFG" DICTATE_CONFIG_FILE="$SWIFTBAR_TOGGLE_CFG/config.toml" tmux-whisper swiftbar toggle)"
 assert_contains "swiftbar_cli_toggle" "$swiftbar_cli_toggle" "SwiftBar integration: OFF"
 
-swiftbar_toggle_out="$(HOME="$SWIFTBAR_TOGGLE_HOME" XDG_CONFIG_HOME="$SWIFTBAR_TOGGLE_HOME/.config" PATH="$SWIFTBAR_TOGGLE_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_TOGGLE_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_TOGGLE_BIN/tmux-whisper" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+swiftbar_toggle_out="$(HOME="$SWIFTBAR_TOGGLE_HOME" XDG_CONFIG_HOME="$SWIFTBAR_TOGGLE_HOME/.config" PATH="$SWIFTBAR_TOGGLE_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_TOGGLE_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_TOGGLE_BIN/tmux-whisper" DICTATE_STATE_FILE="$SWIFTBAR_TOGGLE_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_TOGGLE_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_TOGGLE_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_TOGGLE_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_TOGGLE_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_TOGGLE_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_TOGGLE_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_plugin_off_state" "$swiftbar_toggle_out" "SwiftBar integration: OFF"
 assert_contains "swiftbar_plugin_off_enable_action" "$swiftbar_toggle_out" "Enable SwiftBar integration"
 
@@ -341,7 +341,7 @@ printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/email/flows"
 printf '%s\n' "Context: long mode." >"$SWIFTBAR_MODES_CFG/modes/long/prompt"
 printf '%s\n' "inline" >"$SWIFTBAR_MODES_CFG/modes/long/flows"
 
-swiftbar_modes_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+swiftbar_modes_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail DICTATE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_MODES_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_MODES_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_MODES_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_MODES_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 swiftbar_modes_first_line="$(printf '%s\n' "$swiftbar_modes_out" | sed -n '1p')"
 assert_equals "swiftbar_inline_blank_mode_icon_ready_line" "$swiftbar_modes_first_line" "🎙️"
 assert_contains "swiftbar_inline_mode_auto_display" "$swiftbar_modes_out" "Mode: email"

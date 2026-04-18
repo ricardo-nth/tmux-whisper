@@ -197,7 +197,8 @@ ENV OPTIONS:
   DICTATE_AUDIO_SOURCE=auto|external|mac|iphone|name # source strategy override
   DICTATE_AUDIO_INDEX=N      # audio device index
   DICTATE_AUDIO_NAME="X"     # preferred device name substring (more stable than index)
-  DICTATE_STOP_GRACE_MS=250 # keep recording briefly after stop to catch trailing words
+  DICTATE_STOP_GRACE_MS=400 # keep recording briefly after stop to catch trailing words
+  DICTATE_TRANSCRIBE_TAIL_PAD_MS=250 # append a little silence before ASR to preserve final words
   DICTATE_GPU="-ng"          # disable GPU (CPU only)
   DICTATE_THREADS=5          # whisper thread count
   DICTATE_BEAM_SIZE=1        # whisper decode beam size
@@ -2048,6 +2049,7 @@ transcribe_audio() {
   local txt=""
 
   maybe_trim_silence_inplace "$wav"
+  maybe_pad_transcribe_tail_inplace "$wav"
   requested_backend="$(resolve_transcribe_backend)"
   DICTATE_LAST_BACKEND_ENGINE=""
   DICTATE_LAST_BACKEND_MODEL=""
@@ -2115,6 +2117,49 @@ maybe_trim_silence_inplace() {
   ffmpeg -hide_banner -loglevel error -y \
     -i "$wav" \
     -af "silenceremove=start_periods=1:start_duration=${min_s}:start_threshold=${threshold_amp}:start_silence=${keep_s}:stop_periods=${stop_periods}:stop_duration=${min_s}:stop_threshold=${threshold_amp}:stop_silence=${keep_s}:detection=peak" \
+    -ac 1 -ar 16000 -c:a pcm_s16le \
+    "$tmp" >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1
+  local rc=$?
+  set -e
+
+  if [[ "$rc" -ne 0 || ! -s "$tmp" ]]; then
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  fi
+
+  mv -f "$tmp" "$wav" 2>/dev/null || {
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  }
+}
+
+maybe_pad_transcribe_tail_inplace() {
+  local wav="${1:-}"
+  [[ -n "$wav" && -f "$wav" ]] || return 0
+
+  local tail_pad_ms="${DICTATE_TRANSCRIBE_TAIL_PAD_MS:-250}"
+  [[ "$tail_pad_ms" =~ ^[0-9]+$ ]] || tail_pad_ms=250
+  (( tail_pad_ms > 0 )) || return 0
+
+  command -v ffmpeg >/dev/null 2>&1 || return 0
+
+  local tail_pad_s
+  tail_pad_s="$(awk "BEGIN { printf \"%.3f\", (${tail_pad_ms})/1000 }")"
+  local tmp=""
+  tmp="$(mktemp "${TMPDIR:-/tmp}/dictate-tail-pad.XXXXXX.wav" 2>/dev/null || true)"
+  [[ -n "$tmp" ]] || tmp="${wav}.tail.wav"
+
+  if [[ -n "${TRANSCRIBE_LOG:-}" ]]; then
+    printf "[%s] transcribe_tail_pad: ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$tail_pad_ms" \
+      >>"$TRANSCRIBE_LOG" 2>/dev/null || true
+  fi
+
+  set +e
+  ffmpeg -hide_banner -loglevel error -y \
+    -i "$wav" \
+    -f lavfi -t "$tail_pad_s" -i "anullsrc=r=16000:cl=mono" \
+    -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
     "$tmp" >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1
   local rc=$?
@@ -4401,7 +4446,7 @@ stop() {
 terminate_recording_pid() {
   local target_pid="${1:-}"
   local attempt
-  local stop_grace_ms="${DICTATE_STOP_GRACE_MS:-250}"
+  local stop_grace_ms="${DICTATE_STOP_GRACE_MS:-400}"
   local int_wait_attempts="60"
   local term_wait_attempts="40"
   [[ -n "$target_pid" && "$target_pid" =~ ^[0-9]+$ ]] || return 0

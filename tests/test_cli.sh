@@ -21,8 +21,12 @@ if [[ "$output" != *"tmux-whisper: local dictation with pluggable ASR backends"*
   echo "Expected help output from tmux-whisper command" >&2
   exit 1
 fi
-if [[ "$output" != *"DICTATE_STOP_GRACE_MS=250"* ]]; then
+if [[ "$output" != *"DICTATE_STOP_GRACE_MS=400"* ]]; then
   echo "Expected help output to document stop grace tuning" >&2
+  exit 1
+fi
+if [[ "$output" != *"DICTATE_TRANSCRIBE_TAIL_PAD_MS=250"* ]]; then
+  echo "Expected help output to document transcription tail padding" >&2
   exit 1
 fi
 

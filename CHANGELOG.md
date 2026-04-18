@@ -1,13 +1,13 @@
-# Dictate changelog
+# Tmux Whisper changelog
 
 ## Current working version
 
-- **Stable release**: `v0.4.1` (tagged on 2026-02-18)
+- **Stable release**: `v0.5.1` (tagged on 2026-04-18)
 - **Next target**: `v0.5.x` (UX + config maturity)
-- **Completed**: config schema diagnostics hardening (PR #3, merged 2026-02-18)
-- **Primary development branch**: `main` in `ricardo-nth/dictate-cli`
+- **Completed**: trailing-word clipping hardening in the stop/transcribe path
+- **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
-  - Homebrew (stable): `brew install ricardo-nth/tap/dictate-cli`
+  - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
   - Bootstrap/local install (testing): `bootstrap.sh` or `./install.sh --force`
 
 ### Planned next (v0.5 queue)
@@ -18,6 +18,18 @@
 - docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
 - CLI naming transition: move user-facing command language from legacy `dictate ...` toward `tmux-whisper ...` and update aliases/docs after the current UI/config cleanup settles
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
+
+## 2026-04-18
+
+- **Stability (dictation clipping)**:
+  - Increased the default stop grace window from `250ms` to `400ms` so hotkey stop is less likely to cut off trailing speech.
+  - Added a small transcription tail pad (`DICTATE_TRANSCRIBE_TAIL_PAD_MS`, default `250ms`) so ASR sees a clean utterance boundary before decoding.
+  - Verified the latest clipped real-world entry was truncating in saved `raw` history before paste, and fixed the upstream record/transcribe boundary rather than only the paste path.
+- **Validation**:
+  - Added regression coverage for the new tail-pad ffmpeg path in flow parity tests.
+  - Ran `./tests/test_cli.sh`, `./tests/test_flow_parity.sh`, `./tests/test_regression.sh`, and `./tests/ci.sh`.
+- **Test isolation**:
+  - Updated the SwiftBar status plugin to respect env-overridden runtime state paths so local regression runs stay hermetic on machines with real active dictation state.
 
 ## 2026-02-19
 
