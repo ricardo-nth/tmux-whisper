@@ -6,6 +6,8 @@
 - **Next target**: `v0.5.x` (UX + config maturity)
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
 - **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
+- **Completed**: operator CLI foundation for `status`, `debug`, `doctor`, `history`, and `last` with machine-readable JSON output
+- **Completed**: richer operator summaries for runtime state and recent history; dashboard/TUI remains a follow-up layer on top
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
@@ -14,10 +16,12 @@
 ### Planned next (v0.5 queue)
 
 - mode/config UX validation polish (`dictate doctor`, mode checks, clearer fix hints)
+- clipped-run observability follow-up: capture clearer stop/transcribe boundary breadcrumbs for rare early truncation cases before attempting another clipping tweak
 - audio-device cache observability follow-up: consider a lightweight debug/log note when a stale cached AVFoundation index is invalidated and re-resolved after device-order changes
 - vocab workflow safety pass (import/export ergonomics, normalize/dedupe guardrails)
 - docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
 - CLI naming transition: move user-facing command language from legacy `dictate ...` toward `tmux-whisper ...` and update aliases/docs after the current UI/config cleanup settles
+- thin dashboard/TUI on top of the new operator data surface, after the CLI summary layer settles
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
 
 ## 2026-04-18
