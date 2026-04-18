@@ -561,6 +561,8 @@ run_status_postprocess_round() {
 
   local out
   out="$("$DICTATE_BIN" status)"
+  assert_contains "status_summary_ready" "$out" "state: ready"
+  assert_contains "status_summary_backend_cold" "$out" "backend_readiness: cold"
   assert_contains "status_post_inline_off" "$out" "postprocess.inline: OFF"
   assert_contains "status_post_tmux_off" "$out" "postprocess.tmux: OFF"
   assert_contains "status_mode_prompt_inline_inactive" "$out" "mode_prompt.inline: inactive"
@@ -585,6 +587,7 @@ run_status_backend_round() {
   setup_case "status-backend"
   local out
   out="$("$DICTATE_BIN" status)"
+  assert_contains "status_backend_summary_headline" "$out" "headline: Dictation is ready, but the backend is cold."
   assert_contains "status_backend_requested" "$out" "backend: swift_parakeet"
   assert_contains "status_backend_model" "$out" "swift_parakeet.model: $CASE_DIR/swift-model (v3)"
 }

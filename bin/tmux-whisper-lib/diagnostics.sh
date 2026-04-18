@@ -677,7 +677,7 @@ doctor_json() {
     doctor_json_add_suggestion "Clean stale state files: rm -f ${stale_state_paths//$'\n'/ }"
   fi
 
-  local proc_dir="/tmp/dictate-processing"
+  local proc_dir="${DICTATE_PROCESSING_DIR:-/tmp/dictate-processing}"
   local proc_total=0
   local proc_live=0
   local proc_stale=0
@@ -1232,7 +1232,7 @@ doctor() {
   echo ""
 
   echo "Processing markers:"
-  local proc_dir="/tmp/dictate-processing"
+  local proc_dir="${DICTATE_PROCESSING_DIR:-/tmp/dictate-processing}"
   local proc_total=0
   local proc_live=0
   local proc_stale=0
@@ -1590,6 +1590,71 @@ status() {
   local tmux_total tmux_rec tmux_proc
   read -r tmux_total tmux_rec tmux_proc < <(count_tmux_jobs_snapshot)
 
+  local state_tmux_summary state_inline_summary
+  local tmux_state tmux_pid tmux_age tmux_display tmux_model tmux_lang tmux_raw_target
+  local inline_state_status inline_pid inline_age inline_display inline_model inline_lang inline_raw_target
+  state_tmux_summary="$(state_file_summary_tsv tmux "$STATE_FILE")"
+  state_inline_summary="$(state_file_summary_tsv inline "$inline_state")"
+  IFS=$'\t' read -r tmux_state tmux_pid tmux_age tmux_display tmux_model tmux_lang tmux_raw_target <<<"$state_tmux_summary"
+  IFS=$'\t' read -r inline_state_status inline_pid inline_age inline_display inline_model inline_lang inline_raw_target <<<"$state_inline_summary"
+
+  local backend_readiness summary_state summary_headline summary_next_action summary_active_flow
+  local model_ready="0" socket_live="0" stale_runtime="0"
+  if [[ -n "$swift_model_path" && -d "$swift_model_path" ]]; then
+    model_ready="1"
+  fi
+  if [[ -S "$swift_socket_path" ]]; then
+    socket_live="1"
+  fi
+  if [[ "$model_ready" != "1" ]]; then
+    backend_readiness="missing_model"
+  elif [[ "$socket_live" == "1" ]]; then
+    backend_readiness="warm"
+  else
+    backend_readiness="cold"
+  fi
+  if [[ "$tmux_state" == "stale" || "$inline_state_status" == "stale" || "$proc_stale" -gt 0 ]]; then
+    stale_runtime="1"
+  fi
+
+  summary_active_flow="none"
+  if [[ "$proc_live" -gt 0 || "$tmux_proc" -gt 0 ]]; then
+    summary_state="processing"
+    summary_headline="Dictation is still processing a recent run."
+    if [[ "$tmux_proc" -gt 0 ]]; then
+      summary_active_flow="tmux"
+    elif [[ "$inline_state_status" == "active" ]]; then
+      summary_active_flow="inline"
+    fi
+    summary_next_action="Wait for transcription and paste to finish."
+  elif [[ "$tmux_state" == "active" || "$tmux_rec" -gt 0 ]]; then
+    summary_state="recording"
+    summary_active_flow="tmux"
+    summary_headline="Tmux dictation is recording right now."
+    summary_next_action="Stop the current run with your hotkey or tmux-whisper stop."
+  elif [[ "$inline_state_status" == "active" ]]; then
+    summary_state="recording"
+    summary_active_flow="inline"
+    summary_headline="Inline dictation is recording right now."
+    summary_next_action="Stop the current run with your hotkey or tmux-whisper stop."
+  elif [[ "$stale_runtime" == "1" ]]; then
+    summary_state="attention"
+    summary_headline="Runtime markers look stale."
+    summary_next_action="Run tmux-whisper doctor to inspect or tmux-whisper cancel if a run got stuck."
+  elif [[ "$backend_readiness" == "missing_model" ]]; then
+    summary_state="not_ready"
+    summary_headline="Parakeet model path is missing or invalid."
+    summary_next_action="Set swift_parakeet.model_path in ~/.config/dictate/config.toml."
+  elif [[ "$backend_readiness" == "cold" ]]; then
+    summary_state="ready"
+    summary_headline="Dictation is ready, but the backend is cold."
+    summary_next_action="Use your normal hotkey, or run tmux-whisper warmup to pre-load the daemon."
+  else
+    summary_state="ready"
+    summary_headline="Dictation is ready."
+    summary_next_action="Use your normal hotkey to start recording."
+  fi
+
   local override_vars=(
     DICTATE_AUDIO_SOURCE DICTATE_AUDIO_INDEX DICTATE_AUDIO_NAME
     DICTATE_TMUX_MODE
@@ -1613,9 +1678,7 @@ status() {
   env_override_lines="$(collect_set_env_overrides "${override_vars[@]}")"
 
   if [[ "$output_format" == "json" ]]; then
-    local state_tmux_summary state_inline_summary postprocess_note=""
-    state_tmux_summary="$(state_file_summary_tsv tmux "$STATE_FILE")"
-    state_inline_summary="$(state_file_summary_tsv inline "$inline_state")"
+    local postprocess_note=""
     if [[ "$cerebras_key_set" != "1" && ( "$post_inline_requested" == "1" || "$post_tmux_requested" == "1" ) ]]; then
       postprocess_note="disabled at runtime (CEREBRAS_API_KEY missing)"
     fi
@@ -1633,6 +1696,11 @@ status() {
       JSON_TMUX_RECORDING="$tmux_rec" \
       JSON_TMUX_PROCESSING="$tmux_proc" \
       JSON_TMUX_JOBS_DIR="$TMUX_JOBS_DIR" \
+      JSON_SUMMARY_STATE="$summary_state" \
+      JSON_SUMMARY_HEADLINE="$summary_headline" \
+      JSON_SUMMARY_NEXT_ACTION="$summary_next_action" \
+      JSON_SUMMARY_ACTIVE_FLOW="$summary_active_flow" \
+      JSON_BACKEND_READINESS="$backend_readiness" \
       JSON_BACKEND="$backend_requested" \
       JSON_MODE_INLINE="$mode_inline" \
       JSON_MODE_INLINE_DISPLAY="$(mode_display_name "$mode_inline")" \
@@ -1741,6 +1809,13 @@ for line in s("JSON_ENV_OVERRIDES").splitlines():
 
 data = {
     "command": "status",
+    "summary": {
+        "state": s("JSON_SUMMARY_STATE"),
+        "headline": s("JSON_SUMMARY_HEADLINE"),
+        "next_action": s("JSON_SUMMARY_NEXT_ACTION"),
+        "active_flow": None if s("JSON_SUMMARY_ACTIVE_FLOW") in ("", "none") else s("JSON_SUMMARY_ACTIVE_FLOW"),
+        "backend_readiness": s("JSON_BACKEND_READINESS"),
+    },
     "runtime": {
         "tmux": parse_state(s("JSON_STATE_TMUX"), s("JSON_STATE_FILE_PATH")),
         "inline": parse_state(s("JSON_STATE_INLINE"), s("JSON_INLINE_STATE_FILE_PATH")),
@@ -1870,6 +1945,13 @@ PYEOF
   fi
 
   echo "Tmux Whisper status"
+  echo ""
+  echo "Summary:"
+  echo "  state: $summary_state"
+  echo "  headline: $summary_headline"
+  echo "  backend_readiness: $backend_readiness"
+  echo "  active_flow: $summary_active_flow"
+  echo "  next_action: $summary_next_action"
   echo ""
   echo "Runtime:"
   describe_state_file "tmux" "$STATE_FILE"
