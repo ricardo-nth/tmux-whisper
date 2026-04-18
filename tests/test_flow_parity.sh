@@ -514,6 +514,28 @@ run_inline_toggle_round() {
   pass "inline_toggle_send_enter"
 }
 
+run_inline_foreground_stop_round() {
+  setup_case "inline-foreground-stop"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_WHISPER_TEXT="foreground inline transcript"
+  export DICTATE_STOP_GRACE_MS=5
+  export DICTATE_AUTOSEND=1
+
+  local out_file="$CASE_DIR/logs/inline-foreground.out"
+  "$DICTATE_BIN" inline >"$out_file" 2>&1 &
+  local cli_pid=$!
+
+  sleep 0.2
+  kill -TERM "$cli_pid"
+  wait "$cli_pid"
+
+  local out copied
+  out="$(cat "$out_file")"
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_foreground_stop_sent" "$out" "Sent"
+  assert_contains "inline_foreground_stop_clipboard" "$copied" "foreground inline transcript"
+}
+
 run_inline_swift_round() {
   setup_case "inline-swift"
   export DICTATE_BACKEND=swift_parakeet
@@ -640,6 +662,7 @@ run_inline_vocab_round
 run_inline_cmd_enter_round
 run_inline_auto_mode_round
 run_inline_toggle_round
+run_inline_foreground_stop_round
 run_inline_swift_round
 run_inline_swift_superseded_round
 run_inline_swift_fallback_round

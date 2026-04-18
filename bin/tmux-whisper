@@ -197,8 +197,8 @@ ENV OPTIONS:
   DICTATE_AUDIO_SOURCE=auto|external|mac|iphone|name # source strategy override
   DICTATE_AUDIO_INDEX=N      # audio device index
   DICTATE_AUDIO_NAME="X"     # preferred device name substring (more stable than index)
-  DICTATE_STOP_GRACE_MS=400 # keep recording briefly after stop to catch trailing words
-  DICTATE_TRANSCRIBE_TAIL_PAD_MS=250 # append a little silence before ASR to preserve final words
+  DICTATE_STOP_GRACE_MS=700 # keep recording briefly after stop to catch trailing words
+  DICTATE_TRANSCRIBE_TAIL_PAD_MS=500 # append a little silence before ASR to preserve final words
   DICTATE_GPU="-ng"          # disable GPU (CPU only)
   DICTATE_THREADS=5          # whisper thread count
   DICTATE_BEAM_SIZE=1        # whisper decode beam size
@@ -2137,8 +2137,8 @@ maybe_pad_transcribe_tail_inplace() {
   local wav="${1:-}"
   [[ -n "$wav" && -f "$wav" ]] || return 0
 
-  local tail_pad_ms="${DICTATE_TRANSCRIBE_TAIL_PAD_MS:-250}"
-  [[ "$tail_pad_ms" =~ ^[0-9]+$ ]] || tail_pad_ms=250
+  local tail_pad_ms="${DICTATE_TRANSCRIBE_TAIL_PAD_MS:-500}"
+  [[ "$tail_pad_ms" =~ ^[0-9]+$ ]] || tail_pad_ms=500
   (( tail_pad_ms > 0 )) || return 0
 
   command -v ffmpeg >/dev/null 2>&1 || return 0
@@ -4446,7 +4446,7 @@ stop() {
 terminate_recording_pid() {
   local target_pid="${1:-}"
   local attempt
-  local stop_grace_ms="${DICTATE_STOP_GRACE_MS:-400}"
+  local stop_grace_ms="${DICTATE_STOP_GRACE_MS:-700}"
   local int_wait_attempts="60"
   local term_wait_attempts="40"
   [[ -n "$target_pid" && "$target_pid" =~ ^[0-9]+$ ]] || return 0
@@ -5009,13 +5009,17 @@ inline() {
   startup_total_ms=$(( record_started_ms - startup_started_ms ))
   (( startup_total_ms < 0 )) && startup_total_ms=0
   maybe_warmup_swift_parakeet_in_background
-  trap 'echo ""' INT
+  local ffmpeg_pid=""
+  local inline_interrupted="0"
   : >"$record_log" 2>/dev/null || true
   ffmpeg -hide_banner -loglevel error \
     -f avfoundation -i ":${audio_index}" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
-    "$wav" >"$record_log" 2>&1 || true
-  trap - INT
+    "$wav" >"$record_log" 2>&1 &
+  ffmpeg_pid="$!"
+  trap 'inline_interrupted=1; echo ""; terminate_recording_pid "$ffmpeg_pid"' INT TERM
+  wait "$ffmpeg_pid" || true
+  trap - INT TERM
 
   local record_ms
   record_ms=$(( $(now_ms) - record_started_ms ))
