@@ -29,40 +29,23 @@ Missing dependencies:
 
 - `python3` and `ffmpeg` are required.
 - `swift` is required when the local `tmux-whisperd` binary needs to be built or rebuilt.
-- `whisper-cli` is optional legacy compatibility only.
 - Typical Homebrew installs:
 
 ```bash
 brew install python ffmpeg
 ```
 
-Recent fallback to the legacy backend:
+Parakeet backend unavailable:
 
-- Symptom in `tmux-whisper doctor`: `backend runtime note: recent dictation used legacy whisper.cpp fallback`
-- Symptom in `tmux-whisper status`: `backend.last_fallback: ...`
+- Symptoms in `tmux-whisper doctor`:
+  - `tmux-whisperd binary: ... (build needed)`
+  - `tmux-whisperd socket: ... (offline)`
+  - `parakeet model: missing`
 - Fix:
+  - run `./install.sh --force`
   - run `tmux-whisper warmup`
-  - run `tmux-whisper debug`
   - verify `swift_parakeet.model_path` in `~/.config/dictate/config.toml`
-  - reinstall runtime bits if needed: `./install.sh --force`
-
-If you intentionally use the legacy `whisper.cpp` backend:
-
-- Install the compatibility binary:
-
-```bash
-brew install whisper-cpp
-```
-
-- Create the models directory if needed: `mkdir -p ~/.local/share/whisper/models`
-- Download at least one `.bin` model there:
-  - `ggml-base.en.bin` for `tmux-whisper model base`
-  - `ggml-small.en.bin` for `tmux-whisper model small`
-  - `ggml-large-v3-turbo-q5_0.bin` for `tmux-whisper model turbo`
-- Model sources:
-  - <https://huggingface.co/ggerganov/whisper.cpp/tree/main>
-  - <https://ggml.ggerganov.com/>
-- Verify with: `tmux-whisper doctor`
+  - ensure `swift` is installed if the native backend needs to rebuild
 
 ## 3) Mode configuration issues
 

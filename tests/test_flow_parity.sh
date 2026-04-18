@@ -139,12 +139,6 @@ fi
 exit 0
 EOF
 
-  cat >"$STUB_DIR/whisper-cli" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "${DICTATE_TEST_WHISPER_TEXT:-stub transcript}"
-EOF
-
   cat >"$STUB_DIR/tmux" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -322,7 +316,7 @@ PYEOF
 esac
 EOF
 
-  chmod +x "$STUB_DIR/ffmpeg" "$STUB_DIR/whisper-cli" "$STUB_DIR/tmux" "$STUB_DIR/pbcopy" "$STUB_DIR/osascript" "$STUB_DIR/tmux-whisperd"
+  chmod +x "$STUB_DIR/ffmpeg" "$STUB_DIR/tmux" "$STUB_DIR/pbcopy" "$STUB_DIR/osascript" "$STUB_DIR/tmux-whisperd"
 }
 
 CASE_DIR=""
@@ -330,7 +324,7 @@ CASE_DIR=""
 setup_case() {
   local name="$1"
   CASE_DIR="$TMP_ROOT/$name"
-  mkdir -p "$CASE_DIR"/{home,tmp,logs,models,tmux-jobs,swift-model}
+  mkdir -p "$CASE_DIR"/{home,tmp,logs,tmux-jobs,swift-model}
   mkdir -p "$CASE_DIR/config/modes/base" "$CASE_DIR/config/modes/chat" "$CASE_DIR/config/modes/code" "$CASE_DIR/config/modes/long"
 
   printf '%s\n' "code" >"$CASE_DIR/config/current-mode"
@@ -342,7 +336,6 @@ setup_case() {
   printf '%s\n' "Messages" >"$CASE_DIR/config/modes/chat/apps"
   printf '%s\n' "inline" >"$CASE_DIR/config/modes/chat/flows"
   : >"$CASE_DIR/config/vocab"
-  : >"$CASE_DIR/models/ggml-test.bin"
 
   export HOME="$CASE_DIR/home"
   export XDG_CONFIG_HOME="$CASE_DIR/home/.config"
@@ -350,7 +343,6 @@ setup_case() {
   export PATH="$STUB_DIR:/usr/bin:/bin"
   mkdir -p "$HOME/.local/bin"
   ln -sf "$STUB_DIR/ffmpeg" "$HOME/.local/bin/ffmpeg"
-  ln -sf "$STUB_DIR/whisper-cli" "$HOME/.local/bin/whisper-cli"
   ln -sf "$STUB_DIR/tmux" "$HOME/.local/bin/tmux"
   ln -sf "$STUB_DIR/pbcopy" "$HOME/.local/bin/pbcopy"
   ln -sf "$STUB_DIR/osascript" "$HOME/.local/bin/osascript"
@@ -364,6 +356,9 @@ setup_case() {
   export DICTATE_RECORD_LOG="$CASE_DIR/logs/record.log"
   export DICTATE_TRANSCRIBE_LOG="$CASE_DIR/logs/transcribe.log"
   export DICTATE_TMUX_JOBS_DIR="$CASE_DIR/tmux-jobs"
+  export DICTATE_TMUX_WHISPERD_BIN="$STUB_DIR/tmux-whisperd"
+  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
+  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$CASE_DIR/tmp/tmux-whisperd.sock"
   export DICTATE_KEEP_LOGS=1
   export DICTATE_AUDIO_INDEX=0
   export DICTATE_TMUX_AUTOSEND=1
@@ -372,13 +367,7 @@ setup_case() {
   export DICTATE_INLINE_ACTIVATE_DELAY_MS=0
   export DICTATE_INLINE_SEND_DELAY_MS=0
   export DICTATE_INLINE_PASTE_TARGET=current
-  export DICTATE_MODEL="$CASE_DIR/models/ggml-test.bin"
-  export DICTATE_TMUX_MODEL="$CASE_DIR/models/ggml-test.bin"
-  unset DICTATE_BACKEND
-  unset DICTATE_SWIFT_PARAKEET_MODEL_PATH
   unset DICTATE_SWIFT_PARAKEET_MODEL_VERSION
-  unset DICTATE_SWIFT_PARAKEET_SOCKET_PATH
-  unset DICTATE_TMUX_WHISPERD_BIN
 
   export DICTATE_TEST_FFMPEG_LOG="$CASE_DIR/logs/ffmpeg.log"
   export DICTATE_TEST_TMUX_LOG="$CASE_DIR/logs/tmux.log"
@@ -387,9 +376,10 @@ setup_case() {
   export DICTATE_TEST_TMUX_PANE="%1"
   export DICTATE_TEST_TMUX_PANE_CMD="bash"
   export DICTATE_TEST_FFMPEG_HOLD=0
-  export DICTATE_TEST_WHISPER_TEXT="default transcript"
-  unset DICTATE_TEST_SWIFT_TEXT
+  export DICTATE_TEST_SWIFT_TEXT="default transcript"
   unset DICTATE_TEST_SWIFT_DAEMON_FAIL
+  unset DICTATE_TEST_SWIFT_DELAY_SEQUENCE
+  unset DICTATE_TEST_SWIFT_TEXT_SEQUENCE
 
   unset CEREBRAS_API_KEY
   unset TMUX
@@ -403,7 +393,7 @@ run_tmux_round() {
   export TMUX_PANE="%1"
   export DICTATE_TEST_FFMPEG_HOLD=1
   export DICTATE_TMUX_SEND_MODE="$mode"
-  export DICTATE_TEST_WHISPER_TEXT="tmux round ${mode}"
+  export DICTATE_TEST_SWIFT_TEXT="tmux round ${mode}"
 
   local start_out
   start_out="$("$DICTATE_BIN" toggle)"
@@ -436,7 +426,7 @@ run_tmux_round() {
 
 run_inline_vocab_round() {
   setup_case "inline-vocab"
-  export DICTATE_TEST_WHISPER_TEXT="codex and tmux"
+  export DICTATE_TEST_SWIFT_TEXT="codex and tmux"
   export DICTATE_INLINE_SEND_MODE="ctrl_j"
   export DICTATE_AUTOSEND=1
 
@@ -456,7 +446,7 @@ run_inline_vocab_round() {
 
 run_inline_cmd_enter_round() {
   setup_case "inline-cmd-enter"
-  export DICTATE_TEST_WHISPER_TEXT="hello from inline"
+  export DICTATE_TEST_SWIFT_TEXT="hello from inline"
   export DICTATE_INLINE_SEND_MODE="cmd_enter"
   export DICTATE_AUTOSEND=1
 
@@ -472,9 +462,9 @@ run_inline_auto_mode_round() {
   printf '%s\n' 'plain dictation -> Plain dictation' >"$DICTATE_CONFIG_DIR/modes/base/vocab"
   printf "%s\n" "what's up -> WhatsApp style" >"$DICTATE_CONFIG_DIR/modes/chat/vocab"
   export DICTATE_AUTOSEND=1
+  export DICTATE_TEST_SWIFT_TEXT_SEQUENCE="plain dictation|what's up"
 
   export DICTATE_TEST_FRONT_APP="Preview"
-  export DICTATE_TEST_WHISPER_TEXT="plain dictation"
   local out copied
   out="$("$DICTATE_BIN" inline)"
   assert_contains "inline_auto_base_sent" "$out" "Sent"
@@ -482,7 +472,6 @@ run_inline_auto_mode_round() {
   assert_contains "inline_auto_base_vocab" "$copied" "Plain dictation"
 
   export DICTATE_TEST_FRONT_APP="Messages"
-  export DICTATE_TEST_WHISPER_TEXT="what's up"
   out="$("$DICTATE_BIN" inline)"
   assert_contains "inline_auto_chat_sent" "$out" "Sent"
   copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
@@ -492,7 +481,7 @@ run_inline_auto_mode_round() {
 run_inline_toggle_round() {
   setup_case "inline-toggle"
   export DICTATE_TEST_FFMPEG_HOLD=1
-  export DICTATE_TEST_WHISPER_TEXT="inline background transcript"
+  export DICTATE_TEST_SWIFT_TEXT="inline background transcript"
   export DICTATE_AUTOSEND=1
 
   local start_out
@@ -514,34 +503,8 @@ run_inline_toggle_round() {
   pass "inline_toggle_send_enter"
 }
 
-run_inline_foreground_stop_round() {
-  setup_case "inline-foreground-stop"
-  export DICTATE_TEST_FFMPEG_HOLD=1
-  export DICTATE_TEST_WHISPER_TEXT="foreground inline transcript"
-  export DICTATE_STOP_GRACE_MS=5
-  export DICTATE_AUTOSEND=1
-
-  local out_file="$CASE_DIR/logs/inline-foreground.out"
-  "$DICTATE_BIN" inline >"$out_file" 2>&1 &
-  local cli_pid=$!
-
-  sleep 0.2
-  kill -TERM "$cli_pid"
-  wait "$cli_pid"
-
-  local out copied
-  out="$(cat "$out_file")"
-  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
-  assert_contains "inline_foreground_stop_sent" "$out" "Sent"
-  assert_contains "inline_foreground_stop_clipboard" "$copied" "foreground inline transcript"
-}
-
 run_inline_swift_round() {
   setup_case "inline-swift"
-  export DICTATE_BACKEND=swift_parakeet
-  export DICTATE_TMUX_WHISPERD_BIN="$STUB_DIR/tmux-whisperd"
-  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
-  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$CASE_DIR/tmp/tmux-whisperd.sock"
   export DICTATE_TEST_SWIFT_TEXT="swift backend transcript"
   export DICTATE_AUTOSEND=1
 
@@ -557,9 +520,6 @@ run_inline_swift_round() {
 
 run_inline_swift_superseded_round() {
   setup_case "inline-swift-superseded"
-  export DICTATE_BACKEND=swift_parakeet
-  export DICTATE_TMUX_WHISPERD_BIN="$STUB_DIR/tmux-whisperd"
-  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
   export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/iss.sock"
   export DICTATE_TEST_FFMPEG_HOLD=1
   export DICTATE_AUTOSEND=1
@@ -594,25 +554,6 @@ run_inline_swift_superseded_round() {
   assert_equals "inline_swift_superseded_single_send" "$send_count" "1"
 }
 
-run_inline_swift_fallback_round() {
-  setup_case "inline-swift-fallback"
-  export DICTATE_BACKEND=swift_parakeet
-  export DICTATE_TMUX_WHISPERD_BIN="$CASE_DIR/missing-tmux-whisperd"
-  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
-  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$CASE_DIR/tmp/tmux-whisperd.sock"
-  export DICTATE_TEST_WHISPER_TEXT="whisper fallback transcript"
-  export DICTATE_AUTOSEND=1
-
-  local out
-  out="$("$DICTATE_BIN" inline)"
-  assert_contains "inline_swift_fallback_sent" "$out" "Sent"
-
-  local copied
-  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
-  assert_contains "inline_swift_fallback_transcript" "$copied" "whisper fallback transcript"
-  assert_file_contains "inline_swift_fallback_log" "$DICTATE_TMPDIR/whisper-dictate-inline.transcribe.log" "falling back to whisper_cpp"
-}
-
 run_status_postprocess_round() {
   setup_case "status-postprocess"
   export DICTATE_POSTPROCESS=1
@@ -631,27 +572,20 @@ run_status_postprocess_round() {
 
 run_status_model_mode_round() {
   setup_case "status-model-mode"
-  export DICTATE_BACKEND="whisper_cpp"
-  export DICTATE_MODEL="small"
-  export DICTATE_TMUX_MODEL="turbo"
   export DICTATE_TMUX_MODE="long"
 
   local out
   out="$("$DICTATE_BIN" status)"
+  assert_contains "status_backend_swift" "$out" "backend: swift_parakeet"
   assert_contains "status_mode_tmux_long" "$out" "mode.tmux: long"
-  assert_contains "status_model_inline_small" "$out" "model.inline: small"
-  assert_contains "status_model_tmux_turbo" "$out" "model.tmux: turbo"
+  assert_contains "status_model_swift_path" "$out" "swift_parakeet.model: $CASE_DIR/swift-model (v3)"
 }
 
 run_status_backend_round() {
   setup_case "status-backend"
-  export DICTATE_BACKEND=swift_parakeet
-  export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
-  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$CASE_DIR/tmp/tmux-whisperd.sock"
-
   local out
   out="$("$DICTATE_BIN" status)"
-  assert_contains "status_backend_requested" "$out" "backend.requested: swift_parakeet"
+  assert_contains "status_backend_requested" "$out" "backend: swift_parakeet"
   assert_contains "status_backend_model" "$out" "swift_parakeet.model: $CASE_DIR/swift-model (v3)"
 }
 
@@ -662,10 +596,8 @@ run_inline_vocab_round
 run_inline_cmd_enter_round
 run_inline_auto_mode_round
 run_inline_toggle_round
-run_inline_foreground_stop_round
 run_inline_swift_round
 run_inline_swift_superseded_round
-run_inline_swift_fallback_round
 run_status_postprocess_round
 run_status_model_mode_round
 run_status_backend_round

@@ -42,8 +42,8 @@ if [[ ! -d "$HOME/.local/share/tmux-whisper/models" ]]; then
   echo "Expected install to create tmux-whisper Parakeet models dir" >&2
   exit 1
 fi
-if ! rg -q '^[[:space:]]*backend = "swift_parakeet"$' "$HOME/.config/dictate/config.toml"; then
-  echo "Expected fresh install config to default to swift_parakeet backend" >&2
+if ! rg -q '^\[swift_parakeet\]$' "$HOME/.config/dictate/config.toml"; then
+  echo "Expected fresh install config to include swift_parakeet settings" >&2
   exit 1
 fi
 if [[ "$(tr -d '[:space:]' < "$HOME/.config/dictate/current-mode")" != "auto" ]]; then

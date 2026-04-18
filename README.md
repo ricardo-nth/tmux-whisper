@@ -31,7 +31,6 @@ Tmux Whisper is **tmux-first**.
 - `python3` (with `tomllib`, Python 3.11+ recommended)
 - `swift` + Xcode toolchain (for building the local `tmux-whisperd` backend)
 - Optional: `tmux`, Raycast, SwiftBar
-- Optional legacy compatibility path: `whisper-cli` (from whisper.cpp) plus local GGML models
 - Optional for LLM postprocess: `CEREBRAS_API_KEY`
 
 ## Install
@@ -51,8 +50,6 @@ Preferred Parakeet model home:
 - `~/.local/share/tmux-whisper/models/parakeet-tdt-0.6b-v2-coreml`
 
 Tmux Whisper now expects Parakeet models to live in that owned path so the backend does not depend on another app being installed.
-
-Legacy `whisper.cpp` compatibility still exists in the runtime for comparison and fallback testing, but it is no longer part of the primary install story. If you intentionally want that path, install `whisper-cpp` and add GGML models under `~/.local/share/whisper/models`.
 
 Or one-line bootstrap:
 

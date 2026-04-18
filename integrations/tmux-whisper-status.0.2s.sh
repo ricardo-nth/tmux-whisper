@@ -121,7 +121,6 @@ def b(v, default=False):
 
 post_enabled = "1" if b(get("postprocess.enabled", False), False) else "0"
 autosend = "1" if b(get("inline.autosend", True), True) else "0"
-whisper_backend = str(get("whisper.backend", "swift_parakeet"))
 parakeet_model_path = str(get("swift_parakeet.model_path", ""))
 
 print(f"CFG_CACHE_MTIME={shlex.quote(str(int(os.path.getmtime(path)) if os.path.exists(path) else 0))}")
@@ -129,7 +128,6 @@ print(f"CFG_POSTPROCESS_ENABLED={shlex.quote(post_enabled)}")
 print(f"CFG_INLINE_AUTOSEND={shlex.quote(autosend)}")
 print(f"CFG_INLINE_PROCESS_SOUND={shlex.quote('1' if b(get('inline.process_sound', True), True) else '0')}")
 print(f"CFG_INLINE_PASTE_TARGET={shlex.quote(str(get('inline.paste_target', 'restore')))}")
-print(f"CFG_WHISPER_BACKEND={shlex.quote(whisper_backend)}")
 print(f"CFG_SWIFT_PARAKEET_MODEL_PATH={shlex.quote(parakeet_model_path)}")
 print(f"CFG_AUDIO_SOURCE={shlex.quote(str(get('audio.source', 'auto')))}")
 print(f"CFG_AUDIO_DEVICE_NAME={shlex.quote(str(get('audio.device_name', '')))}")

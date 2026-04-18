@@ -49,9 +49,6 @@ config_version = 1
 [audio]
 source = "auto"
 
-[whisper]
-backend = "swift_parakeet"
-
 [swift_parakeet]
 model_path = "$MODEL_DIR"
 socket_path = "$TMP_ROOT/tmux-whisperd.sock"

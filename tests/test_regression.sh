@@ -106,8 +106,8 @@ custom_doctor="$(HOME="$CUSTOM_HOME" PATH="$CUSTOM_BIN:/usr/bin:/bin" DICTATE_LI
 assert_contains "doctor_install_sanity_section" "$custom_doctor" "Install sanity:"
 assert_contains "doctor_channel_present" "$custom_doctor" "install channel: "
 assert_contains "doctor_schema_ok" "$custom_doctor" "config schema: v1 (expected v1, status=ok)"
-assert_contains "doctor_legacy_section" "$custom_doctor" "Legacy compatibility:"
-assert_not_contains "doctor_whisper_not_required" "$custom_doctor" "whisper-cli: missing"
+assert_contains "doctor_backend_declared" "$custom_doctor" "backend: swift_parakeet"
+assert_not_contains "doctor_legacy_section_removed" "$custom_doctor" "Legacy compatibility:"
 
 # --- Regression 2: install-channel detection should work for local user installs. ---
 LOCAL_HOME="$TMP_ROOT/home-local"
@@ -136,9 +136,6 @@ config_version = 1
 [audio]
 source = "auto"
 
-[whisper]
-backend = "swift_parakeet"
-
 [swift_parakeet]
 model_path = "$BACKEND_MODEL"
 socket_path = "$BACKEND_CFG/.cache/tmux-whisperd.sock"
@@ -149,7 +146,7 @@ assert_contains "debug_backend_requested" "$backend_debug" "backend:      swift_
 assert_contains "debug_backend_model_path" "$backend_debug" "parakeet_mod: $BACKEND_MODEL (ok, v3)"
 
 backend_doctor="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" tmux-whisper doctor)"
-assert_contains "doctor_backend_requested" "$backend_doctor" "backend requested: swift_parakeet"
+assert_contains "doctor_backend_requested" "$backend_doctor" "backend: swift_parakeet"
 assert_contains "doctor_backend_model_version" "$backend_doctor" "parakeet model version: v3"
 
 backend_status="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" tmux-whisper status)"
@@ -648,11 +645,7 @@ OUT
 fi
 exit 0
 EOF
-cat >"$AUDIOCACHE_BIN/whisper-cli" <<'EOF'
-#!/usr/bin/env bash
-exit 0
-EOF
-chmod +x "$AUDIOCACHE_BIN/ffmpeg" "$AUDIOCACHE_BIN/whisper-cli"
+chmod +x "$AUDIOCACHE_BIN/ffmpeg"
 
 audiocache_debug="$(HOME="$AUDIOCACHE_HOME" PATH="$AUDIOCACHE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$AUDIOCACHE_CFG" DICTATE_CONFIG_FILE="$AUDIOCACHE_CFG/config.toml" tmux-whisper debug)"
 assert_contains "audio_cache_stale_refreshed" "$audiocache_debug" "Resolved audio index: 0 (source: detect:source(mac):match(mac):name(MacBook Air Microphone))"

@@ -305,41 +305,6 @@ dictate_lib_apply_vocab_corrections() {
   '
 }
 
-# Resolve whisper model id/path to local ggml model path.
-dictate_lib_resolve_model_path() {
-  local model_id="${1:-}"
-  local models_dir="${2:-${WHISPER_MODELS_DIR:-}}"
-  model_id="$(printf "%s" "$model_id" | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
-  [[ -z "$model_id" ]] && model_id="base"
-
-  if [[ "$model_id" == */* ]]; then
-    local p dir base
-    p="$(dictate_lib_expand_path "$model_id")"
-    dir="$(dirname "$p")"
-    base="$(basename "$p")"
-    case "$base" in
-      ggml-large-v3-turbo-q8_0.bin|ggml-large-v3-turbo.bin) echo "$dir/ggml-large-v3-turbo-q5_0.bin" ;;
-      *) echo "$p" ;;
-    esac
-    return 0
-  fi
-
-  if [[ "$model_id" == *.bin ]]; then
-    case "$model_id" in
-      ggml-large-v3-turbo-q8_0.bin|ggml-large-v3-turbo.bin) printf "%s/%s" "$models_dir" "ggml-large-v3-turbo-q5_0.bin" ;;
-      *) printf "%s/%s" "$models_dir" "$model_id" ;;
-    esac
-    return 0
-  fi
-
-  case "$model_id" in
-    base)  printf "%s/%s" "$models_dir" "ggml-base.en.bin" ;;
-    small) printf "%s/%s" "$models_dir" "ggml-small.en.bin" ;;
-    turbo) printf "%s/%s" "$models_dir" "ggml-large-v3-turbo-q5_0.bin" ;;
-    *)     printf "%s/%s" "$models_dir" "ggml-base.en.bin" ;;
-  esac
-}
-
 # Detect AVFoundation audio index by source strategy.
 # Args:
 #   1: source mode: auto|name|external|mac|iphone

@@ -2,8 +2,7 @@
 set -euo pipefail
 
 # GUI launchers (SwiftBar/Raycast) often run with a minimal PATH.
-# Prefer Homebrew for python3 (tomllib) and ffmpeg; keep legacy whisper-cli
-# reachable too if it is installed for compatibility testing.
+# Prefer Homebrew for python3 (tomllib) and ffmpeg.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 
 if [[ -f "$HOME/.zshenv" ]]; then
@@ -19,10 +18,8 @@ TRANSCRIBE_LOG="${DICTATE_TRANSCRIBE_LOG:-$TMPDIR/whisper-dictate.transcribe.log
 TMUX_JOBS_DIR="${DICTATE_TMUX_JOBS_DIR:-/tmp/dictate-tmux-jobs}"
 
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-DEFAULT_WHISPER_MODELS_DIR="$XDG_DATA_HOME/whisper/models"
 DEFAULT_SWIFT_PARAKEET_MODELS_DIR="$XDG_DATA_HOME/tmux-whisper/models"
 DICTATE_CONFIG_SCHEMA_VERSION=1
-mkdir -p "$DEFAULT_WHISPER_MODELS_DIR"
 
 usage() {
   cat <<'EOF'
@@ -82,12 +79,6 @@ SOUNDS:
   tmux-whisper sound stop on|off  # toggle stop sound
   tmux-whisper sound process on|off # toggle process sound
   tmux-whisper sound error on|off # toggle error sound
-
-LEGACY WHISPER CPP (compatibility only):
-  tmux-whisper model              # show legacy whisper.cpp model aliases
-  tmux-whisper model base         # legacy GGML base alias
-  tmux-whisper model small        # legacy GGML small alias
-  tmux-whisper model turbo        # legacy GGML turbo alias
 
 LLM POST-PROCESSING (Cerebras API):
   tmux-whisper postprocess        # show current setting
@@ -151,8 +142,6 @@ TMUX OPTIONS:
   tmux-whisper tmux process-sound on|off # tmux: play processing SFX before transcribe
   tmux-whisper tmux send-mode auto|enter|codex # tmux autosend strategy
   tmux-whisper tmux mode <name>   # tmux: force mode for postprocess (default: code)
-  tmux-whisper tmux model <name>  # tmux: legacy whisper.cpp model (compatibility only)
-
 KEYBINDS (reference for display in SwiftBar):
   tmux-whisper keybind            # show current keybinds
   tmux-whisper keybind tmux F12   # set tmux mode keybind
@@ -171,7 +160,6 @@ HISTORY (saved transcripts, auto-cleanup after 7 days):
 
 ENV OPTIONS:
   DICTATE_CLEAN=1            # regex filler removal (fast, no LLM)
-  DICTATE_BACKEND=swift_parakeet|whisper_cpp # backend override (legacy whisper_cpp is compatibility only)
   DICTATE_POSTPROCESS=1      # LLM cleanup via Cerebras (inline/global default)
   DICTATE_VOCAB_CLEAN=1      # apply vocab-only corrections when postprocess is OFF
   DICTATE_TRIM_WITH_POSTPROCESS=1 # keep silence-trim enabled even when postprocess is ON
@@ -206,17 +194,8 @@ ENV OPTIONS:
   DICTATE_BENCH_MATRIX_PROGRESS=1 # show per-combo progress lines (set 0 for summary-only output)
   CEREBRAS_API_KEY=...       # required for postprocess
 
-  LEGACY COMPATIBILITY OPTIONS (whisper.cpp only):
-  DICTATE_TMUX_MODEL=base    # tmux-only legacy GGML model alias/path
-  DICTATE_MODEL=/path/...    # override legacy whisper model path
-  DICTATE_GPU="-ng"          # disable GPU (CPU only) for whisper.cpp
-  DICTATE_THREADS=5          # whisper.cpp thread count
-  DICTATE_BEAM_SIZE=1        # whisper.cpp decode beam size
-  DICTATE_BEST_OF=1          # whisper.cpp decode candidates
-  DICTATE_VAD=1              # whisper-cli voice activity detection (skip silences)
-
 CONFIG FILES (~/.config/dictate/):
-  config.toml                # main settings (backend, postprocess, autosend, keybind refs, icons)
+  config.toml                # main settings (Parakeet backend, postprocess, autosend, keybind refs, icons)
   vocab                      # global corrections (one per line: wrong → right)
   current-mode               # mode selection (code/email/etc)
   modes/<mode>/apps          # apps that trigger this mode (one per line)
@@ -484,9 +463,6 @@ silence_keep_ms = 50
 [clean]
 repeats_level = 1
 
-[whisper]
-backend = "swift_parakeet"
-
 [swift_parakeet]
 model_path = ""
 model_version = ""
@@ -613,18 +589,6 @@ out = {
   "CFG_AUDIO_SOUNDS_PROCESS_ENABLED": "1" if b(get("audio.sounds.process_enabled", True), True) else "0",
   "CFG_AUDIO_SOUNDS_ERROR_ENABLED": "1" if b(get("audio.sounds.error_enabled", True), True) else "0",
   "CFG_AUDIO_SOUNDS_CANCEL_ENABLED": "1" if b(get("audio.sounds.cancel_enabled", True), True) else "0",
-  "CFG_WHISPER_MODELS_DIR": str(get("whisper.models_dir", "")),
-  "CFG_WHISPER_BACKEND": str(get("whisper.backend", "swift_parakeet")),
-  "CFG_WHISPER_MODEL": str(get("whisper.model", "base")),
-  "CFG_WHISPER_THREADS": str(get("whisper.threads", "5")),
-  "CFG_WHISPER_BEAM_SIZE": str(get("whisper.beam_size", "1")),
-  "CFG_WHISPER_BEST_OF": str(get("whisper.best_of", "1")),
-  "CFG_WHISPER_VAD_ENABLED": "1" if b(get("whisper.vad", False), False) else "0",
-  "CFG_WHISPER_VAD_MODEL": str(get("whisper.vad_model", "")),
-  "CFG_WHISPER_VAD_THRESHOLD": str(get("whisper.vad_threshold", "0.5")),
-  "CFG_WHISPER_VAD_MIN_SPEECH_MS": str(get("whisper.vad_min_speech_ms", "250")),
-  "CFG_WHISPER_VAD_MIN_SILENCE_MS": str(get("whisper.vad_min_silence_ms", "100")),
-  "CFG_WHISPER_VAD_SPEECH_PAD_MS": str(get("whisper.vad_speech_pad_ms", "30")),
   "CFG_SWIFT_PARAKEET_MODEL_PATH": str(get("swift_parakeet.model_path", "")),
   "CFG_SWIFT_PARAKEET_MODEL_VERSION": str(get("swift_parakeet.model_version", "")),
   "CFG_SWIFT_PARAKEET_SOCKET_PATH": str(get("swift_parakeet.socket_path", "~/.config/dictate/.cache/tmux-whisperd.sock")),
@@ -646,7 +610,6 @@ out = {
   "CFG_TMUX_POSTPROCESS": "1" if b(get("tmux.postprocess", False), False) else "0",
   "CFG_TMUX_PROCESS_SOUND": "1" if b(get("tmux.process_sound", True), True) else "0",
   "CFG_TMUX_MODE": str(get("tmux.mode", "code")),
-  "CFG_TMUX_MODEL": str(get("tmux.model", "base")),
   "CFG_TMUX_SEND_MODE": str(get("tmux.send_mode", "auto")),
   "CFG_DEBUG_KEEP_LOGS": "1" if b(get("debug.keep_logs", False), False) else "0",
   "CFG_SWIFTBAR_ENABLED": "1" if b(get("integrations.swiftbar.enabled", True), True) else "0",
@@ -688,13 +651,7 @@ for k, v in out.items():
   print(f"{k}={shlex.quote(v)}")
 PYEOF
   )"
-
-  if [[ -z "${WHISPER_MODELS_DIR:-}" && -n "${CFG_WHISPER_MODELS_DIR:-}" ]]; then
-    WHISPER_MODELS_DIR="$(expand_path "$CFG_WHISPER_MODELS_DIR")"
-  fi
-	  WHISPER_MODELS_DIR="${WHISPER_MODELS_DIR:-$DEFAULT_WHISPER_MODELS_DIR}"
-	  mkdir -p "$WHISPER_MODELS_DIR"
-	}
+}
 
 config_schema_status() {
   local raw="${CFG_META_CONFIG_VERSION:-}"
@@ -977,16 +934,7 @@ log_transcribe_event() {
 }
 
 resolve_transcribe_backend() {
-  local backend="${DICTATE_BACKEND:-${CFG_WHISPER_BACKEND:-swift_parakeet}}"
-  backend="$(printf "%s" "$backend" | tr '[:upper:]' '[:lower:]' | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
-  case "$backend" in
-    ""|whisper_cpp|swift_parakeet)
-      printf "%s\n" "${backend:-swift_parakeet}"
-      ;;
-    *)
-      printf "%s\n" "swift_parakeet"
-      ;;
-  esac
+  printf "%s\n" "swift_parakeet"
 }
 
 resolve_swift_parakeet_socket_path() {
@@ -1042,6 +990,16 @@ resolve_swift_parakeet_model_version() {
       printf "%s\n" "v3"
       ;;
   esac
+}
+
+current_transcribe_model_label() {
+  local model_path=""
+  model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
+  if [[ -n "$model_path" ]]; then
+    basename "$model_path"
+  else
+    printf "%s\n" "parakeet-unresolved"
+  fi
 }
 
 resolve_tmux_whisperd_root() {
@@ -1378,7 +1336,7 @@ transcribe_swift_parakeet_cli() {
 
 warmup_backend() {
   local best_effort="0"
-  local arg backend_requested model_path result model_name duration_ms message
+  local arg model_path result model_name duration_ms message
 
   for arg in "$@"; do
     case "$arg" in
@@ -1386,15 +1344,6 @@ warmup_backend() {
       *) die "usage: tmux-whisper warmup [--best-effort]" ;;
     esac
   done
-
-  backend_requested="$(resolve_transcribe_backend)"
-  if [[ "$backend_requested" != "swift_parakeet" ]]; then
-    if [[ "$best_effort" == "1" ]]; then
-      echo "Warmup: skipped (backend=$backend_requested)"
-      return 0
-    fi
-    die "warmup only supports the swift_parakeet backend (current: $backend_requested)"
-  fi
 
   model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
   if [[ -z "$model_path" ]]; then
@@ -1420,110 +1369,27 @@ warmup_backend() {
   echo "Warmup: ready (model=${model_name:-$(basename "$model_path")}, duration=${duration_ms:-0}ms)"
 }
 
-resolve_model_path() {
-  local model_id="${1:-}"
-  local models_dir="${2:-$WHISPER_MODELS_DIR}"
-  model_id="$(printf "%s" "$model_id" | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
-  case "${model_id:-base}" in
-    ""|base|small|turbo|*.bin|*/*)
-      dictate_lib_resolve_model_path "$model_id" "$models_dir"
-      ;;
-    *)
-      die "unknown model: $model_id (use: base, small, turbo)"
-      ;;
-  esac
-}
-
-transcribe_whisper_cli() {
-  local wav="$1"
-  local model_id="${2:-}"
-  local language="${3:-en}"
-  local threads="${4:-${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}}"
-  local beam="${DICTATE_BEAM_SIZE:-${CFG_WHISPER_BEAM_SIZE:-1}}"
-  local best_of="${DICTATE_BEST_OF:-${CFG_WHISPER_BEST_OF:-1}}"
-  local vad_enabled="${DICTATE_VAD:-${CFG_WHISPER_VAD_ENABLED:-0}}"
-  local vad_model="${DICTATE_VAD_MODEL:-${CFG_WHISPER_VAD_MODEL:-}}"
-  local vad_threshold="${DICTATE_VAD_THRESHOLD:-${CFG_WHISPER_VAD_THRESHOLD:-0.5}}"
-  local vad_min_speech_ms="${DICTATE_VAD_MIN_SPEECH_MS:-${CFG_WHISPER_VAD_MIN_SPEECH_MS:-250}}"
-  local vad_min_silence_ms="${DICTATE_VAD_MIN_SILENCE_MS:-${CFG_WHISPER_VAD_MIN_SILENCE_MS:-100}}"
-  local vad_speech_pad_ms="${DICTATE_VAD_SPEECH_PAD_MS:-${CFG_WHISPER_VAD_SPEECH_PAD_MS:-30}}"
-  local gpu_flag="${DICTATE_GPU:-}"
-  local model
-  model="$(resolve_model_path "$model_id")"
-  [[ -f "$model" ]] || die "model not found: $model"
-
-  local -a args
-  args=(whisper-cli -m "$model" -l "$language" -t "$threads" -bs "$beam" -bo "$best_of")
-
-  if [[ "$vad_enabled" == "1" || "$vad_enabled" == "true" || "$vad_enabled" == "on" ]]; then
-    if [[ -z "$vad_model" || ! -f "$vad_model" ]]; then
-      echo "dictate: whisper.vad enabled but whisper.vad_model is missing; skipping VAD" >>"${TRANSCRIBE_LOG:-/dev/null}"
-      vad_enabled="0"
-    fi
-  fi
-
-  if [[ "$vad_enabled" == "1" || "$vad_enabled" == "true" || "$vad_enabled" == "on" ]]; then
-    args+=(--vad -vm "$vad_model")
-    [[ -n "$vad_threshold" ]] && args+=(-vt "$vad_threshold")
-    [[ -n "$vad_min_speech_ms" ]] && args+=(-vspd "$vad_min_speech_ms")
-    [[ -n "$vad_min_silence_ms" ]] && args+=(-vsd "$vad_min_silence_ms")
-    [[ -n "$vad_speech_pad_ms" ]] && args+=(-vp "$vad_speech_pad_ms")
-
-    # whisper-cli VAD currently triggers a ggml-metal assertion on Apple Silicon.
-    # Force CPU for stability unless the user already forced a GPU mode.
-    if [[ -z "$gpu_flag" ]]; then
-      gpu_flag="-ng"
-    fi
-  fi
-
-  args+=(-nt -np)
-  if [[ -n "$gpu_flag" ]]; then
-    local -a gpu_parts
-    IFS=' ' read -r -a gpu_parts <<<"$gpu_flag"
-    args+=("${gpu_parts[@]}")
-  fi
-  args+=("$wav")
-
-  DICTATE_LAST_BACKEND_ENGINE="whisper_cpp"
-  DICTATE_LAST_BACKEND_MODEL="$(basename "$model")"
-  "${args[@]}" 2>>"${TRANSCRIBE_LOG:-/dev/null}" \
-  | tr '\n' ' ' \
-  | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
-}
-
 transcribe_audio() {
   local wav="$1"
-  local model_id="${2:-}"
+  local _model_id="${2:-}"
   local language="${3:-en}"
-  local threads="${4:-2}"
+  local _threads="${4:-2}"
   local flow="${5:-inline}"
-  local requested_backend used_backend fallback_reason
+  local requested_backend
   local txt=""
+  local transcribe_rc=0
 
   maybe_trim_silence_inplace "$wav"
   maybe_pad_transcribe_tail_inplace "$wav"
   requested_backend="$(resolve_transcribe_backend)"
   DICTATE_LAST_BACKEND_ENGINE=""
   DICTATE_LAST_BACKEND_MODEL=""
-  fallback_reason=""
-
-  case "$requested_backend" in
-    swift_parakeet)
-      txt="$(transcribe_swift_parakeet_cli "$wav" "$language" "$flow" 2>>"${TRANSCRIBE_LOG:-/dev/null}" || true)"
-      if [[ -n "$txt" ]]; then
-        used_backend="swift_parakeet"
-        write_backend_runtime_cache "$requested_backend" "$used_backend" "" "${DICTATE_LAST_BACKEND_ENGINE:-swift_parakeet}" "${DICTATE_LAST_BACKEND_MODEL:-}"
-        printf "%s" "$txt"
-        return 0
-      fi
-      fallback_reason="swift_parakeet unavailable; falling back to whisper_cpp"
-      log_transcribe_event "$fallback_reason"
-      ;;
-  esac
-
-  txt="$(transcribe_whisper_cli "$wav" "$model_id" "$language" "$threads")"
-  used_backend="whisper_cpp"
-  write_backend_runtime_cache "$requested_backend" "$used_backend" "$fallback_reason" "${DICTATE_LAST_BACKEND_ENGINE:-whisper_cpp}" "${DICTATE_LAST_BACKEND_MODEL:-}"
+  set +e
+  txt="$(transcribe_swift_parakeet_cli "$wav" "$language" "$flow" 2>>"${TRANSCRIBE_LOG:-/dev/null}")"
+  transcribe_rc=$?
+  set -e
+  write_backend_runtime_cache "$requested_backend" "$requested_backend" "" "${DICTATE_LAST_BACKEND_ENGINE:-swift_parakeet}" "${DICTATE_LAST_BACKEND_MODEL:-}"
+  [[ "$transcribe_rc" -eq 0 ]] || return "$transcribe_rc"
   printf "%s" "$txt"
 }
 
@@ -3170,7 +3036,8 @@ start() {
   need ffmpeg
   need tmux
 
-  local model_id="${DICTATE_TMUX_MODEL:-${CFG_TMUX_MODEL:-${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-}}}}"
+  local model_id
+  model_id="$(current_transcribe_model_label)"
   local startup_started_ms startup_audio_ms startup_ffmpeg_live_ms startup_total_ms startup_audio_source
   startup_started_ms="$(now_ms)"
   startup_audio_ms=0
@@ -3376,7 +3243,7 @@ stop() {
     fi
     stage_started_ms="$(now_ms)"
     set +e
-    txt="$(DICTATE_RUNTIME_SKIP_SILENCE_TRIM="$runtime_skip_silence_trim" transcribe_audio "$wav" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "${language:-en}" "${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}" "tmux")"
+    txt="$(DICTATE_RUNTIME_SKIP_SILENCE_TRIM="$runtime_skip_silence_trim" transcribe_audio "$wav" "$model_id" "${language:-en}" "" "tmux")"
     transcribe_rc=$?
     set -e
     transcribe_ms=$(( $(now_ms) - stage_started_ms ))
@@ -3384,7 +3251,7 @@ stop() {
       echo "[tmux-async] transcribe failed rc=$transcribe_rc"
       rm -f "$wav" 2>/dev/null || true
       total_ms=$(( $(now_ms) - flow_started_ms ))
-      append_bench_entry "tmux" "transcribe_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$tmux_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" \
+      append_bench_entry "tmux" "transcribe_failed" "$model_id" "$tmux_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
       exit 1
     fi
@@ -3408,7 +3275,7 @@ stop() {
     if [[ -z "${txt//[[:space:]]/}" ]]; then
       rm -f "$wav"
       total_ms=$(( $(now_ms) - flow_started_ms ))
-      append_bench_entry "tmux" "no_speech" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$tmux_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
+      append_bench_entry "tmux" "no_speech" "$model_id" "$tmux_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
       if keep_logs_enabled; then
         echo "[transcribe] empty after artifact cleanup; skipping paste/send" >>"$TRANSCRIBE_LOG"
@@ -3485,7 +3352,7 @@ stop() {
     local out_chars="${#txt}"
     # Save to history (includes metrics and postprocess budget observability when available)
     save_history "$raw_txt" "$txt" "$tmux_mode" "tmux" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms"
-    append_bench_entry "tmux" "ok" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$tmux_mode" "$do_postprocess" "$raw_chars" "$out_chars" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+    append_bench_entry "tmux" "ok" "$model_id" "$tmux_mode" "$do_postprocess" "$raw_chars" "$out_chars" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
 
     # Sound when done
@@ -3658,7 +3525,7 @@ process_inline_recording() {
     echo "Tip: On macOS, grant Microphone permission to your terminal app (System Settings → Privacy & Security → Microphone), then run: tmux-whisper devices"
     echo "Log: $record_log"
     total_ms=$(( $(now_ms) - flow_started_ms ))
-    append_bench_entry "inline" "record_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "0" "0" "0" "0" "$total_ms" \
+    append_bench_entry "inline" "record_failed" "$model_id" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "0" "0" "0" "0" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     return 1
   fi
@@ -3678,7 +3545,7 @@ process_inline_recording() {
   fi
   stage_started_ms="$(now_ms)"
   set +e
-  txt="$(DICTATE_RUNTIME_SKIP_SILENCE_TRIM="$runtime_skip_silence_trim" transcribe_audio "$wav" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "${DICTATE_LANGUAGE:-en}" "${DICTATE_THREADS:-${CFG_WHISPER_THREADS:-5}}" "inline")"
+  txt="$(DICTATE_RUNTIME_SKIP_SILENCE_TRIM="$runtime_skip_silence_trim" transcribe_audio "$wav" "$model_id" "${DICTATE_LANGUAGE:-en}" "" "inline")"
   whisper_rc=$?
   set -e
   transcribe_ms=$(( $(now_ms) - stage_started_ms ))
@@ -3686,7 +3553,7 @@ process_inline_recording() {
     echo "Transcription failed (backend exit $whisper_rc)"
     echo "Log: $transcribe_log"
     total_ms=$(( $(now_ms) - flow_started_ms ))
-    append_bench_entry "inline" "transcribe_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" \
+    append_bench_entry "inline" "transcribe_failed" "$model_id" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     return 1
   fi
@@ -3713,7 +3580,7 @@ process_inline_recording() {
   if [[ -z "${txt//[[:space:]]/}" ]]; then
     echo "No speech detected"
     total_ms=$(( $(now_ms) - flow_started_ms ))
-    append_bench_entry "inline" "no_speech" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
+    append_bench_entry "inline" "no_speech" "$model_id" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     return 1
   fi
@@ -3728,7 +3595,7 @@ process_inline_recording() {
   if ! inline_session_is_current "$inline_session_id"; then
     echo "Skipping stale inline result because a newer recording started."
     total_ms=$(( $(now_ms) - flow_started_ms ))
-    append_bench_entry "inline" "superseded" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
+    append_bench_entry "inline" "superseded" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     local history_app="${target_app:-current}"
     ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" ) >/dev/null 2>&1 &
@@ -3768,7 +3635,7 @@ process_inline_recording() {
   if ! inline_session_is_current "$inline_session_id"; then
     echo "Skipping stale inline result because a newer recording started."
     total_ms=$(( $(now_ms) - flow_started_ms ))
-    append_bench_entry "inline" "superseded" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" \
+    append_bench_entry "inline" "superseded" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     local history_app="${target_app:-current}"
     ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" ) >/dev/null 2>&1 &
@@ -3783,7 +3650,7 @@ process_inline_recording() {
     echo "$txt"
     paste_ms=$(( $(now_ms) - stage_started_ms ))
     total_ms=$(( $(now_ms) - flow_started_ms ))
-    append_bench_entry "inline" "clipboard_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+    append_bench_entry "inline" "clipboard_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     return 1
   fi
@@ -3828,7 +3695,7 @@ process_inline_recording() {
       [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
       paste_ms=$(( $(now_ms) - stage_started_ms ))
       total_ms=$(( $(now_ms) - flow_started_ms ))
-      append_bench_entry "inline" "autosend_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+      append_bench_entry "inline" "autosend_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
       return 1
     fi
@@ -3839,7 +3706,7 @@ process_inline_recording() {
       [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
       paste_ms=$(( $(now_ms) - stage_started_ms ))
       total_ms=$(( $(now_ms) - flow_started_ms ))
-      append_bench_entry "inline" "autosend_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+      append_bench_entry "inline" "autosend_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
       return 1
     fi
@@ -3851,7 +3718,7 @@ process_inline_recording() {
       [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
       paste_ms=$(( $(now_ms) - stage_started_ms ))
       total_ms=$(( $(now_ms) - flow_started_ms ))
-      append_bench_entry "inline" "paste_failed" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+      append_bench_entry "inline" "paste_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
       return 1
     fi
@@ -3860,7 +3727,7 @@ process_inline_recording() {
 
   paste_ms=$(( $(now_ms) - stage_started_ms ))
   total_ms=$(( $(now_ms) - flow_started_ms ))
-  append_bench_entry "inline" "ok" "${model_id:-${CFG_WHISPER_MODEL:-base}}" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+  append_bench_entry "inline" "ok" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
 
   play_sound stop
@@ -3875,7 +3742,8 @@ inline_start() {
 
   [[ ! -f "$INLINE_STATE_FILE" ]] || die "already recording. Run: tmux-whisper inline stop"
 
-  local model_id="${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-}}"
+  local model_id
+  model_id="$(current_transcribe_model_label)"
   local inline_session_id
   inline_session_id="$(generate_inline_session_id)"
   write_inline_latest_session "$inline_session_id"
@@ -3992,7 +3860,7 @@ inline_stop() {
     if [[ "${DICTATE_INLINE_PROCESS_SOUND:-${CFG_INLINE_PROCESS_SOUND:-1}}" == "1" ]]; then
       play_sound process
     fi
-    process_inline_recording "$wav" "${target_app:-}" "${model_id:-${CFG_WHISPER_MODEL:-}}" "$record_ms" \
+    process_inline_recording "$wav" "${target_app:-}" "$model_id" "$record_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}"
   ) >"$TMPDIR/whisper-dictate-inline.transcribe.log" 2>&1 &
 
@@ -4018,7 +3886,8 @@ inline_toggle() {
 inline() {
   need ffmpeg
 
-  local model_id="${DICTATE_MODEL:-${CFG_WHISPER_MODEL:-}}"
+  local model_id
+  model_id="$(current_transcribe_model_label)"
   local inline_session_id
   inline_session_id="$(generate_inline_session_id)"
   write_inline_latest_session "$inline_session_id"
@@ -4102,27 +3971,6 @@ toggle() {
   else
     start
   fi
-}
-
-set_model() {
-  local name="${1:-}"
-  case "$name" in
-    base)  config_set "whisper.model" "string" "base";  config_load; echo "Model set: base.en (fast)" ;;
-    small) config_set "whisper.model" "string" "small"; config_load; echo "Model set: small.en (accurate)" ;;
-    turbo) config_set "whisper.model" "string" "turbo"; config_load; echo "Model set: large-v3-turbo-q5 (fast+accurate)" ;;
-    "")
-      local current="${CFG_WHISPER_MODEL:-base}"
-      local resolved
-      resolved="$(resolve_model_path "$current")"
-      echo "Current model: $(basename "$resolved") ($current)"
-      echo ""
-      echo "Available:"
-      echo "  base   - 141 MB  ⚡⚡⚡⚡  fast, good accuracy (default)"
-      echo "  small  - 465 MB  ⚡⚡⚡   slower, better accuracy"
-      echo "  turbo  - 547 MB  ⚡⚡⚡   large-v3-turbo-q5, fast+accurate"
-      ;;
-    *) die "unknown model: $name (use: base, small, turbo)" ;;
-  esac
 }
 
 set_postprocess() {
@@ -4525,27 +4373,8 @@ manage_tmux() {
         echo "tmux mode: $(mode_display_name "$canonical")"
       fi
       ;;
-    model)
-      case "$val" in
-        base)  config_set "tmux.model" "string" "base";  config_load; echo "tmux model: base.en (fast)" ;;
-        small) config_set "tmux.model" "string" "small"; config_load; echo "tmux model: small.en (accurate)" ;;
-        turbo) config_set "tmux.model" "string" "turbo"; config_load; echo "tmux model: large-v3-turbo-q5 (fast+accurate)" ;;
-        "")
-          local current="${CFG_TMUX_MODEL:-${CFG_WHISPER_MODEL:-base}}"
-          local resolved
-          resolved="$(resolve_model_path "$current")"
-          echo "tmux model: $(basename "$resolved") ($current)"
-          echo ""
-          echo "Available:"
-          echo "  base   - 141 MB  ⚡⚡⚡⚡  fast, good accuracy (default)"
-          echo "  small  - 465 MB  ⚡⚡⚡   slower, better accuracy"
-          echo "  turbo  - 547 MB  ⚡⚡⚡   large-v3-turbo-q5, fast+accurate"
-          ;;
-        *) die "unknown model: $val (use: base, small, turbo)" ;;
-      esac
-      ;;
     *)
-      die "usage: tmux-whisper tmux [autosend|target|postprocess|process-sound|send-mode|mode|model] [value]"
+      die "usage: tmux-whisper tmux [autosend|target|postprocess|process-sound|send-mode|mode] [value]"
       ;;
   esac
 }
@@ -5549,7 +5378,6 @@ case "$cmd" in
     esac
     ;;
   sound|sounds) manage_sounds "${2:-}" "${3:-}" ;;
-  model) set_model "${2:-}" ;;
   postprocess) set_postprocess "${2:-}" ;;
   keep-logs|keep_logs|keeplogs) set_keep_logs "${2:-}" ;;
   silence-trim|silence_trim) set_silence_trim "${2:-}" ;;

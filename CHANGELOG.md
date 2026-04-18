@@ -5,6 +5,7 @@
 - **Stable release**: `v0.5.1` (tagged on 2026-04-18)
 - **Next target**: `v0.5.x` (UX + config maturity)
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
+- **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`

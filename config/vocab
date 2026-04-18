@@ -3,11 +3,10 @@
 # Examples:
 # tmux -> tmux
 # open ai -> OpenAI
-# whisper cpp -> whisper.cpp
+# coreml -> CoreML
 
-ggml -> GGML
+coreml -> CoreML
 qwen -> Qwen
 parakeet -> Parakeet
 cerebras -> Cerebras
 open ai -> OpenAI
-whisper cpp -> whisper.cpp
