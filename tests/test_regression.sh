@@ -547,7 +547,7 @@ cat >"$HISTOBS_HISTORY/2026-02-22T17-00-00.json" <<'EOF'
   "app": "tmux",
   "raw": "one two three four five six seven eight nine ten",
   "processed": "one two three four five six seven eight nine ten",
-  "metrics": {"postprocess_ms": 240, "total_ms": 410},
+  "metrics": {"record_ms": 8000, "transcribe_ms": 120, "clean_ms": 15, "postprocess_ms": 240, "paste_ms": 35, "total_ms": 8410},
   "postprocess_budget": {
     "numeric_sizing": "auto_dynamic",
     "profile": "short",
@@ -566,8 +566,8 @@ cat >"$HISTOBS_HISTORY/2026-02-22T17-05-00.json" <<'EOF'
   "mode": "code",
   "app": "Ghostty",
   "raw": "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty one two three four five six seven eight nine ten",
-  "processed": "processed output",
-  "metrics": {"postprocess_ms": 620, "total_ms": 940},
+  "processed": "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty one two three four five six seven eight nine ten",
+  "metrics": {"record_ms": 18000, "transcribe_ms": 220, "clean_ms": 18, "postprocess_ms": 620, "paste_ms": 45, "total_ms": 18940},
   "postprocess_budget": {
     "numeric_sizing": "auto_dynamic",
     "profile": "long",
@@ -580,7 +580,7 @@ cat >"$HISTOBS_HISTORY/2026-02-22T17-05-00.json" <<'EOF'
   }
 }
 EOF
-histobs_stats="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history stats)"
+histobs_stats="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" DICTATE_HISTORY_STATS_NOW=2026-02-22T18:00:00Z tmux-whisper history stats)"
 assert_contains "history_stats_budget_obs_count" "$histobs_stats" "Postprocess budget observability entries: 2"
 assert_contains "history_stats_budget_profiles" "$histobs_stats" "budget_profile_counts: long=1, short=1"
 assert_contains "history_stats_budget_numeric_mode" "$histobs_stats" "budget_numeric_sizing: auto_dynamic"
@@ -588,6 +588,13 @@ assert_contains "history_stats_budget_threshold" "$histobs_stats" "budget_thresh
 assert_contains "history_stats_budget_max_tokens_line" "$histobs_stats" "budget.max_tokens: n=2"
 assert_contains "history_stats_budget_chunk_count_line" "$histobs_stats" "budget.chunk_count: n=2"
 assert_contains "history_stats_budget_postprocess_ms_line" "$histobs_stats" "metrics.postprocess_ms: n=2"
+assert_contains "history_stats_recent_24h" "$histobs_stats" "last_24h: entries=2 raw_words=40 processed_words=40"
+assert_contains "history_stats_recent_7d" "$histobs_stats" "last_7d: entries=2 raw_words=40 processed_words=40"
+assert_contains "history_stats_typing_equivalent" "$histobs_stats" "typing_equivalent.total: 1m 00s @ 40 wpm"
+assert_contains "history_stats_typing_delta" "$histobs_stats" "typing_delta.total: +32.6s vs end-to-end"
+assert_contains "history_stats_dictation_overall" "$histobs_stats" "dictation_wpm.overall: 92"
+assert_contains "history_stats_mode_breakdown" "$histobs_stats" "code: entries=2 processed_words=40 raw_words=40"
+assert_contains "history_stats_app_breakdown" "$histobs_stats" "Ghostty: entries=1 processed_words=30 raw_words=30"
 histobs_show_latest="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history 1)"
 assert_contains "history_show_metrics_section" "$histobs_show_latest" "--- Metrics ---"
 assert_contains "history_show_metrics_postprocess_ms" "$histobs_show_latest" "postprocess_ms : 620"
@@ -599,13 +606,23 @@ histobs_show_latest_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bi
 assert_json_equals "history_show_json_index" "$histobs_show_latest_json" "index" "1"
 assert_json_equals "history_show_json_mode" "$histobs_show_latest_json" "entry.mode" "code"
 assert_json_equals "history_show_json_budget_profile" "$histobs_show_latest_json" "entry.postprocess_budget.profile" "long"
-histobs_stats_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history stats --json)"
+histobs_stats_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" DICTATE_HISTORY_STATS_NOW=2026-02-22T18:00:00Z tmux-whisper history stats --json)"
 assert_json_equals "history_stats_json_entries" "$histobs_stats_json" "entries" "2"
 assert_json_equals "history_stats_json_budget_entries" "$histobs_stats_json" "postprocess_budget.entries" "2"
 assert_json_equals "history_stats_json_budget_long_count" "$histobs_stats_json" "postprocess_budget.profile_counts.long" "1"
+assert_json_equals "history_stats_json_recent_24h" "$histobs_stats_json" "recent.last_24h.entries" "2"
+assert_json_equals "history_stats_json_mode_processed_words" "$histobs_stats_json" "breakdowns.modes.code.processed_words" "40"
+assert_json_equals "history_stats_json_app_processed_words" "$histobs_stats_json" "breakdowns.apps.Ghostty.processed_words" "30"
+assert_json_equals "history_stats_json_typing_wpm_assumed" "$histobs_stats_json" "estimates.typing_wpm_assumed" "40"
+assert_json_equals "history_stats_json_typing_delta" "$histobs_stats_json" "estimates.delta_vs_end_to_end_ms" "32650"
 histobs_last="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper last)"
 assert_contains "history_last_header" "$histobs_last" "Latest dictation"
 assert_contains "history_last_budget" "$histobs_last" "budget: profile=long"
+assert_contains "history_last_capture_time" "$histobs_last" "capture_time: 18.0s"
+assert_contains "history_last_end_to_end" "$histobs_last" "end_to_end: 18.9s"
+assert_contains "history_last_pace" "$histobs_last" "dictation_pace: 100 wpm (raw)"
+assert_contains "history_last_typing_equivalent" "$histobs_last" "typing_equivalent: 45.0s @ 40 wpm"
+assert_contains "history_last_typing_delta" "$histobs_last" "typing_delta: +26.1s vs end-to-end"
 histobs_last_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper last --json)"
 assert_json_equals "history_last_json_app" "$histobs_last_json" "entry.app" "Ghostty"
 assert_json_equals "history_last_json_budget_profile" "$histobs_last_json" "entry.postprocess_budget.profile" "long"
