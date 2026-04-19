@@ -198,7 +198,7 @@ ENV OPTIONS:
   DICTATE_BENCH_MATRIX_PROGRESS=1 # show per-combo progress lines (set 0 for summary-only output)
   CEREBRAS_API_KEY=...       # required for postprocess
 
-CONFIG FILES (~/.config/dictate/):
+CONFIG FILES (kept under ~/.config/dictate/ for now):
   config.toml                # main settings (Parakeet backend, postprocess, autosend, keybind refs, icons)
   vocab                      # global corrections (one per line: wrong → right)
   current-mode               # mode selection (code/email/etc)
@@ -206,6 +206,7 @@ CONFIG FILES (~/.config/dictate/):
   modes/<mode>/prompt        # mode-specific LLM prompt
   modes/<mode>/vocab         # mode-specific corrections
   history/                   # saved transcripts (auto-cleaned after 7 days)
+  sounds/                    # sample sounds still install under ~/.local/share/sounds/dictate in this phase
 EOF
 }
 

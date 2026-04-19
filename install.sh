@@ -10,6 +10,8 @@ usage() {
   cat <<'EOF'
 Usage: ./install.sh [--force] [--with-sounds|--no-sounds] [--replace-sounds]
 
+Installs Tmux Whisper into ~/.local/bin while intentionally keeping config and sample-sound paths under ~/.config/dictate and ~/.local/share/sounds/dictate for now.
+
 Options:
   --force        reinstall binaries/integrations (preserves existing config and modes)
   --with-sounds  install bundled sample sounds into ~/.local/share/sounds/dictate
@@ -190,5 +192,6 @@ if [[ "$INSTALL_SOUNDS" == "1" ]]; then
 else
   echo "Sample sounds: skipped"
 fi
+echo "Paths kept for now: config=$CONFIG_DIR sounds=$SOUND_DIR"
 run_install_warmup
 echo "Run: tmux-whisper debug"

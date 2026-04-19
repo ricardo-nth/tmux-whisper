@@ -39,6 +39,16 @@ assert_not_file() {
   }
 }
 
+bootstrap_help="$("$ROOT/bootstrap.sh" --help)"
+if [[ "$bootstrap_help" != *"Installs Tmux Whisper from a GitHub source archive."* ]]; then
+  echo "Expected bootstrap help to describe Tmux Whisper branding" >&2
+  exit 1
+fi
+if [[ "$bootstrap_help" != *"v0.5.2/bootstrap.sh"* ]]; then
+  echo "Expected bootstrap help to reference the current stable tag example" >&2
+  exit 1
+fi
+
 # Pass-through args should reach install.sh.
 DICTATE_BOOTSTRAP_ARCHIVE_URL="$ARCHIVE_URL" "$ROOT/bootstrap.sh" --no-sounds
 

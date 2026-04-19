@@ -5,6 +5,8 @@ usage() {
   cat <<'USAGE'
 Usage: curl -fsSL <bootstrap-url> | bash
 
+Installs Tmux Whisper from a GitHub source archive.
+
 Environment:
   DICTATE_BOOTSTRAP_REPO         GitHub repo slug (default: ricardo-nth/tmux-whisper)
   DICTATE_BOOTSTRAP_REF          Git ref/branch/tag (default: main)
@@ -14,7 +16,7 @@ Any arguments after `bash -s --` are forwarded to install.sh.
 Examples:
   curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash
   curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force
-  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.4.1/bootstrap.sh | bash -s -- --no-sounds
+  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.5.2/bootstrap.sh | bash -s -- --no-sounds
 USAGE
 }
 

@@ -27,6 +27,12 @@ assert_exec() {
 
 install_output="$("$ROOT/install.sh" --with-sounds)"
 
+install_help="$("$ROOT/install.sh" --help)"
+if [[ "$install_help" != *"Installs Tmux Whisper into ~/.local/bin"* ]]; then
+  echo "Expected install help to describe Tmux Whisper branding" >&2
+  exit 1
+fi
+
 assert_exec "$HOME/.local/bin/tmux-whisper"
 assert_exec "$HOME/.local/bin/dictate-lib.sh"
 assert_file "$HOME/.local/bin/tmux-whisper-lib/history.sh"
@@ -52,6 +58,14 @@ if [[ "$(tr -d '[:space:]' < "$HOME/.config/dictate/current-mode")" != "auto" ]]
 fi
 if [[ "$install_output" != *"Warmup:"* ]]; then
   echo "Expected install to report warmup status" >&2
+  exit 1
+fi
+if [[ "$install_output" != *"Run: tmux-whisper debug"* ]]; then
+  echo "Expected install output to point users at tmux-whisper debug" >&2
+  exit 1
+fi
+if [[ "$install_output" != *"Paths kept for now: config=$HOME/.config/dictate sounds=$HOME/.local/share/sounds/dictate"* ]]; then
+  echo "Expected install output to clarify the intentional dictate config/sound paths" >&2
   exit 1
 fi
 

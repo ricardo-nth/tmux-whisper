@@ -46,6 +46,10 @@ if [[ "$output" != *"tmux-whisper last [--json]"* ]]; then
   echo "Expected help output to document the last command" >&2
   exit 1
 fi
+if [[ "$output" != *"CONFIG FILES (kept under ~/.config/dictate/ for now):"* ]]; then
+  echo "Expected help output to explain the intentional dictate config path" >&2
+  exit 1
+fi
 
 MODEL_DIR="$TMP_ROOT/parakeet-tdt-0.6b-v3-coreml"
 CONFIG_DIR="$HOME_DIR/.config/dictate"
