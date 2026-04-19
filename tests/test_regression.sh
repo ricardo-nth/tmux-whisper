@@ -291,6 +291,29 @@ assert_contains "status_modeauto_chat" "$modeauto_status_messages" "mode.inline:
 modeauto_status_preview="$(HOME="$MODEAUTO_HOME" PATH="$MODEAUTO_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODEAUTO_CFG" DICTATE_CONFIG_FILE="$MODEAUTO_CFG/config.toml" DICTATE_TEST_FRONT_APP=Preview tmux-whisper status)"
 assert_contains "status_modeauto_base" "$modeauto_status_preview" "mode.inline: base (auto)"
 
+# --- Regression 5c: mode flow command should surface and set flow availability. ---
+MODEFLOWS_HOME="$TMP_ROOT/home-modeflows"
+MODEFLOWS_BIN="$MODEFLOWS_HOME/.local/bin"
+MODEFLOWS_CFG="$MODEFLOWS_HOME/.config/dictate"
+mkdir -p "$MODEFLOWS_BIN" "$MODEFLOWS_CFG/modes/code"
+install_test_runtime "$MODEFLOWS_BIN"
+cat >"$MODEFLOWS_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+EOF
+printf '%s\n' "code" >"$MODEFLOWS_CFG/current-mode"
+printf '%s\n' "Context: code mode." >"$MODEFLOWS_CFG/modes/code/prompt"
+modeflows_tmux="$(HOME="$MODEFLOWS_HOME" PATH="$MODEFLOWS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODEFLOWS_CFG" DICTATE_CONFIG_FILE="$MODEFLOWS_CFG/config.toml" tmux-whisper mode flows code tmux)"
+assert_contains "mode_flows_tmux_summary" "$modeflows_tmux" "Mode flows for code: tmux"
+assert_file_contains "mode_flows_tmux_file" "$MODEFLOWS_CFG/modes/code/flows" "tmux"
+modeflows_both="$(HOME="$MODEFLOWS_HOME" PATH="$MODEFLOWS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODEFLOWS_CFG" DICTATE_CONFIG_FILE="$MODEFLOWS_CFG/config.toml" tmux-whisper mode flows code both)"
+assert_contains "mode_flows_both_summary" "$modeflows_both" "Mode flows for code: tmux+inline"
+assert_file_contains "mode_flows_both_file_tmux" "$MODEFLOWS_CFG/modes/code/flows" "tmux"
+assert_file_contains "mode_flows_both_file_inline" "$MODEFLOWS_CFG/modes/code/flows" "inline"
+
 # --- Regression 6: postprocess commands clarify mode prompt inactivity when OFF. ---
 modecheck_postprocess_off="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper postprocess off)"
 assert_contains "postprocess_off_prompt_note" "$modecheck_postprocess_off" "Mode prompt: inactive (postprocess OFF)"

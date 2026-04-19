@@ -106,6 +106,7 @@ MODES (context-aware prompts):
   tmux-whisper mode chat          # chat mode (casual, minimal intervention)
   tmux-whisper mode apps          # list apps that trigger current mode
   tmux-whisper mode apps add X    # add app to current mode's trigger list
+  tmux-whisper mode flows [name] [inline|tmux|both] # show/set mode flow availability
   tmux-whisper mode create <name> # create new custom mode
   tmux-whisper mode edit [name]   # edit mode's prompt in $EDITOR
 
@@ -1597,6 +1598,138 @@ mode_exists() {
   mode="$(canonical_mode_name "${1:-}")"
   [[ -n "$mode" ]] || return 1
   [[ -d "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]
+}
+
+mode_dir_path() {
+  local mode
+  mode="$(canonical_mode_name "${1:-}")"
+  [[ -n "$mode" ]] || return 1
+  printf "%s\n" "$DICTATE_CONFIG_DIR/modes/$(mode_to_dir_name "$mode")"
+}
+
+mode_flows_file_path() {
+  local mode_dir
+  mode_dir="$(mode_dir_path "${1:-}")" || return 1
+  printf "%s\n" "$mode_dir/flows"
+}
+
+mode_invalid_flow_entries() {
+  local flows_file line invalid_entries=""
+  flows_file="$(mode_flows_file_path "${1:-}")" || return 0
+  [[ -f "$flows_file" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [[ -n "$line" ]] || continue
+    case "$line" in
+      all|both|tmux|inline) ;;
+      *)
+        invalid_entries="${invalid_entries}${line}"$'\n'
+        ;;
+    esac
+  done < "$flows_file"
+
+  [[ -n "$invalid_entries" ]] || return 0
+  printf '%s' "$invalid_entries" | awk '!seen[$0]++'
+}
+
+mode_flow_summary() {
+  local mode="${1:-}"
+  local allow_tmux="0"
+  local allow_inline="0"
+
+  mode_allows_flow "$mode" "tmux" && allow_tmux="1"
+  mode_allows_flow "$mode" "inline" && allow_inline="1"
+
+  if [[ "$allow_tmux" == "1" && "$allow_inline" == "1" ]]; then
+    echo "tmux+inline"
+  elif [[ "$allow_tmux" == "1" ]]; then
+    echo "tmux"
+  elif [[ "$allow_inline" == "1" ]]; then
+    echo "inline"
+  else
+    echo "hidden"
+  fi
+}
+
+mode_recommended_flow_spec() {
+  local mode required_flow
+  mode="$(canonical_mode_name "${1:-}")"
+  required_flow="${2:-}"
+  case "$required_flow" in
+    inline)
+      if mode_allows_flow "$mode" "tmux"; then
+        echo "both"
+      else
+        echo "inline"
+      fi
+      ;;
+    tmux)
+      if mode_allows_flow "$mode" "inline"; then
+        echo "both"
+      else
+        echo "tmux"
+      fi
+      ;;
+    *)
+      echo "both"
+      ;;
+  esac
+}
+
+write_mode_flows() {
+  local mode spec flows_file
+  mode="$(canonical_mode_name "${1:-}")"
+  spec="${2:-}"
+  mode_exists "$mode" || die "unknown mode: $mode"
+  flows_file="$(mode_flows_file_path "$mode")"
+  mkdir -p "$(dirname "$flows_file")"
+
+  case "$spec" in
+    inline)
+      printf 'inline\n' >"$flows_file"
+      ;;
+    tmux)
+      printf 'tmux\n' >"$flows_file"
+      ;;
+    both|all)
+      printf 'tmux\ninline\n' >"$flows_file"
+      ;;
+    clear|reset)
+      rm -f "$flows_file" 2>/dev/null || true
+      ;;
+    *)
+      die "usage: tmux-whisper mode flows [name] [inline|tmux|both|clear]"
+      ;;
+  esac
+}
+
+show_mode_flows() {
+  local mode flows_file summary invalid_entries config_state
+  mode="$(canonical_mode_name "${1:-}")"
+  mode_exists "$mode" || die "unknown mode: $mode"
+
+  flows_file="$(mode_flows_file_path "$mode")"
+  summary="$(mode_flow_summary "$mode")"
+  invalid_entries="$(mode_invalid_flow_entries "$mode" | paste -sd ', ' - 2>/dev/null || true)"
+
+  if [[ -f "$flows_file" ]]; then
+    config_state="explicit ($flows_file)"
+  else
+    config_state="default (all flows allowed)"
+  fi
+
+  echo "Mode flows for $(mode_display_name "$mode"): $summary"
+  echo "  config: $config_state"
+  if [[ -f "$flows_file" ]]; then
+    local rendered=""
+    rendered="$(sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$flows_file" 2>/dev/null | sed '/^$/d' | paste -sd ', ' - 2>/dev/null || true)"
+    [[ -n "$rendered" ]] && echo "  entries: $rendered"
+  fi
+  [[ -n "$invalid_entries" ]] && echo "  invalid entries: $invalid_entries"
+  echo "Set with:"
+  echo "  tmux-whisper mode flows $mode inline|tmux|both|clear"
 }
 
 mode_allows_flow() {
@@ -5191,7 +5324,32 @@ manage_mode() {
       echo "Created mode: $new_mode"
       echo "  Edit apps: tmux-whisper mode apps add \"AppName\""
       echo "  Edit prompt: \$EDITOR $new_dir/prompt"
-      echo "  Optional flow filter: $new_dir/flows (lines: tmux, inline)"
+      echo "  Set flows: tmux-whisper mode flows $new_mode both"
+      ;;
+    flows)
+      local flow_target="${1:-}"
+      local flow_spec="${2:-}"
+      local target_mode=""
+      case "$flow_target" in
+        "" )
+          target_mode="$(get_current_mode)"
+          ;;
+        inline|tmux|both|all|clear|reset)
+          target_mode="$(get_current_mode)"
+          flow_spec="$flow_target"
+          ;;
+        *)
+          target_mode="$(canonical_mode_name "$flow_target")"
+          mode_exists "$target_mode" || die "unknown mode: $flow_target"
+          ;;
+      esac
+      [[ -n "$target_mode" ]] || target_mode="$(get_current_mode)"
+      if [[ -z "$flow_spec" ]]; then
+        show_mode_flows "$target_mode"
+      else
+        write_mode_flows "$target_mode" "$flow_spec"
+        show_mode_flows "$target_mode"
+      fi
       ;;
     edit)
       local mode_to_edit="${1:-}"
@@ -5255,9 +5413,10 @@ manage_mode() {
       echo "  tmux-whisper mode <name>     - set fixed mode (e.g. code)"
       echo "  tmux-whisper mode apps       - list apps for current mode"
       echo "  tmux-whisper mode apps add X - add app to current mode"
+      echo "  tmux-whisper mode flows X Y  - set flows for mode X to inline|tmux|both"
       echo "  tmux-whisper mode create X   - create new mode"
       echo "  tmux-whisper mode edit [X]   - edit mode prompt"
-      echo "  Optional per-mode flow filter: <mode>/flows (lines: tmux, inline)"
+      echo "  tmux-whisper mode flows X    - show current flow config for mode X"
       ;;
     auto)
       printf '%s\n' "auto" > "$MODE_FILE"
