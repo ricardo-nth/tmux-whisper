@@ -687,7 +687,7 @@ doctor_json() {
     doctor_json_add_suggestion "Move or copy the Parakeet model into $swift_models_dir so tmux-whisper does not depend on Spokenly/FluidAudio being installed"
   fi
 
-  local mode_inventory_lines="" mode_prompt_lines=""
+  local mode_inventory_lines=""
   local mode_total_count inline_mode_count tmux_mode_count any_modes_present
   local mode_line
   mode_inventory_lines="$(doctor_mode_inventory_tsv)"
@@ -706,7 +706,6 @@ doctor_json() {
       inv_inline_enabled inv_tmux_enabled inv_flows_path inv_flows_explicit inv_invalid_entries \
       inv_apps_path inv_apps_count inv_apps_ignored <<<"$mode_line"
 
-    mode_prompt_lines="${mode_prompt_lines}${inv_mode}"$'\t'"${inv_label}"$'\t'"${inv_prompt_status}"$'\t'"${inv_prompt_path}"$'\n'
     case "$inv_prompt_status" in
       empty|missing)
         warnings=$((warnings + 1))
@@ -964,7 +963,6 @@ doctor_json() {
     JSON_MODE_TMUX_STATUS="$tmux_mode_status" \
     JSON_MODE_TMUX_REQUESTED_EXISTS="$tmux_mode_requested_exists" \
     JSON_MODE_TMUX_FLOW_ALLOWED="$tmux_mode_flow_allowed" \
-    JSON_MODE_PROMPTS="$mode_prompt_lines" \
     JSON_MODE_INVENTORY="$mode_inventory_lines" \
     JSON_MODE_TOTAL_COUNT="$mode_total_count" \
     JSON_MODE_INLINE_COUNT="$inline_mode_count" \
@@ -1042,7 +1040,6 @@ for line in s("JSON_DEPENDENCIES").splitlines():
     }
 
 mode_inventory = []
-mode_prompts = []
 for line in s("JSON_MODE_INVENTORY").splitlines():
     if not line:
         continue
@@ -1068,14 +1065,6 @@ for line in s("JSON_MODE_INVENTORY").splitlines():
     except Exception:
         parsed_apps_count = 0
     invalid_entry_list = [entry for entry in invalid_entries.split(",") if entry]
-    mode_prompts.append(
-        {
-            "mode": mode,
-            "label": label,
-            "status": prompt_status,
-            "path": prompt_path or None,
-        }
-    )
     mode_inventory.append(
         {
             "mode": mode,
@@ -1157,7 +1146,6 @@ data = {
         },
         "modes_present": s("JSON_ANY_MODES_PRESENT") == "1",
         "modes": mode_inventory,
-        "prompts": mode_prompts,
     },
     "state_files": {
         "tmux": parse_state(s("JSON_STATE_TMUX"), s("JSON_STATE_FILE_PATH")),
