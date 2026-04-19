@@ -863,9 +863,12 @@ config_set() {
   local key="${1:-}"
   local type="${2:-}"
   local value="${3:-}"
+  local py_output rc parse_error
   [[ -n "$key" && -n "$type" ]] || die "config_set requires: <key> <type> <value>"
 
-  python3 - "$DICTATE_CONFIG_FILE" "$key" "$type" "$value" <<'PYEOF'
+  set +e
+  py_output="$(
+    python3 - "$DICTATE_CONFIG_FILE" "$key" "$type" "$value" <<'PYEOF'
 import os, sys, tomllib
 
 path = os.path.expanduser(sys.argv[1])
@@ -873,8 +876,12 @@ key = sys.argv[2]
 typ = sys.argv[3]
 raw = sys.argv[4] if len(sys.argv) > 4 else ""
 
-with open(path, "rb") as f:
-  cfg = tomllib.load(f) or {}
+try:
+  with open(path, "rb") as f:
+    cfg = tomllib.load(f) or {}
+except tomllib.TOMLDecodeError as exc:
+  print("CONFIG_PARSE_ERROR\t" + str(exc).replace("\n", " "))
+  raise SystemExit(2)
 
 def ensure(obj, parts):
   cur = obj
@@ -1019,6 +1026,18 @@ os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(path, "w", encoding="utf-8") as f:
   f.write("\n".join(parts))
 PYEOF
+  )"
+  rc=$?
+  set -e
+
+  if [[ "$rc" -ne 0 ]]; then
+    if [[ "$py_output" == CONFIG_PARSE_ERROR$'\t'* ]]; then
+      parse_error="${py_output#*$'\t'}"
+      die "config TOML is invalid. Preview repair with tmux-whisper config repair --dry-run, then apply with tmux-whisper config repair. Parse error: $parse_error"
+    fi
+    [[ -n "$py_output" ]] && printf '%s\n' "$py_output" >&2
+    return "$rc"
+  fi
 }
 
 config_inspect_raw() {

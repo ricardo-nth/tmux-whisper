@@ -287,6 +287,17 @@ assert_contains "status_invalidcfg_schema" "$invalidcfg_status" "config.schema: 
 assert_contains "status_invalidcfg_parse_error" "$invalidcfg_status" "config.parse_error:"
 assert_not_contains "status_invalidcfg_no_traceback" "$invalidcfg_status" "Traceback (most recent call last)"
 
+set +e
+invalidcfg_keep_logs_out="$(HOME="$INVALIDCFG_HOME" PATH="$INVALIDCFG_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INVALIDCFG_CFG" DICTATE_CONFIG_FILE="$INVALIDCFG_CFG/config.toml" DICTATE_STATE_FILE="$INVALIDCFG_STATE_FILE" DICTATE_INLINE_STATE_FILE="$INVALIDCFG_INLINE_STATE_FILE" DICTATE_PROCESSING_DIR="$INVALIDCFG_PROCESSING_DIR" DICTATE_TMUX_JOBS_DIR="$INVALIDCFG_TMUX_JOBS_DIR" tmux-whisper keep-logs on 2>&1)"
+invalidcfg_keep_logs_rc=$?
+set -e
+assert_equals "config_set_invalid_exit" "$invalidcfg_keep_logs_rc" "2"
+assert_contains "config_set_invalid_hint" "$invalidcfg_keep_logs_out" "config TOML is invalid"
+assert_contains "config_set_invalid_preview" "$invalidcfg_keep_logs_out" "tmux-whisper config repair --dry-run"
+assert_contains "config_set_invalid_parse_error" "$invalidcfg_keep_logs_out" "Parse error: "
+assert_not_contains "config_set_invalid_no_traceback" "$invalidcfg_keep_logs_out" "Traceback (most recent call last)"
+assert_file_contains "config_set_invalid_no_mutation" "$INVALIDCFG_CFG/config.toml" "[audio"
+
 invalidcfg_repair_dry_run="$(HOME="$INVALIDCFG_HOME" PATH="$INVALIDCFG_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INVALIDCFG_CFG" DICTATE_CONFIG_FILE="$INVALIDCFG_CFG/config.toml" DICTATE_STATE_FILE="$INVALIDCFG_STATE_FILE" DICTATE_INLINE_STATE_FILE="$INVALIDCFG_INLINE_STATE_FILE" DICTATE_PROCESSING_DIR="$INVALIDCFG_PROCESSING_DIR" DICTATE_TMUX_JOBS_DIR="$INVALIDCFG_TMUX_JOBS_DIR" tmux-whisper config repair --dry-run)"
 assert_contains "config_repair_invalid_dry_run_summary" "$invalidcfg_repair_dry_run" "Config repair dry-run: invalid/invalid -> v1"
 assert_contains "config_repair_invalid_dry_run_action" "$invalidcfg_repair_dry_run" "Action: replace invalid TOML with canonical defaults"
