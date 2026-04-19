@@ -261,6 +261,32 @@ assert_file_contains "config_repair_updated_version" "$MISMATCH_CFG/config.toml"
 assert_file_contains "config_repair_added_threshold" "$MISMATCH_CFG/config.toml" "budget_long_words_threshold = 120"
 assert_file_contains "config_repair_preserved_inline_autosend" "$MISMATCH_CFG/config.toml" "autosend = false"
 
+INVALIDCFG_HOME="$TMP_ROOT/home-invalid-config"
+INVALIDCFG_BIN="$INVALIDCFG_HOME/.local/bin"
+INVALIDCFG_CFG="$INVALIDCFG_HOME/.config/dictate"
+INVALIDCFG_STATE_FILE="$INVALIDCFG_HOME/invalidcfg.state"
+INVALIDCFG_INLINE_STATE_FILE="$INVALIDCFG_HOME/invalidcfg-inline.state"
+INVALIDCFG_PROCESSING_DIR="$INVALIDCFG_HOME/dictate-processing"
+INVALIDCFG_TMUX_JOBS_DIR="$INVALIDCFG_HOME/dictate-tmux-jobs"
+mkdir -p "$INVALIDCFG_BIN" "$INVALIDCFG_CFG" "$INVALIDCFG_PROCESSING_DIR" "$INVALIDCFG_TMUX_JOBS_DIR"
+install_test_runtime "$INVALIDCFG_BIN"
+cat >"$INVALIDCFG_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+[audio
+EOF
+invalidcfg_doctor="$(HOME="$INVALIDCFG_HOME" PATH="$INVALIDCFG_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INVALIDCFG_CFG" DICTATE_CONFIG_FILE="$INVALIDCFG_CFG/config.toml" DICTATE_STATE_FILE="$INVALIDCFG_STATE_FILE" DICTATE_INLINE_STATE_FILE="$INVALIDCFG_INLINE_STATE_FILE" DICTATE_PROCESSING_DIR="$INVALIDCFG_PROCESSING_DIR" DICTATE_TMUX_JOBS_DIR="$INVALIDCFG_TMUX_JOBS_DIR" tmux-whisper doctor 2>&1)"
+assert_contains "doctor_invalidcfg_status" "$invalidcfg_doctor" "config schema: invalid (expected v1, status=invalid)"
+assert_contains "doctor_invalidcfg_hint" "$invalidcfg_doctor" "config TOML is invalid"
+assert_contains "doctor_invalidcfg_parse_error" "$invalidcfg_doctor" "parse error:"
+assert_not_contains "doctor_invalidcfg_no_traceback" "$invalidcfg_doctor" "Traceback (most recent call last)"
+
+invalidcfg_status="$(HOME="$INVALIDCFG_HOME" PATH="$INVALIDCFG_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INVALIDCFG_CFG" DICTATE_CONFIG_FILE="$INVALIDCFG_CFG/config.toml" DICTATE_STATE_FILE="$INVALIDCFG_STATE_FILE" DICTATE_INLINE_STATE_FILE="$INVALIDCFG_INLINE_STATE_FILE" DICTATE_PROCESSING_DIR="$INVALIDCFG_PROCESSING_DIR" DICTATE_TMUX_JOBS_DIR="$INVALIDCFG_TMUX_JOBS_DIR" tmux-whisper status 2>&1)"
+assert_contains "status_invalidcfg_headline" "$invalidcfg_status" "headline: Config file is invalid TOML."
+assert_contains "status_invalidcfg_schema" "$invalidcfg_status" "config.schema: invalid (status=invalid)"
+assert_contains "status_invalidcfg_parse_error" "$invalidcfg_status" "config.parse_error:"
+assert_not_contains "status_invalidcfg_no_traceback" "$invalidcfg_status" "Traceback (most recent call last)"
+
 # --- Regression 5: doctor mode checks should show clear fallbacks + fixes. ---
 MODECHECK_HOME="$TMP_ROOT/home-modecheck"
 MODECHECK_BIN="$MODECHECK_HOME/.local/bin"

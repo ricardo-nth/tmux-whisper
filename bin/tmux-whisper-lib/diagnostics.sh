@@ -115,9 +115,10 @@ debug() {
   swift_socket_path="$(resolve_swift_parakeet_socket_path)"
   swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
   swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
-  local cfg_schema_status cfg_schema_version
+  local cfg_schema_status cfg_schema_version cfg_parse_error
   cfg_schema_status="$(config_schema_status)"
   cfg_schema_version="$(config_schema_version_label)"
+  cfg_parse_error="${CFG_CONFIG_PARSE_ERROR:-}"
 
   local src="(none)"
   local idx="${DICTATE_AUDIO_INDEX:-}"
@@ -199,6 +200,7 @@ debug() {
       JSON_CFG_SCHEMA_VERSION="$cfg_schema_version" \
       JSON_CFG_SCHEMA_STATUS="$cfg_schema_status" \
       JSON_CFG_SCHEMA_EXPECTED="$DICTATE_CONFIG_SCHEMA_VERSION" \
+      JSON_CFG_PARSE_ERROR="$cfg_parse_error" \
       JSON_CFG_SWIFT_MODEL_PATH="${CFG_SWIFT_PARAKEET_MODEL_PATH:-}" \
       JSON_CFG_SWIFT_MODEL_VERSION="${CFG_SWIFT_PARAKEET_MODEL_VERSION:-}" \
       JSON_CFG_SWIFT_SOCKET_PATH="${CFG_SWIFT_PARAKEET_SOCKET_PATH:-$DICTATE_CONFIG_DIR/.cache/tmux-whisperd.sock}" \
@@ -295,6 +297,7 @@ data = {
             "config_version": s("JSON_CFG_SCHEMA_VERSION"),
             "expected_version": f"v{s('JSON_CFG_SCHEMA_EXPECTED')}",
             "schema_status": s("JSON_CFG_SCHEMA_STATUS"),
+            "parse_error": maybe("JSON_CFG_PARSE_ERROR"),
         },
         "backend": "swift_parakeet",
         "swift_parakeet": {
@@ -417,6 +420,7 @@ PYEOF
   echo "  audio.silence_keep_ms=${CFG_AUDIO_SILENCE_KEEP_MS:-50}"
   echo "  clean.repeats_level=${CFG_CLEAN_REPEATS_LEVEL:-1}"
   echo "  meta.config_version=${cfg_schema_version} (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=${cfg_schema_status})"
+  [[ -n "$cfg_parse_error" ]] && echo "  meta.config_parse_error=${cfg_parse_error}"
   echo "  backend=swift_parakeet"
   echo "  swift_parakeet.model_path=${CFG_SWIFT_PARAKEET_MODEL_PATH:-}"
   echo "  swift_parakeet.model_version=${CFG_SWIFT_PARAKEET_MODEL_VERSION:-}"
@@ -627,14 +631,17 @@ doctor_json() {
     warnings=$((warnings + 1))
     doctor_json_add_suggestion "Create default config: tmux-whisper config repair"
   fi
-  local cfg_schema_status cfg_schema_version
+  local cfg_schema_status cfg_schema_version cfg_parse_error
   cfg_schema_status="$(config_schema_status)"
   cfg_schema_version="$(config_schema_version_label)"
-  if [[ "$cfg_schema_status" == "mismatch" ]]; then
-    issues=$((issues + 1))
-    doctor_json_add_suggestion "Preview config repair: tmux-whisper config repair --dry-run"
-    doctor_json_add_suggestion "Repair config in place: tmux-whisper config repair"
-  fi
+  cfg_parse_error="${CFG_CONFIG_PARSE_ERROR:-}"
+  case "$cfg_schema_status" in
+    mismatch|invalid)
+      issues=$((issues + 1))
+      doctor_json_add_suggestion "Preview config repair: tmux-whisper config repair --dry-run"
+      doctor_json_add_suggestion "Repair config in place: tmux-whisper config repair"
+      ;;
+  esac
   local raycast_inline_path
   raycast_inline_path="$DICTATE_CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh"
   [[ -f "$raycast_inline_path" ]] && raycast_inline_ok="1"
@@ -933,6 +940,7 @@ doctor_json() {
     JSON_CONFIG_SCHEMA_VERSION="$cfg_schema_version" \
     JSON_CONFIG_SCHEMA_EXPECTED="v$DICTATE_CONFIG_SCHEMA_VERSION" \
     JSON_CONFIG_SCHEMA_STATUS="$cfg_schema_status" \
+    JSON_CONFIG_SCHEMA_PARSE_ERROR="$cfg_parse_error" \
     JSON_RAYCAST_INLINE_PATH="$raycast_inline_path" \
     JSON_RAYCAST_INLINE_OK="$raycast_inline_ok" \
     JSON_SWIFTBAR_PLUGIN_PATH="$swiftbar_plugin" \
@@ -1102,6 +1110,7 @@ data = {
             "version": s("JSON_CONFIG_SCHEMA_VERSION"),
             "expected": s("JSON_CONFIG_SCHEMA_EXPECTED"),
             "status": s("JSON_CONFIG_SCHEMA_STATUS"),
+            "parse_error": maybe("JSON_CONFIG_SCHEMA_PARSE_ERROR"),
         },
         "raycast_inline": {"path": s("JSON_RAYCAST_INLINE_PATH"), "ok": to_bool_flag("JSON_RAYCAST_INLINE_OK")},
         "swiftbar": {
@@ -1265,14 +1274,22 @@ doctor() {
     warnings=$((warnings + 1))
     add_suggestion "Create default config: tmux-whisper config repair"
   fi
-  local cfg_schema_status cfg_schema_version
+  local cfg_schema_status cfg_schema_version cfg_parse_error
   cfg_schema_status="$(config_schema_status)"
   cfg_schema_version="$(config_schema_version_label)"
+  cfg_parse_error="${CFG_CONFIG_PARSE_ERROR:-}"
   echo "  - config schema: ${cfg_schema_version} (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=${cfg_schema_status})"
   case "$cfg_schema_status" in
     mismatch)
       issues=$((issues + 1))
       echo "  - hint: this build requires config schema v${DICTATE_CONFIG_SCHEMA_VERSION}. Preview repair with tmux-whisper config repair --dry-run, then apply with tmux-whisper config repair."
+      add_suggestion "Preview config repair: tmux-whisper config repair --dry-run"
+      add_suggestion "Repair config in place: tmux-whisper config repair"
+      ;;
+    invalid)
+      issues=$((issues + 1))
+      echo "  - hint: config TOML is invalid. Preview repair with tmux-whisper config repair --dry-run, then apply with tmux-whisper config repair."
+      [[ -n "$cfg_parse_error" ]] && echo "  - parse error: $cfg_parse_error"
       add_suggestion "Preview config repair: tmux-whisper config repair --dry-run"
       add_suggestion "Repair config in place: tmux-whisper config repair"
       ;;
@@ -1888,6 +1905,11 @@ status() {
   local key_status="UNSET"
   [[ -n "${CEREBRAS_API_KEY:-}" ]] && key_status="SET"
 
+  local cfg_schema_status cfg_schema_version cfg_parse_error
+  cfg_schema_status="$(config_schema_status)"
+  cfg_schema_version="$(config_schema_version_label)"
+  cfg_parse_error="${CFG_CONFIG_PARSE_ERROR:-}"
+
   local proc_total proc_live proc_stale
   read -r proc_total proc_live proc_stale < <(count_processing_markers)
 
@@ -1945,6 +1967,14 @@ status() {
     summary_state="attention"
     summary_headline="Runtime markers look stale."
     summary_next_action="Run tmux-whisper doctor to inspect or tmux-whisper cancel if a run got stuck."
+  elif [[ "$cfg_schema_status" == "invalid" ]]; then
+    summary_state="attention"
+    summary_headline="Config file is invalid TOML."
+    summary_next_action="Preview repair with tmux-whisper config repair --dry-run, then run tmux-whisper config repair."
+  elif [[ "$cfg_schema_status" == "mismatch" ]]; then
+    summary_state="attention"
+    summary_headline="Config schema needs repair."
+    summary_next_action="Preview repair with tmux-whisper config repair --dry-run, then run tmux-whisper config repair."
   elif [[ "$backend_readiness" == "missing_model" ]]; then
     summary_state="not_ready"
     summary_headline="Parakeet model path is missing or invalid."
@@ -2005,6 +2035,9 @@ status() {
       JSON_SUMMARY_NEXT_ACTION="$summary_next_action" \
       JSON_SUMMARY_ACTIVE_FLOW="$summary_active_flow" \
       JSON_BACKEND_READINESS="$backend_readiness" \
+      JSON_CONFIG_SCHEMA_VERSION="$cfg_schema_version" \
+      JSON_CONFIG_SCHEMA_STATUS="$cfg_schema_status" \
+      JSON_CONFIG_SCHEMA_PARSE_ERROR="$cfg_parse_error" \
       JSON_BACKEND="$backend_requested" \
       JSON_MODE_INLINE="$mode_inline" \
       JSON_MODE_INLINE_DISPLAY="$(mode_display_name "$mode_inline")" \
@@ -2119,6 +2152,11 @@ data = {
         "next_action": s("JSON_SUMMARY_NEXT_ACTION"),
         "active_flow": None if s("JSON_SUMMARY_ACTIVE_FLOW") in ("", "none") else s("JSON_SUMMARY_ACTIVE_FLOW"),
         "backend_readiness": s("JSON_BACKEND_READINESS"),
+        "config_schema": {
+            "version": s("JSON_CONFIG_SCHEMA_VERSION"),
+            "status": s("JSON_CONFIG_SCHEMA_STATUS"),
+            "parse_error": maybe("JSON_CONFIG_SCHEMA_PARSE_ERROR"),
+        },
     },
     "runtime": {
         "tmux": parse_state(s("JSON_STATE_TMUX"), s("JSON_STATE_FILE_PATH")),
@@ -2266,6 +2304,8 @@ PYEOF
   echo ""
   echo "Effective settings:"
   echo "  backend: $backend_requested"
+  echo "  config.schema: ${cfg_schema_version} (status=${cfg_schema_status})"
+  [[ -n "$cfg_parse_error" ]] && echo "  config.parse_error: $cfg_parse_error"
   echo "  mode.inline: $(mode_display_name "$mode_inline") ($mode_inline_source)"
   echo "  mode.tmux: $(mode_display_name "$mode_tmux")"
   echo "  swift_parakeet.model: ${swift_model_path:-<missing>} (${swift_model_version})"

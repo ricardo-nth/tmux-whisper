@@ -558,8 +558,13 @@ config_load() {
 import os, shlex, sys, tomllib
 
 path = os.path.expanduser(sys.argv[1])
-with open(path, "rb") as f:
-  cfg = tomllib.load(f) or {}
+parse_error = ""
+try:
+  with open(path, "rb") as f:
+    cfg = tomllib.load(f) or {}
+except tomllib.TOMLDecodeError as exc:
+  cfg = {}
+  parse_error = str(exc).replace("\n", " ")
 
 def get(path, default=None):
   cur = cfg
@@ -575,6 +580,7 @@ def b(v, default=False):
   return bool(v)
 
 out = {
+  "CFG_CONFIG_PARSE_ERROR": parse_error,
   "CFG_META_CONFIG_VERSION": str(get("meta.config_version", "")) if isinstance(get("meta.config_version", ""), int) else "",
   "CFG_AUDIO_SOURCE": str(get("audio.source", "auto")),
   "CFG_AUDIO_DEVICE_NAME": str(get("audio.device_name", "")),
@@ -662,6 +668,10 @@ PYEOF
 }
 
 config_schema_status() {
+  if [[ -n "${CFG_CONFIG_PARSE_ERROR:-}" ]]; then
+    echo "invalid"
+    return 0
+  fi
   local raw="${CFG_META_CONFIG_VERSION:-}"
   if [[ "$raw" =~ ^[0-9]+$ ]] && (( raw == DICTATE_CONFIG_SCHEMA_VERSION )); then
     echo "ok"
@@ -671,6 +681,10 @@ config_schema_status() {
 }
 
 config_schema_version_label() {
+  if [[ -n "${CFG_CONFIG_PARSE_ERROR:-}" ]]; then
+    printf "invalid"
+    return 0
+  fi
   local raw="${CFG_META_CONFIG_VERSION:-}"
   if [[ "$raw" =~ ^[0-9]+$ ]]; then
     printf "v%s" "$raw"
