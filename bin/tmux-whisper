@@ -5350,7 +5350,19 @@ manage_vocab() {
       tmp="$(mktemp "${TMPDIR:-/tmp}/dictate-vocab-rm.XXXXXX")"
       if [[ "$use_regex" == "1" ]]; then
         match_mode="regex"
-        grep -v -- "$pattern" "$VOCAB_FILE" >"$tmp" || true
+        local grep_rc=0
+        if grep -v -- "$pattern" "$VOCAB_FILE" >"$tmp"; then
+          grep_rc=0
+        else
+          grep_rc=$?
+          case "$grep_rc" in
+            1) : ;;
+            2)
+              rm -f "$tmp"
+              die "invalid regex pattern: $pattern"
+              ;;
+          esac
+        fi
       else
         match_mode="literal"
         grep -F -v -- "$pattern" "$VOCAB_FILE" >"$tmp" || true

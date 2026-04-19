@@ -781,6 +781,10 @@ fi
 echo "PASS: vocab_rm_removed_literal_target"
 assert_file_contains "vocab_rm_keeps_regex_neighbor" "$VOCAB_CFG/vocab" "axb → Regex casualty"
 
+regex_invalid_out="$(HOME="$VOCAB_HOME" PATH="$VOCAB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$VOCAB_CFG" DICTATE_CONFIG_FILE="$VOCAB_CFG/config.toml" tmux-whisper vocab rm --regex "[" 2>&1 || true)"
+assert_contains "vocab_rm_regex_invalid_message" "$regex_invalid_out" "invalid regex pattern: ["
+assert_file_contains "vocab_rm_regex_invalid_no_mutation" "$VOCAB_CFG/vocab" "axb → Regex casualty"
+
 # --- Regression 14: bench-matrix UX checks are stable. ---
 BENCH_HOME="$TMP_ROOT/home-bench"
 BENCH_BIN="$BENCH_HOME/.local/bin"
