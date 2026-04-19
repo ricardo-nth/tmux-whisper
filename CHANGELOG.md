@@ -11,6 +11,8 @@
 - **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
 - **Completed**: operator CLI foundation for `status`, `debug`, `doctor`, `history`, and `last` with machine-readable JSON output
 - **Completed**: richer operator summaries for runtime state and recent history; dashboard/TUI remains a follow-up layer on top
+- **Completed**: mode/config UX validation polish in `tmux-whisper doctor`, including flow-aware checks, surgical fix hints, and text/JSON parity
+- **Completed**: public command/help/docs now standardize on `tmux-whisper ...`; internal `dictate` config/temp paths remain intentionally unchanged for now
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
@@ -18,13 +20,10 @@
 
 ### Planned next (v0.5 queue)
 
-- mode/config UX validation polish (`dictate doctor`, mode checks, clearer fix hints)
 - clipped-run hardening follow-up: use the new archived inline artifacts to compare true tail cuts vs stop timing, then decide whether the next step is adaptive stop logic rather than another fixed grace bump
-- stop/process cue UX follow-up: trial whether inline/Raycast can safely play the processing cue immediately on stop, even while the grace window is still recording, since short bell/notification tones may be tolerable with Parakeet in real use
 - audio-device cache observability follow-up: consider a lightweight debug/log note when a stale cached AVFoundation index is invalidated and re-resolved after device-order changes
 - vocab workflow safety pass (import/export ergonomics, normalize/dedupe guardrails)
 - docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
-- CLI naming transition: move user-facing command language from legacy `dictate ...` toward `tmux-whisper ...` and update aliases/docs after the current UI/config cleanup settles
 - thin dashboard/TUI on top of the new operator data surface, after the CLI summary layer settles
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
 

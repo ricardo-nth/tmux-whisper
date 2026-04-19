@@ -30,6 +30,7 @@ Success criteria:
 Focus: make day-to-day usage cleaner and safer.
 
 - Improve mode/config UX and validation.
+- Keep public command/help/docs language aligned on `tmux-whisper` while deferring internal `dictate` path/env churn.
 - Add stronger config migration/version handling.
 - Improve vocab workflows (import/export/normalize safety).
 - Refine docs for real-world setup and troubleshooting.
@@ -40,6 +41,7 @@ Recent progress (2026-02-19):
 - Vocab safety flow now includes invalid-line previews, guarded dedupe backups, and export snapshots.
 - Added dedicated troubleshooting guide: `docs/TROUBLESHOOTING.md`.
 - Added runtime SwiftBar integration toggle (`tmux-whisper swiftbar on|off|toggle`) so integration can be managed without reinstalling.
+- Public-facing command language is now standardized on `tmux-whisper` across the active docs/operator surface, while config/sound paths remain intentionally under `dictate` for now.
 
 Success criteria:
 

@@ -1,4 +1,4 @@
-# tmux-whisper
+# Tmux Whisper
 
 Local-first dictation for macOS using a warm Swift/CoreML Parakeet backend by default, with optional LLM cleanup and tmux/desktop integrations.
 
@@ -13,7 +13,7 @@ Tmux Whisper is **tmux-first**.
 ## What You Get
 
 - `bin/tmux-whisper`: main CLI / orchestration layer
-- `bin/dictate-lib.sh`: shared helper library used by CLI and integrations
+- `bin/dictate-lib.sh`: shared helper library used by Tmux Whisper and its integrations
 - `tmux-whisperd/`: local Swift daemon package used by the default backend
 - `config/`: default config, modes, and vocab
 - `integrations/raycast/`: Raycast scripts (`inline`, `toggle`, `cancel`)
@@ -75,7 +75,7 @@ tmux-whisper --help
 Pinned to stable tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.5.1/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.5.2/bootstrap.sh | bash
 ```
 
 Pass install flags through bootstrap:
@@ -99,7 +99,7 @@ Install behavior:
 - Installs SwiftBar plugin to `~/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh`.
 - Installs sample sounds to `~/.local/share/sounds/dictate`.
 - Runs a best-effort backend warm-up after install/update, including a tiny synthetic prime transcription so the next real dictation is closer to warm.
-- Note: config and sounds paths remain under `dictate` during the branding transition (`~/.config/dictate`, `~/.local/share/sounds/dictate`).
+- Note: config and sounds paths intentionally remain under `dictate` in this phase (`~/.config/dictate`, `~/.local/share/sounds/dictate`).
 
 Useful install flags:
 
