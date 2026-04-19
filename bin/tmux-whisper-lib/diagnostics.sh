@@ -121,6 +121,7 @@ debug() {
   cfg_parse_error="${CFG_CONFIG_PARSE_ERROR:-}"
 
   local src="(none)"
+  local audio_cache_note=""
   local idx="${DICTATE_AUDIO_INDEX:-}"
   if [[ -n "$idx" ]]; then
     src="env:DICTATE_AUDIO_INDEX"
@@ -129,12 +130,13 @@ debug() {
     src="config:audio.device_index"
   else
     if [[ -n "$ffmpeg_bin" && -n "$python_bin" ]]; then
-      local detect_meta detect_src
+      local detect_meta detect_src detect_ms detect_note
       detect_meta="$(detect_audio_index 2>/dev/null || true)"
-      IFS=$'\t' read -r idx detect_src _ <<<"$detect_meta"
+      IFS=$'\t' read -r idx detect_src detect_ms detect_note <<<"$detect_meta"
       if [[ -n "$idx" ]]; then
         src="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
       fi
+      audio_cache_note="${detect_note:-}"
     else
       src="detect skipped (missing ffmpeg/python3)"
     fi
@@ -223,6 +225,7 @@ debug() {
       JSON_CFG_DEBUG_KEEP_LOGS="${CFG_DEBUG_KEEP_LOGS:-0}" \
       JSON_AUDIO_INDEX="$idx" \
       JSON_AUDIO_SOURCE_RESOLVED="$src" \
+      JSON_AUDIO_CACHE_NOTE="$audio_cache_note" \
       JSON_FFMPEG_DEVICES="$ffmpeg_devices_output" \
       python3 - <<'PYEOF'
 import json
@@ -332,6 +335,7 @@ data = {
     "audio_resolution": {
         "index": to_int("JSON_AUDIO_INDEX"),
         "source": maybe("JSON_AUDIO_SOURCE_RESOLVED"),
+        "cache_note": maybe("JSON_AUDIO_CACHE_NOTE"),
     },
     "ffmpeg_devices": maybe("JSON_FFMPEG_DEVICES"),
     "tips": ([] if maybe("JSON_AUDIO_INDEX") is not None else [
@@ -453,6 +457,7 @@ PYEOF
   echo ""
 
   echo "Resolved audio index: ${idx:-<none>} (source: $src)"
+  [[ -n "$audio_cache_note" ]] && echo "Audio cache note: $audio_cache_note"
   if [[ -z "$idx" ]]; then
     echo ""
     echo "Tip: If you see 'Input/output error' above, macOS is blocking device access for the app launching ffmpeg."
@@ -1891,9 +1896,9 @@ status() {
     audio_src="config:audio.device_index"
   else
     if command -v ffmpeg >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
-      local detect_meta detect_src
+      local detect_meta detect_src _detect_ms _detect_note
       detect_meta="$(detect_audio_index 2>/dev/null || true)"
-      IFS=$'\t' read -r audio_idx detect_src _ <<<"$detect_meta"
+      IFS=$'\t' read -r audio_idx detect_src _detect_ms _detect_note <<<"$detect_meta"
       if [[ -n "$audio_idx" ]]; then
         audio_src="${detect_src:-detect:source(${audio_source_mode})}"
       fi

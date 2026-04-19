@@ -330,6 +330,7 @@ BACKEND_RUNTIME_CACHE="$AUDIO_CACHE_DIR/backend-state.sh"
 INLINE_SESSION_CACHE="$AUDIO_CACHE_DIR/inline-session.sh"
 DICTATE_LAST_AUDIO_INDEX_SOURCE=""
 DICTATE_LAST_AUDIO_INDEX_MS="0"
+DICTATE_LAST_AUDIO_CACHE_NOTE=""
 DICTATE_LAST_BACKEND_REQUESTED=""
 DICTATE_LAST_BACKEND_USED=""
 DICTATE_LAST_BACKEND_FALLBACK_REASON=""
@@ -1419,6 +1420,20 @@ log_transcribe_event() {
   if [[ -n "${TRANSCRIBE_LOG:-}" ]]; then
     printf '[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$message" >>"$TRANSCRIBE_LOG" 2>/dev/null || true
   fi
+}
+
+log_record_event() {
+  local message="${1:-}"
+  local record_log_path="${2:-${RECORD_LOG:-}}"
+  [[ -n "$message" && -n "$record_log_path" ]] || return 0
+  printf '[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$message" >>"$record_log_path" 2>/dev/null || true
+}
+
+log_audio_cache_note_if_any() {
+  local audio_cache_note="${1:-}"
+  local record_log_path="${2:-${RECORD_LOG:-}}"
+  [[ -n "$audio_cache_note" ]] || return 0
+  log_record_event "audio cache: $audio_cache_note" "$record_log_path"
 }
 
 resolve_transcribe_backend() {
@@ -3296,6 +3311,7 @@ detect_audio_index() {
   DICTATE_LAST_AUDIO_INDEX_SOURCE=""
   DICTATE_LAST_AUDIO_INDEX_MS="0"
   DICTATE_LAST_AUDIO_INDEX=""
+  DICTATE_LAST_AUDIO_CACHE_NOTE=""
 
   local allow_cache="0"
   case "$source_mode" in
@@ -3338,17 +3354,23 @@ sys.exit(1)
   }
 
   if [[ "$allow_cache" == "1" ]] && load_audio_index_cache && [[ "${CACHED_AUDIO_KEY:-}" == "$cache_key" ]]; then
+    local cached_idx cached_name cached_match cached_at
+    cached_idx="${CACHED_AUDIO_INDEX:-}"
+    cached_name="${CACHED_AUDIO_NAME:-}"
+    cached_match="${CACHED_AUDIO_MATCH:-cache}"
+    cached_at="${CACHED_AUDIO_AT:-unknown}"
     detected_idx="${CACHED_AUDIO_INDEX:-}"
     detected_name="${CACHED_AUDIO_NAME:-}"
-    detected_match="${CACHED_AUDIO_MATCH:-cache}"
+    detected_match="${cached_match:-cache}"
     if [[ -n "$detected_idx" ]] && cached_audio_entry_is_valid "$detected_idx" "$detected_name"; then
       DICTATE_LAST_AUDIO_INDEX_SOURCE="cache:source(${source_mode}):match(${detected_match:-cache}):name(${detected_name:-})"
       DICTATE_LAST_AUDIO_INDEX_MS="$(( $(now_ms) - started_ms ))"
       DICTATE_LAST_AUDIO_INDEX="$detected_idx"
-      printf '%s\t%s\t%s\n' "$detected_idx" "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS"
+      printf '%s\t%s\t%s\t%s\n' "$detected_idx" "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS" "${DICTATE_LAST_AUDIO_CACHE_NOTE:-}"
       return 0
     fi
-    rm -f "$AUDIO_INDEX_CACHE" 2>/dev/null || true
+    DICTATE_LAST_AUDIO_CACHE_NOTE="stale cache invalidated: cached idx=${cached_idx:-unknown} name=${cached_name:-unknown} match=${cached_match:-unknown} at=${cached_at}"
+    clear_audio_index_cache
   fi
 
   detect_meta="$(dictate_lib_detect_audio_device "$source_mode" "$preferred" "$mac_name" "$iphone_name" 2>/dev/null || true)"
@@ -3357,15 +3379,21 @@ sys.exit(1)
   if [[ -n "$detected_idx" ]]; then
     DICTATE_LAST_AUDIO_INDEX_SOURCE="detect:source(${source_mode}):match(${detected_match:-unknown}):name(${detected_name:-})"
     DICTATE_LAST_AUDIO_INDEX="$detected_idx"
+    if [[ -n "${DICTATE_LAST_AUDIO_CACHE_NOTE:-}" ]]; then
+      DICTATE_LAST_AUDIO_CACHE_NOTE="${DICTATE_LAST_AUDIO_CACHE_NOTE}; re-resolved idx=${detected_idx} match=${detected_match:-unknown} name=${detected_name:-unknown}"
+    fi
     if [[ "$allow_cache" == "1" ]]; then
       write_audio_index_cache "$cache_key" "$detected_idx" "$detected_name" "$detected_match"
     fi
-    printf '%s\t%s\t%s\n' "$detected_idx" "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS"
+    printf '%s\t%s\t%s\t%s\n' "$detected_idx" "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS" "${DICTATE_LAST_AUDIO_CACHE_NOTE:-}"
     return 0
   fi
 
   DICTATE_LAST_AUDIO_INDEX_SOURCE="detect:miss:source(${source_mode})"
-  printf '\t%s\t%s\n' "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS"
+  if [[ -n "${DICTATE_LAST_AUDIO_CACHE_NOTE:-}" ]]; then
+    DICTATE_LAST_AUDIO_CACHE_NOTE="${DICTATE_LAST_AUDIO_CACHE_NOTE}; no replacement found"
+  fi
+  printf '\t%s\t%s\t%s\n' "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS" "${DICTATE_LAST_AUDIO_CACHE_NOTE:-}"
   return 1
 }
 
@@ -3700,9 +3728,9 @@ start() {
   if [[ -n "$audio_index" ]]; then
     startup_audio_source="env:DICTATE_AUDIO_INDEX"
   else
-    local detect_meta detect_src detect_ms
+    local detect_meta detect_src detect_ms audio_cache_note=""
     detect_meta="$(detect_audio_index 2>/dev/null || true)"
-    IFS=$'\t' read -r audio_index detect_src detect_ms <<<"$detect_meta"
+    IFS=$'\t' read -r audio_index detect_src detect_ms audio_cache_note <<<"$detect_meta"
     startup_audio_ms="${detect_ms:-0}"
     startup_audio_source="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
   fi
@@ -3740,6 +3768,7 @@ start() {
 
   # Record in background until 'tmux-whisper stop' sends SIGINT.
   : >"$RECORD_LOG" 2>/dev/null || true
+  log_audio_cache_note_if_any "${audio_cache_note:-}" "$RECORD_LOG"
   local ffmpeg_live_started_ms
   ffmpeg_live_started_ms="$(now_ms)"
   local pid
@@ -3768,13 +3797,14 @@ start() {
     if [[ "$retry_allowed" == "1" ]]; then
       retry_allowed="0"
       clear_audio_index_cache
-      local retry_index="" retry_src="" retry_ms="" retry_meta=""
+      local retry_index="" retry_src="" retry_ms="" retry_note="" retry_meta=""
       retry_meta="$(DICTATE_AUDIO_NAME="$preferred_audio_name" detect_audio_index 2>/dev/null || true)"
-      IFS=$'\t' read -r retry_index retry_src retry_ms <<<"$retry_meta"
+      IFS=$'\t' read -r retry_index retry_src retry_ms retry_note <<<"$retry_meta"
       if [[ -n "$retry_index" ]]; then
         audio_index="$retry_index"
         startup_audio_ms=$(( startup_audio_ms + ${retry_ms:-0} ))
         startup_audio_source="retry:${retry_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
+        log_audio_cache_note_if_any "${retry_note:-}" "$RECORD_LOG"
         continue
       fi
     fi
@@ -4440,9 +4470,9 @@ inline_start() {
   if [[ -n "$audio_index" ]]; then
     startup_audio_source="env:DICTATE_AUDIO_INDEX"
   else
-    local detect_meta detect_src detect_ms
+    local detect_meta detect_src detect_ms audio_cache_note=""
     detect_meta="$(detect_audio_index 2>/dev/null || true)"
-    IFS=$'\t' read -r audio_index detect_src detect_ms <<<"$detect_meta"
+    IFS=$'\t' read -r audio_index detect_src detect_ms audio_cache_note <<<"$detect_meta"
     startup_audio_ms="${detect_ms:-0}"
     startup_audio_source="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
   fi
@@ -4465,6 +4495,7 @@ inline_start() {
   local record_log
   record_log="$TMPDIR/whisper-dictate-inline.record.log"
   : >"$record_log" 2>/dev/null || true
+  log_audio_cache_note_if_any "${audio_cache_note:-}" "$record_log"
 
   local ffmpeg_started_ms record_started_ms pid attempt live_ok
   ffmpeg_started_ms="$(now_ms)"
@@ -4592,9 +4623,9 @@ inline() {
   if [[ -n "$audio_index" ]]; then
     startup_audio_source="env:DICTATE_AUDIO_INDEX"
   else
-    local detect_meta detect_src detect_ms
+    local detect_meta detect_src detect_ms audio_cache_note=""
     detect_meta="$(detect_audio_index 2>/dev/null || true)"
-    IFS=$'\t' read -r audio_index detect_src detect_ms <<<"$detect_meta"
+    IFS=$'\t' read -r audio_index detect_src detect_ms audio_cache_note <<<"$detect_meta"
     startup_audio_ms="${detect_ms:-0}"
     startup_audio_source="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
   fi
@@ -4629,6 +4660,7 @@ inline() {
   local inline_stop_grace_ms
   inline_stop_grace_ms="$(resolve_inline_stop_grace_ms)"
   : >"$record_log" 2>/dev/null || true
+  log_audio_cache_note_if_any "${audio_cache_note:-}" "$record_log"
   ffmpeg -hide_banner -loglevel error \
     -f avfoundation -i ":${audio_index}" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
@@ -5316,9 +5348,9 @@ set_device() {
       echo "  mac hint: ${CFG_AUDIO_MAC_NAME:-<none>}"
       echo "  iphone hint: ${CFG_AUDIO_IPHONE_NAME:-<none>}"
       echo "  fallback index: ${CFG_AUDIO_DEVICE_INDEX:-<none>}"
-      local detect_meta resolved_idx resolved_src
+      local detect_meta resolved_idx resolved_src _resolved_ms _cache_note
       detect_meta="$(detect_audio_index 2>/dev/null || true)"
-      IFS=$'\t' read -r resolved_idx resolved_src _ <<<"$detect_meta"
+      IFS=$'\t' read -r resolved_idx resolved_src _resolved_ms _cache_note <<<"$detect_meta"
       echo "  resolved now: ${resolved_idx:-<none>} (${resolved_src:-not found})"
       echo ""
       echo "Available devices:"

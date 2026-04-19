@@ -17,6 +17,7 @@
 - **Completed**: config repair flow now provides canonical `config defaults`, in-place `config repair [--dry-run]`, and install-time seeding from one default template
 - **Completed**: malformed `config.toml` now degrades into explicit `debug`/`doctor`/`status` warnings, and `config repair` can reset invalid TOML safely with a backup
 - **Completed**: real-world docs refresh now clarifies install channels, tmux-first setup, integration environment expectations, and channel-specific upgrade/repair flows
+- **Completed**: stale cached AVFoundation audio-index invalidations now leave lightweight breadcrumbs in `debug`, `debug --json`, and active record logs when device order changes force a re-resolve
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
@@ -25,7 +26,6 @@
 ### Planned next (v0.5 queue)
 
 - clipped-run hardening follow-up: use the new archived inline artifacts to compare true tail cuts vs stop timing, then decide whether the next step is adaptive stop logic rather than another fixed grace bump
-- audio-device cache observability follow-up: consider a lightweight debug/log note when a stale cached AVFoundation index is invalidated and re-resolved after device-order changes
 - thin dashboard/TUI on top of the new operator data surface, after the CLI summary layer settles
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
 
@@ -37,7 +37,10 @@
   - Added per-run inline `keep_logs` archiving under `history/inline-debug` so rare clipped runs preserve the WAV, stop log, transcribe log, and timing metadata for inspection.
   - Documented rare tail clipping as an active optimization area rather than a release blocker; the current release prioritizes a strong default UX with observability for future tuning.
 - **Validation**:
-  - Ran `./tests/test_cli.sh`, `./tests/test_flow_parity.sh`, and `./tests/ci.sh`.
+  - Ran `./tests/test_cli.sh`, `./tests/test_regression.sh`, `./tests/test_flow_parity.sh`, and `./tests/ci.sh`.
+- **Audio-device cache observability**:
+  - Added a lightweight stale-cache note when a cached AVFoundation audio index is invalidated and re-resolved after device-order changes.
+  - Surfaced that note in `tmux-whisper debug`, `debug --json`, and the active tmux/inline record logs so device drift is easier to diagnose without adding noise to normal status output.
 
 ## 2026-04-18
 

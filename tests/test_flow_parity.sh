@@ -666,6 +666,41 @@ run_inline_swift_superseded_round() {
   assert_equals "inline_swift_superseded_single_send" "$send_count" "1"
 }
 
+run_tmux_audio_cache_note_round() {
+  setup_case "tmux-audio-cache"
+  export TMUX="1"
+  export TMUX_PANE="%1"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  unset DICTATE_AUDIO_INDEX
+
+  cat >"$CASE_DIR/config/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "mac"
+mac_name = "MacBook Air Microphone"
+EOF
+
+  mkdir -p "$CASE_DIR/config/.cache"
+  cat >"$CASE_DIR/config/.cache/audio-index.sh" <<'EOF'
+CACHED_AUDIO_KEY=source=mac\;preferred=MacBook\ Air\ Microphone\;mac=MacBook\ Air\ Microphone\;iphone=
+CACHED_AUDIO_NAME=MacBook\ Air\ Microphone
+CACHED_AUDIO_MATCH=mac
+CACHED_AUDIO_INDEX=1
+CACHED_AUDIO_AT=2026-03-20T08:47:56Z
+EOF
+
+  local start_out stop_out
+  start_out="$("$DICTATE_BIN" toggle)"
+  assert_contains "tmux_audio_cache_start" "$start_out" "RECORDING"
+  assert_file_contains "tmux_audio_cache_log_note" "$DICTATE_RECORD_LOG" "audio cache: stale cache invalidated: cached idx=1 name=MacBook Air Microphone match=mac at=2026-03-20T08:47:56Z; re-resolved idx=0 match=mac name=MacBook Air Microphone"
+  assert_file_contains "tmux_audio_cache_rewritten_index" "$CASE_DIR/config/.cache/audio-index.sh" "CACHED_AUDIO_INDEX=0"
+
+  stop_out="$("$DICTATE_BIN" stop)"
+  assert_contains "tmux_audio_cache_stop" "$stop_out" "STOPPED"
+}
+
 run_status_postprocess_round() {
   setup_case "status-postprocess"
   export DICTATE_POSTPROCESS=1
@@ -716,6 +751,7 @@ run_inline_toggle_process_sound_immediate_round
 run_inline_keep_logs_archive_round
 run_inline_swift_round
 run_inline_swift_superseded_round
+run_tmux_audio_cache_note_round
 run_status_postprocess_round
 run_status_model_mode_round
 run_status_backend_round
