@@ -314,6 +314,59 @@ assert_contains "mode_flows_both_summary" "$modeflows_both" "Mode flows for code
 assert_file_contains "mode_flows_both_file_tmux" "$MODEFLOWS_CFG/modes/code/flows" "tmux"
 assert_file_contains "mode_flows_both_file_inline" "$MODEFLOWS_CFG/modes/code/flows" "inline"
 
+# --- Regression 5d: doctor should flag flow-disabled mode policies and ignored app mappings. ---
+MODEDOCTOR_HOME="$TMP_ROOT/home-modedoctor"
+MODEDOCTOR_BIN="$MODEDOCTOR_HOME/.local/bin"
+MODEDOCTOR_CFG="$MODEDOCTOR_HOME/.config/dictate"
+mkdir -p "$MODEDOCTOR_BIN" \
+  "$MODEDOCTOR_CFG/modes/base" \
+  "$MODEDOCTOR_CFG/modes/chat" \
+  "$MODEDOCTOR_CFG/modes/code" \
+  "$MODEDOCTOR_CFG/modes/email"
+install_test_runtime "$MODEDOCTOR_BIN"
+cat >"$MODEDOCTOR_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[tmux]
+mode = "base"
+EOF
+printf '%s\n' "chat" >"$MODEDOCTOR_CFG/current-mode"
+printf '%s\n' "Context: base mode." >"$MODEDOCTOR_CFG/modes/base/prompt"
+printf '%s\n' "inline" >"$MODEDOCTOR_CFG/modes/base/flows"
+printf '%s\n' "Context: chat mode." >"$MODEDOCTOR_CFG/modes/chat/prompt"
+printf '%s\n' "tmux" >"$MODEDOCTOR_CFG/modes/chat/flows"
+printf '%s\n' "Messages" >"$MODEDOCTOR_CFG/modes/chat/apps"
+printf '%s\n' "Context: code mode." >"$MODEDOCTOR_CFG/modes/code/prompt"
+printf '%s\n' "tmux" >"$MODEDOCTOR_CFG/modes/code/flows"
+printf '%s\n' "Context: email mode." >"$MODEDOCTOR_CFG/modes/email/prompt"
+printf '%s\n' "voice" >"$MODEDOCTOR_CFG/modes/email/flows"
+modedoctor_out="$(HOME="$MODEDOCTOR_HOME" PATH="$MODEDOCTOR_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODEDOCTOR_CFG" DICTATE_CONFIG_FILE="$MODEDOCTOR_CFG/config.toml" tmux-whisper doctor)"
+assert_contains "doctor_flow_disabled_inline" "$modedoctor_out" "mode.current: chat (fixed, inline disabled, fallback=base)"
+assert_contains "doctor_flow_disabled_tmux" "$modedoctor_out" "tmux.mode: base (tmux disabled, fallback=code)"
+assert_contains "doctor_flow_count_inline" "$modedoctor_out" "modes.inline-capable: 1"
+assert_contains "doctor_flow_count_tmux" "$modedoctor_out" "modes.tmux-capable: 2"
+assert_contains "doctor_flow_apps_ignored" "$modedoctor_out" "mode.chat.apps: 1 mapping(s) ignored (inline flow disabled)"
+assert_contains "doctor_flow_invalid_entries" "$modedoctor_out" "mode.email.flows: hidden (explicit; invalid=voice)"
+assert_contains "doctor_flow_fix_inline" "$modedoctor_out" "Enable inline flow for 'chat': tmux-whisper mode flows chat both"
+assert_contains "doctor_flow_fix_tmux" "$modedoctor_out" "Enable tmux flow for 'base': tmux-whisper mode flows base both"
+assert_contains "doctor_flow_fix_invalid" "$modedoctor_out" "Review flow filter for 'email': tmux-whisper mode flows email"
+
+modedoctor_json="$(HOME="$MODEDOCTOR_HOME" PATH="$MODEDOCTOR_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODEDOCTOR_CFG" DICTATE_CONFIG_FILE="$MODEDOCTOR_CFG/config.toml" tmux-whisper doctor --json)"
+assert_json_equals "doctor_flow_json_inline_status" "$modedoctor_json" "mode_config.inline.status" "flow_disabled"
+assert_json_equals "doctor_flow_json_inline_allowed" "$modedoctor_json" "mode_config.inline.flow_allowed" "false"
+assert_json_equals "doctor_flow_json_tmux_status" "$modedoctor_json" "mode_config.tmux.status" "flow_disabled"
+assert_json_equals "doctor_flow_json_tmux_allowed" "$modedoctor_json" "mode_config.tmux.flow_allowed" "false"
+assert_json_equals "doctor_flow_json_inline_count" "$modedoctor_json" "mode_config.available.inline_count" "1"
+assert_json_equals "doctor_flow_json_tmux_count" "$modedoctor_json" "mode_config.available.tmux_count" "2"
+assert_json_equals "doctor_flow_json_chat_mode" "$modedoctor_json" "mode_config.modes.1.mode" "chat"
+assert_json_equals "doctor_flow_json_chat_apps_ignored" "$modedoctor_json" "mode_config.modes.1.apps.ignored" "true"
+assert_json_equals "doctor_flow_json_email_mode" "$modedoctor_json" "mode_config.modes.3.mode" "email"
+assert_json_equals "doctor_flow_json_email_invalid_entry" "$modedoctor_json" "mode_config.modes.3.flows.invalid_entries.0" "voice"
+
 # --- Regression 6: postprocess commands clarify mode prompt inactivity when OFF. ---
 modecheck_postprocess_off="$(HOME="$MODECHECK_HOME" PATH="$MODECHECK_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MODECHECK_CFG" DICTATE_CONFIG_FILE="$MODECHECK_CFG/config.toml" tmux-whisper postprocess off)"
 assert_contains "postprocess_off_prompt_note" "$modecheck_postprocess_off" "Mode prompt: inactive (postprocess OFF)"
