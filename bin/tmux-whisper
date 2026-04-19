@@ -187,7 +187,8 @@ ENV OPTIONS:
   DICTATE_AUDIO_SOURCE=auto|external|mac|iphone|name # source strategy override
   DICTATE_AUDIO_INDEX=N      # audio device index
   DICTATE_AUDIO_NAME="X"     # preferred device name substring (more stable than index)
-  DICTATE_STOP_GRACE_MS=700 # keep recording briefly after stop to catch trailing words
+  DICTATE_STOP_GRACE_MS=700 # shared stop grace (tmux; inline falls back here if unset)
+  DICTATE_INLINE_STOP_GRACE_MS=1000 # inline/Raycast stop grace before ffmpeg interrupt
   DICTATE_TRANSCRIBE_TAIL_PAD_MS=500 # append a little silence before ASR to preserve final words
   DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
   DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
@@ -727,6 +728,72 @@ play_sound() {
 
 keep_logs_enabled() {
   [[ "${DICTATE_KEEP_LOGS:-${CFG_DEBUG_KEEP_LOGS:-0}}" == "1" ]]
+}
+
+inline_debug_archive_dir() {
+  printf "%s\n" "$HISTORY_DIR/inline-debug"
+}
+
+inline_archive_prefix() {
+  local session_id="${1:-inline}"
+  keep_logs_enabled || return 1
+
+  local dir
+  dir="$(inline_debug_archive_dir)"
+  mkdir -p "$dir" 2>/dev/null || return 1
+
+  local safe_session ts
+  safe_session="$(printf '%s' "$session_id" | tr -c '[:alnum:]._-' '_')"
+  ts="$(date '+%Y-%m-%dT%H-%M-%S')"
+  printf "%s/%s-%s\n" "$dir" "$ts" "$safe_session"
+}
+
+archive_inline_debug_artifacts() {
+  local prefix="${1:-}"
+  local wav="${2:-}"
+  local record_log="${3:-}"
+  local transcribe_log="${4:-}"
+  local status="${5:-unknown}"
+  local record_ms="${6:-0}"
+  local transcribe_ms="${7:-0}"
+  local clean_ms="${8:-0}"
+  local postprocess_ms="${9:-0}"
+  local paste_ms="${10:-0}"
+  local total_ms="${11:-0}"
+  local session_id="${12:-}"
+
+  if [[ -n "$prefix" ]]; then
+    [[ -f "$wav" ]] && cp -f "$wav" "${prefix}.wav" 2>/dev/null || true
+    [[ -f "$record_log" ]] && cp -f "$record_log" "${prefix}.record.log" 2>/dev/null || true
+    [[ -f "$transcribe_log" ]] && cp -f "$transcribe_log" "${prefix}.transcribe.log" 2>/dev/null || true
+    {
+      printf 'session_id=%q\n' "$session_id"
+      printf 'status=%q\n' "$status"
+      printf 'record_ms=%q\n' "$record_ms"
+      printf 'transcribe_ms=%q\n' "$transcribe_ms"
+      printf 'clean_ms=%q\n' "$clean_ms"
+      printf 'postprocess_ms=%q\n' "$postprocess_ms"
+      printf 'paste_ms=%q\n' "$paste_ms"
+      printf 'total_ms=%q\n' "$total_ms"
+      printf 'archived_at=%q\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    } >"${prefix}.meta" 2>/dev/null || true
+  fi
+
+  rm -f "$wav" 2>/dev/null || true
+}
+
+resolve_stop_grace_ms() {
+  local requested_ms="${1:-}"
+  local default_ms="${2:-700}"
+  if [[ "$requested_ms" =~ ^[0-9]+$ ]]; then
+    printf "%s\n" "$requested_ms"
+  else
+    printf "%s\n" "$default_ms"
+  fi
+}
+
+resolve_inline_stop_grace_ms() {
+  resolve_stop_grace_ms "${DICTATE_INLINE_STOP_GRACE_MS:-${DICTATE_STOP_GRACE_MS:-}}" "1000"
 }
 
 logs() {
@@ -3187,7 +3254,7 @@ stop() {
   fi
 
   # Stop recording.
-  terminate_recording_pid "$pid"
+  terminate_recording_pid "$pid" "$(resolve_stop_grace_ms "${DICTATE_STOP_GRACE_MS:-}" "700")" "$RECORD_LOG"
 
   local do_enter do_copy
   do_enter="${DICTATE_ENTER:-}"
@@ -3373,17 +3440,20 @@ stop() {
 
 terminate_recording_pid() {
   local target_pid="${1:-}"
+  local requested_stop_grace_ms="${2:-}"
+  local record_log_path="${3:-${RECORD_LOG:-/dev/null}}"
   local attempt
-  local stop_grace_ms="${DICTATE_STOP_GRACE_MS:-700}"
+  local stop_grace_ms
   local int_wait_attempts="60"
   local term_wait_attempts="40"
   [[ -n "$target_pid" && "$target_pid" =~ ^[0-9]+$ ]] || return 0
+  stop_grace_ms="$(resolve_stop_grace_ms "$requested_stop_grace_ms" "700")"
 
   if keep_logs_enabled; then
     printf "[%s] stop_recording: pid=%s grace_ms=%s int_wait_ms=%s term_wait_ms=%s\n" \
       "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$stop_grace_ms" \
       "$(( int_wait_attempts * 50 ))" "$(( term_wait_attempts * 50 ))" \
-      >>"${RECORD_LOG:-/dev/null}" 2>/dev/null || true
+      >>"$record_log_path" 2>/dev/null || true
   fi
 
   # A small grace window makes hotkey stop feel less "hard cut" when the user
@@ -3412,6 +3482,9 @@ terminate_recording_pid() {
 cancel() {
   local state_file="${1:-$STATE_FILE}"
   local inline_state="$INLINE_STATE_FILE"
+  local cancel_stop_grace_ms
+  cancel_stop_grace_ms="$(resolve_stop_grace_ms "${DICTATE_STOP_GRACE_MS:-}" "700")"
+  local cancel_record_log="$RECORD_LOG"
   
   # Check tmux state first, then inline
   local found=""
@@ -3419,6 +3492,8 @@ cancel() {
     found="$state_file"
   elif [[ -f "$inline_state" ]]; then
     found="$inline_state"
+    cancel_stop_grace_ms="$(resolve_inline_stop_grace_ms)"
+    cancel_record_log="$TMPDIR/whisper-dictate-inline.record.log"
   fi
   
   if [[ -z "$found" ]]; then
@@ -3437,7 +3512,7 @@ cancel() {
   
   # Stop recording process
   if [[ -n "${pid:-}" ]]; then
-    terminate_recording_pid "$pid"
+    terminate_recording_pid "$pid" "$cancel_stop_grace_ms" "$cancel_record_log"
   fi
   
   # Remove wav file without transcribing
@@ -3506,6 +3581,8 @@ process_inline_recording() {
   record_log="$TMPDIR/whisper-dictate-inline.record.log"
   local transcribe_log
   transcribe_log="$TMPDIR/whisper-dictate-inline.transcribe.log"
+  local archive_prefix=""
+  archive_prefix="$(inline_archive_prefix "$inline_session_id" 2>/dev/null || true)"
   local now_ms_value
   now_ms_value="$(now_ms)"
   flow_started_ms=$(( now_ms_value - record_ms ))
@@ -3514,7 +3591,6 @@ process_inline_recording() {
   fi
 
   if [[ ! -s "$wav" ]]; then
-    rm -f "$wav" 2>/dev/null
     local hint=""
     if [[ -s "$record_log" ]]; then
       hint="$(tail -n 2 "$record_log" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//')"
@@ -3529,17 +3605,20 @@ process_inline_recording() {
     total_ms=$(( $(now_ms) - flow_started_ms ))
     append_bench_entry "inline" "record_failed" "$model_id" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "0" "0" "0" "0" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "record_failed" \
+      "$record_ms" "0" "0" "0" "0" "$total_ms" "$inline_session_id"
     return 1
   fi
   if ! keep_logs_enabled; then
     rm -f "$record_log" 2>/dev/null || true
   fi
-  
-  echo "⏳ Transcribing..."
-  
+
   local txt
   : >"$transcribe_log" 2>/dev/null || true
   local TRANSCRIBE_LOG="$transcribe_log"
+  
+  echo "⏳ Transcribing..."
+  
   local whisper_rc=0
   local runtime_skip_silence_trim="0"
   if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_TRIM_WITH_POSTPROCESS:-0}"; then
@@ -3557,10 +3636,11 @@ process_inline_recording() {
     total_ms=$(( $(now_ms) - flow_started_ms ))
     append_bench_entry "inline" "transcribe_failed" "$model_id" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "transcribe_failed" \
+      "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" "$inline_session_id"
     return 1
   fi
   
-  rm -f "$wav"
   stage_started_ms="$(now_ms)"
   txt="$(printf "%s" "$txt" | sanitize_transcript_artifacts)"
   # Clean filler words / stutters if enabled (regex-based, fast)
@@ -3584,6 +3664,8 @@ process_inline_recording() {
     total_ms=$(( $(now_ms) - flow_started_ms ))
     append_bench_entry "inline" "no_speech" "$model_id" "$detected_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "no_speech" \
+      "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" "$inline_session_id"
     return 1
   fi
 
@@ -3601,6 +3683,8 @@ process_inline_recording() {
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     local history_app="${target_app:-current}"
     ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" ) >/dev/null 2>&1 &
+    archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "superseded_pre_postprocess" \
+      "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" "$inline_session_id"
     return 0
   fi
 
@@ -3641,6 +3725,8 @@ process_inline_recording() {
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     local history_app="${target_app:-current}"
     ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" ) >/dev/null 2>&1 &
+    archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "superseded_post_postprocess" \
+      "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" "$inline_session_id"
     return 0
   fi
   
@@ -3654,6 +3740,8 @@ process_inline_recording() {
     total_ms=$(( $(now_ms) - flow_started_ms ))
     append_bench_entry "inline" "clipboard_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+    archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "clipboard_failed" \
+      "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
     return 1
   fi
   
@@ -3699,6 +3787,8 @@ process_inline_recording() {
       total_ms=$(( $(now_ms) - flow_started_ms ))
       append_bench_entry "inline" "autosend_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+      archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "autosend_failed_paste" \
+        "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
       return 1
     fi
     sleep_ms "$send_delay_ms"
@@ -3710,6 +3800,8 @@ process_inline_recording() {
       total_ms=$(( $(now_ms) - flow_started_ms ))
       append_bench_entry "inline" "autosend_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+      archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "autosend_failed_send" \
+        "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
       return 1
     fi
     echo "✅ Sent ($(inline_send_mode_desc "$inline_send_mode"))"
@@ -3722,6 +3814,8 @@ process_inline_recording() {
       total_ms=$(( $(now_ms) - flow_started_ms ))
       append_bench_entry "inline" "paste_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+      archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "paste_failed" \
+        "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
       return 1
     fi
     echo "✅ Pasted (no Enter)"
@@ -3733,6 +3827,9 @@ process_inline_recording() {
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
 
   play_sound stop
+
+  archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "ok" \
+    "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
 
   # Save history asynchronously so paste/send latency is not blocked by JSON + file I/O.
   local history_app="${target_app:-current}"
@@ -3854,14 +3951,22 @@ inline_stop() {
     (( record_ms < 0 )) && record_ms=0
   fi
 
-  terminate_recording_pid "$pid"
+  local inline_record_log inline_process_sound
+  inline_record_log="$TMPDIR/whisper-dictate-inline.record.log"
+  inline_process_sound="${DICTATE_INLINE_PROCESS_SOUND:-${CFG_INLINE_PROCESS_SOUND:-1}}"
+  if [[ "$inline_process_sound" == "1" ]]; then
+    if keep_logs_enabled; then
+      printf "[%s] inline_process_sound: immediate_on_stop\n" \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >>"$inline_record_log" 2>/dev/null || true
+    fi
+    play_sound process
+  fi
+
+  terminate_recording_pid "$pid" "$(resolve_inline_stop_grace_ms)" "$inline_record_log"
 
   (
     trap '' HUP
     set -euo pipefail
-    if [[ "${DICTATE_INLINE_PROCESS_SOUND:-${CFG_INLINE_PROCESS_SOUND:-1}}" == "1" ]]; then
-      play_sound process
-    fi
     process_inline_recording "$wav" "${target_app:-}" "$model_id" "$record_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}"
   ) >"$TMPDIR/whisper-dictate-inline.transcribe.log" 2>&1 &
@@ -3941,13 +4046,15 @@ inline() {
   maybe_warmup_swift_parakeet_in_background
   local ffmpeg_pid=""
   local inline_interrupted="0"
+  local inline_stop_grace_ms
+  inline_stop_grace_ms="$(resolve_inline_stop_grace_ms)"
   : >"$record_log" 2>/dev/null || true
   ffmpeg -hide_banner -loglevel error \
     -f avfoundation -i ":${audio_index}" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
     "$wav" >"$record_log" 2>&1 &
   ffmpeg_pid="$!"
-  trap 'inline_interrupted=1; echo ""; terminate_recording_pid "$ffmpeg_pid"' INT TERM
+  trap 'inline_interrupted=1; echo ""; terminate_recording_pid "$ffmpeg_pid" "$inline_stop_grace_ms" "$record_log"' INT TERM
   wait "$ffmpeg_pid" || true
   trap - INT TERM
 

@@ -2,9 +2,12 @@
 
 ## Current working version
 
-- **Stable release**: `v0.5.1` (tagged on 2026-04-18)
+- **Stable release**: `v0.5.2` (tagged on 2026-04-19)
 - **Next target**: `v0.5.x` (UX + config maturity)
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
+- **Completed**: inline/Raycast stop-grace retuned to `1000ms` plus inline stop breadcrumbs when `keep_logs` is enabled
+- **Completed**: inline/Raycast processing cue now plays immediately on stop, before the grace window finishes recording
+- **Completed**: inline `keep_logs` now archives per-run WAV + record/transcribe logs under `history/inline-debug` for clipped-run forensics
 - **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
 - **Completed**: operator CLI foundation for `status`, `debug`, `doctor`, `history`, and `last` with machine-readable JSON output
 - **Completed**: richer operator summaries for runtime state and recent history; dashboard/TUI remains a follow-up layer on top
@@ -16,13 +19,24 @@
 ### Planned next (v0.5 queue)
 
 - mode/config UX validation polish (`dictate doctor`, mode checks, clearer fix hints)
-- clipped-run observability follow-up: capture clearer stop/transcribe boundary breadcrumbs for rare early truncation cases before attempting another clipping tweak
+- clipped-run hardening follow-up: use the new archived inline artifacts to compare true tail cuts vs stop timing, then decide whether the next step is adaptive stop logic rather than another fixed grace bump
+- stop/process cue UX follow-up: trial whether inline/Raycast can safely play the processing cue immediately on stop, even while the grace window is still recording, since short bell/notification tones may be tolerable with Parakeet in real use
 - audio-device cache observability follow-up: consider a lightweight debug/log note when a stale cached AVFoundation index is invalidated and re-resolved after device-order changes
 - vocab workflow safety pass (import/export ergonomics, normalize/dedupe guardrails)
 - docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
 - CLI naming transition: move user-facing command language from legacy `dictate ...` toward `tmux-whisper ...` and update aliases/docs after the current UI/config cleanup settles
 - thin dashboard/TUI on top of the new operator data surface, after the CLI summary layer settles
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
+
+## 2026-04-19
+
+- **Inline/Raycast clipping hardening**:
+  - Retuned the inline stop grace window to `1000ms` so Raycast stop feels snappier while still buffering trailing words better than the original baseline.
+  - Moved the inline processing cue to fire immediately on stop, so the sound matches the hotkey action instead of waiting for the grace window to finish.
+  - Added per-run inline `keep_logs` archiving under `history/inline-debug` so rare clipped runs preserve the WAV, stop log, transcribe log, and timing metadata for inspection.
+  - Documented rare tail clipping as an active optimization area rather than a release blocker; the current release prioritizes a strong default UX with observability for future tuning.
+- **Validation**:
+  - Ran `./tests/test_cli.sh`, `./tests/test_flow_parity.sh`, and `./tests/ci.sh`.
 
 ## 2026-04-18
 

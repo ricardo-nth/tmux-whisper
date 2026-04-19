@@ -98,6 +98,20 @@ wait_for_file_contains() {
   return 1
 }
 
+wait_for_matching_file() {
+  local dir="$1"
+  local pattern="$2"
+  local tries="${3:-120}"
+  local i
+  for ((i = 0; i < tries; i++)); do
+    if find "$dir" -name "$pattern" -type f -print -quit 2>/dev/null | grep -q .; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
 wait_for_absent() {
   local path="$1"
   local tries="${2:-120}"
@@ -202,6 +216,15 @@ if [[ -n "${DICTATE_TEST_OSASCRIPT_LOG:-}" ]]; then
 fi
 if [[ "$joined" == *"get name of first process whose frontmost is true"* ]]; then
   printf '%s\n' "${DICTATE_TEST_FRONT_APP:-Ghostty}"
+fi
+exit 0
+EOF
+
+  cat >"$STUB_DIR/afplay" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ -n "${DICTATE_TEST_SOUND_LOG:-}" ]]; then
+  printf '%s\n' "${1:-}" >>"$DICTATE_TEST_SOUND_LOG"
 fi
 exit 0
 EOF
@@ -316,16 +339,21 @@ PYEOF
 esac
 EOF
 
-  chmod +x "$STUB_DIR/ffmpeg" "$STUB_DIR/tmux" "$STUB_DIR/pbcopy" "$STUB_DIR/osascript" "$STUB_DIR/tmux-whisperd"
+  chmod +x "$STUB_DIR/ffmpeg" "$STUB_DIR/tmux" "$STUB_DIR/pbcopy" "$STUB_DIR/osascript" "$STUB_DIR/afplay" "$STUB_DIR/tmux-whisperd"
 }
 
 CASE_DIR=""
 
 setup_case() {
   local name="$1"
+  local socket_tag
   CASE_DIR="$TMP_ROOT/$name"
   mkdir -p "$CASE_DIR"/{home,tmp,logs,tmux-jobs,swift-model}
   mkdir -p "$CASE_DIR/config/modes/base" "$CASE_DIR/config/modes/chat" "$CASE_DIR/config/modes/code" "$CASE_DIR/config/modes/long"
+
+  # Keep the stub daemon socket short enough for macOS AF_UNIX limits.
+  socket_tag="$(printf '%s' "$name" | tr -cd '[:alnum:]' | cut -c1-12)"
+  [[ -n "$socket_tag" ]] || socket_tag="dictatetest"
 
   printf '%s\n' "code" >"$CASE_DIR/config/current-mode"
   : >"$CASE_DIR/config/modes/base/prompt"
@@ -346,6 +374,13 @@ setup_case() {
   ln -sf "$STUB_DIR/tmux" "$HOME/.local/bin/tmux"
   ln -sf "$STUB_DIR/pbcopy" "$HOME/.local/bin/pbcopy"
   ln -sf "$STUB_DIR/osascript" "$HOME/.local/bin/osascript"
+  ln -sf "$STUB_DIR/afplay" "$HOME/.local/bin/afplay"
+  mkdir -p "$HOME/.local/share/sounds/dictate"
+  : >"$HOME/.local/share/sounds/dictate/start.wav"
+  : >"$HOME/.local/share/sounds/dictate/stop.wav"
+  : >"$HOME/.local/share/sounds/dictate/process.wav"
+  : >"$HOME/.local/share/sounds/dictate/error.wav"
+  : >"$HOME/.local/share/sounds/dictate/cancel.wav"
 
   export DICTATE_CONFIG_DIR="$CASE_DIR/config"
   export DICTATE_CONFIG_FILE="$CASE_DIR/config/config.toml"
@@ -358,7 +393,7 @@ setup_case() {
   export DICTATE_TMUX_JOBS_DIR="$CASE_DIR/tmux-jobs"
   export DICTATE_TMUX_WHISPERD_BIN="$STUB_DIR/tmux-whisperd"
   export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
-  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$CASE_DIR/tmp/tmux-whisperd.sock"
+  export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/${socket_tag}.sock"
   export DICTATE_KEEP_LOGS=1
   export DICTATE_AUDIO_INDEX=0
   export DICTATE_TMUX_AUTOSEND=1
@@ -373,6 +408,7 @@ setup_case() {
   export DICTATE_TEST_TMUX_LOG="$CASE_DIR/logs/tmux.log"
   export DICTATE_TEST_OSASCRIPT_LOG="$CASE_DIR/logs/osascript.log"
   export DICTATE_TEST_PBCOPY_OUT="$CASE_DIR/logs/pbcopy.txt"
+  export DICTATE_TEST_SOUND_LOG="$CASE_DIR/logs/sounds.log"
   export DICTATE_TEST_TMUX_PANE="%1"
   export DICTATE_TEST_TMUX_PANE_CMD="bash"
   export DICTATE_TEST_FFMPEG_HOLD=0
@@ -503,6 +539,82 @@ run_inline_toggle_round() {
   pass "inline_toggle_send_enter"
 }
 
+run_inline_toggle_grace_override_round() {
+  setup_case "inline-toggle-grace-override"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline grace override transcript"
+  export DICTATE_STOP_GRACE_MS=5
+  export DICTATE_INLINE_STOP_GRACE_MS=123
+  export DICTATE_AUTOSEND=1
+
+  local start_out stop_out inline_record_log
+  inline_record_log="$CASE_DIR/tmp/whisper-dictate-inline.record.log"
+
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_toggle_grace_start" "$start_out" "RECORDING"
+
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_toggle_grace_stop" "$stop_out" "STOPPED"
+
+  assert_file_contains "inline_toggle_grace_record_log" "$inline_record_log" "grace_ms=123"
+}
+
+run_inline_toggle_process_sound_immediate_round() {
+  setup_case "inline-toggle-process-sound"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline process sound transcript"
+  export DICTATE_AUTOSEND=1
+
+  local start_out stop_out inline_record_log
+  inline_record_log="$CASE_DIR/tmp/whisper-dictate-inline.record.log"
+
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_toggle_process_sound_start" "$start_out" "RECORDING"
+
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_toggle_process_sound_stop" "$stop_out" "STOPPED"
+
+  wait_for_file_contains "$DICTATE_TEST_SOUND_LOG" "process.wav" || fail "inline_toggle_process_sound_logged"
+  assert_file_contains "inline_toggle_process_sound_record_log" "$inline_record_log" "inline_process_sound: immediate_on_stop"
+
+  local process_line stop_line
+  process_line="$(grep -n 'inline_process_sound: immediate_on_stop' "$inline_record_log" | head -n 1 | cut -d: -f1)"
+  stop_line="$(grep -n 'stop_recording:' "$inline_record_log" | head -n 1 | cut -d: -f1)"
+  [[ -n "$process_line" && -n "$stop_line" && "$process_line" -lt "$stop_line" ]] || fail "inline_toggle_process_sound_before_grace"
+  pass "inline_toggle_process_sound_before_grace"
+}
+
+run_inline_keep_logs_archive_round() {
+  setup_case "inline-keep-logs-archive"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline archive transcript"
+  export DICTATE_AUTOSEND=1
+
+  local start_out stop_out archive_dir wav_archive meta_archive transcribe_archive
+  archive_dir="$CASE_DIR/config/history/inline-debug"
+
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_archive_start" "$start_out" "RECORDING"
+
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_archive_stop" "$stop_out" "STOPPED"
+
+  wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "inline archive transcript" || fail "inline_archive_complete"
+  wait_for_matching_file "$archive_dir" '*.meta' || fail "inline_archive_meta_ready"
+
+  wav_archive="$(find "$archive_dir" -name '*.wav' -type f | head -n 1)"
+  meta_archive="$(find "$archive_dir" -name '*.meta' -type f | head -n 1)"
+  transcribe_archive="$(find "$archive_dir" -name '*.transcribe.log' -type f | head -n 1)"
+
+  [[ -n "$wav_archive" && -f "$wav_archive" ]] || fail "inline_archive_wav_exists"
+  pass "inline_archive_wav_exists"
+  [[ -n "$meta_archive" && -f "$meta_archive" ]] || fail "inline_archive_meta_exists"
+  pass "inline_archive_meta_exists"
+  [[ -n "$transcribe_archive" && -f "$transcribe_archive" ]] || fail "inline_archive_transcribe_exists"
+  pass "inline_archive_transcribe_exists"
+  assert_file_contains "inline_archive_meta_status" "$meta_archive" "status=ok"
+}
+
 run_inline_swift_round() {
   setup_case "inline-swift"
   export DICTATE_TEST_SWIFT_TEXT="swift backend transcript"
@@ -599,6 +711,9 @@ run_inline_vocab_round
 run_inline_cmd_enter_round
 run_inline_auto_mode_round
 run_inline_toggle_round
+run_inline_toggle_grace_override_round
+run_inline_toggle_process_sound_immediate_round
+run_inline_keep_logs_archive_round
 run_inline_swift_round
 run_inline_swift_superseded_round
 run_status_postprocess_round
