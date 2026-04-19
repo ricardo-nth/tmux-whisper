@@ -26,6 +26,18 @@ tmux-whisper config repair --dry-run
 tmux-whisper config repair
 ```
 
+Invalid TOML:
+
+- Symptoms:
+  - `tmux-whisper doctor`: `config schema: invalid`
+  - `tmux-whisper status`: `headline: Config file is invalid TOML.`
+- Fix:
+
+```bash
+tmux-whisper config repair --dry-run
+tmux-whisper config repair
+```
+
 Missing dependencies:
 
 - `python3` and `ffmpeg` are required.

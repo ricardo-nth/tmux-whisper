@@ -287,6 +287,23 @@ assert_contains "status_invalidcfg_schema" "$invalidcfg_status" "config.schema: 
 assert_contains "status_invalidcfg_parse_error" "$invalidcfg_status" "config.parse_error:"
 assert_not_contains "status_invalidcfg_no_traceback" "$invalidcfg_status" "Traceback (most recent call last)"
 
+invalidcfg_repair_dry_run="$(HOME="$INVALIDCFG_HOME" PATH="$INVALIDCFG_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INVALIDCFG_CFG" DICTATE_CONFIG_FILE="$INVALIDCFG_CFG/config.toml" DICTATE_STATE_FILE="$INVALIDCFG_STATE_FILE" DICTATE_INLINE_STATE_FILE="$INVALIDCFG_INLINE_STATE_FILE" DICTATE_PROCESSING_DIR="$INVALIDCFG_PROCESSING_DIR" DICTATE_TMUX_JOBS_DIR="$INVALIDCFG_TMUX_JOBS_DIR" tmux-whisper config repair --dry-run)"
+assert_contains "config_repair_invalid_dry_run_summary" "$invalidcfg_repair_dry_run" "Config repair dry-run: invalid/invalid -> v1"
+assert_contains "config_repair_invalid_dry_run_action" "$invalidcfg_repair_dry_run" "Action: replace invalid TOML with canonical defaults"
+assert_contains "config_repair_invalid_dry_run_parse_error" "$invalidcfg_repair_dry_run" "Parse error: "
+assert_not_contains "config_repair_invalid_dry_run_no_backup" "$invalidcfg_repair_dry_run" "Backup: "
+assert_file_contains "config_repair_invalid_dry_run_no_mutation" "$INVALIDCFG_CFG/config.toml" "[audio"
+
+invalidcfg_repair_out="$(HOME="$INVALIDCFG_HOME" PATH="$INVALIDCFG_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INVALIDCFG_CFG" DICTATE_CONFIG_FILE="$INVALIDCFG_CFG/config.toml" DICTATE_STATE_FILE="$INVALIDCFG_STATE_FILE" DICTATE_INLINE_STATE_FILE="$INVALIDCFG_INLINE_STATE_FILE" DICTATE_PROCESSING_DIR="$INVALIDCFG_PROCESSING_DIR" DICTATE_TMUX_JOBS_DIR="$INVALIDCFG_TMUX_JOBS_DIR" tmux-whisper config repair)"
+assert_contains "config_repair_invalid_summary" "$invalidcfg_repair_out" "Config repair: invalid/invalid -> v1"
+assert_contains "config_repair_invalid_action" "$invalidcfg_repair_out" "Action: replace invalid TOML with canonical defaults"
+assert_contains "config_repair_invalid_parse_error" "$invalidcfg_repair_out" "Parse error: "
+assert_contains "config_repair_invalid_backup_line" "$invalidcfg_repair_out" "Backup: "
+invalidcfg_repair_backup="$(printf "%s\n" "$invalidcfg_repair_out" | sed -n 's/^Backup: //p' | head -n 1)"
+assert_file_exists "config_repair_invalid_backup_exists" "$invalidcfg_repair_backup"
+assert_file_contains "config_repair_invalid_written_version" "$INVALIDCFG_CFG/config.toml" "config_version = 1"
+assert_file_contains "config_repair_invalid_written_audio" "$INVALIDCFG_CFG/config.toml" "source = \"auto\""
+
 # --- Regression 5: doctor mode checks should show clear fallbacks + fixes. ---
 MODECHECK_HOME="$TMP_ROOT/home-modecheck"
 MODECHECK_BIN="$MODECHECK_HOME/.local/bin"

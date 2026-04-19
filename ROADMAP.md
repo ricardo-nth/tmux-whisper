@@ -38,6 +38,7 @@ Focus: make day-to-day usage cleaner and safer.
 Recent progress (2026-02-19):
 
 - `tmux-whisper doctor` now includes mode/config fallback diagnostics plus actionable suggested fixes.
+- `tmux-whisper config defaults` and `config repair [--dry-run]` now provide a forward-safe config migration path, including reset/backup handling for malformed TOML.
 - Vocab safety flow now includes invalid-line previews, guarded dedupe backups, and export snapshots.
 - Added dedicated troubleshooting guide: `docs/TROUBLESHOOTING.md`.
 - Added runtime SwiftBar integration toggle (`tmux-whisper swiftbar on|off|toggle`) so integration can be managed without reinstalling.
