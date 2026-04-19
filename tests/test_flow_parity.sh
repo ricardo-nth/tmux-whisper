@@ -584,6 +584,43 @@ run_inline_toggle_process_sound_immediate_round() {
   pass "inline_toggle_process_sound_before_grace"
 }
 
+run_inline_audio_cache_note_round() {
+  setup_case "inline-audio-cache"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline audio cache transcript"
+  export DICTATE_AUTOSEND=1
+  unset DICTATE_AUDIO_INDEX
+
+  cat >"$CASE_DIR/config/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "mac"
+mac_name = "MacBook Air Microphone"
+EOF
+
+  mkdir -p "$CASE_DIR/config/.cache"
+  cat >"$CASE_DIR/config/.cache/audio-index.sh" <<'EOF'
+CACHED_AUDIO_KEY=source=mac\;preferred=MacBook\ Air\ Microphone\;mac=MacBook\ Air\ Microphone\;iphone=
+CACHED_AUDIO_NAME=MacBook\ Air\ Microphone
+CACHED_AUDIO_MATCH=mac
+CACHED_AUDIO_INDEX=1
+CACHED_AUDIO_AT=2026-03-20T08:47:56Z
+EOF
+
+  local start_out stop_out inline_record_log
+  inline_record_log="$CASE_DIR/tmp/whisper-dictate-inline.record.log"
+
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_audio_cache_start" "$start_out" "RECORDING"
+
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_audio_cache_stop" "$stop_out" "STOPPED"
+
+  assert_file_contains "inline_audio_cache_log_note" "$inline_record_log" "audio cache: stale cache invalidated: cached idx=1 name=MacBook Air Microphone match=mac at=2026-03-20T08:47:56Z; re-resolved idx=0 match=mac name=MacBook Air Microphone"
+}
+
 run_inline_keep_logs_archive_round() {
   setup_case "inline-keep-logs-archive"
   export DICTATE_TEST_FFMPEG_HOLD=1
@@ -748,6 +785,7 @@ run_inline_auto_mode_round
 run_inline_toggle_round
 run_inline_toggle_grace_override_round
 run_inline_toggle_process_sound_immediate_round
+run_inline_audio_cache_note_round
 run_inline_keep_logs_archive_round
 run_inline_swift_round
 run_inline_swift_superseded_round

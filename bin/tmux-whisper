@@ -4502,7 +4502,7 @@ inline_start() {
   ffmpeg -hide_banner -loglevel error \
     -f avfoundation -i ":${audio_index}" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
-    "$wav" >"$record_log" 2>&1 &
+    "$wav" >>"$record_log" 2>&1 &
   pid=$!
   record_started_ms="$(now_ms)"
   startup_total_ms=$(( record_started_ms - startup_started_ms ))
@@ -4664,7 +4664,7 @@ inline() {
   ffmpeg -hide_banner -loglevel error \
     -f avfoundation -i ":${audio_index}" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
-    "$wav" >"$record_log" 2>&1 &
+    "$wav" >>"$record_log" 2>&1 &
   ffmpeg_pid="$!"
   trap 'inline_interrupted=1; echo ""; terminate_recording_pid "$ffmpeg_pid" "$inline_stop_grace_ms" "$record_log"' INT TERM
   wait "$ffmpeg_pid" || true
