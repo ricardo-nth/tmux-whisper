@@ -113,12 +113,12 @@ MODES (context-aware prompts):
 VOCABULARY:
   tmux-whisper vocab              # show custom word corrections
   tmux-whisper vocab add "X::Y" ["A::B"...] # add one or more corrections
-  tmux-whisper vocab import <file> # import corrections from file (one per line)
+  tmux-whisper vocab import [--dry-run] <file> # import corrections from file (one per line)
   tmux-whisper vocab export <file> # export normalized/deduped corrections to file
-  tmux-whisper vocab clipboard    # import corrections from clipboard lines
+  tmux-whisper vocab clipboard [--dry-run] # import corrections from clipboard lines
   tmux-whisper vocab dedupe       # normalize + remove duplicate entries
   tmux-whisper vocab edit         # open global vocab file in $EDITOR
-  tmux-whisper vocab rm "pattern" # remove entries matching pattern
+  tmux-whisper vocab rm [--dry-run] [--regex] "pattern" # remove entries by literal match (regex opt-in)
 
 INLINE OPTIONS:
   tmux-whisper autosend           # show auto-send setting
@@ -5037,20 +5037,22 @@ normalize_vocab_entry() {
 
 append_vocab_entry() {
   local raw="${1:-}"
+  local vocab_file="${2:-$VOCAB_FILE}"
   local normalized=""
   normalized="$(normalize_vocab_entry "$raw" 2>/dev/null || true)"
   [[ -n "$normalized" ]] || return 2
-  mkdir -p "$(dirname "$VOCAB_FILE")"
-  touch "$VOCAB_FILE"
-  if grep -Fxq "$normalized" "$VOCAB_FILE" 2>/dev/null; then
+  mkdir -p "$(dirname "$vocab_file")"
+  touch "$vocab_file"
+  if grep -Fxq "$normalized" "$vocab_file" 2>/dev/null; then
     return 1
   fi
-  printf "%s\n" "$normalized" >>"$VOCAB_FILE"
+  printf "%s\n" "$normalized" >>"$vocab_file"
   return 0
 }
 
 import_vocab_stream() {
   local invalid_log="${1:-}"
+  local vocab_file="${2:-$VOCAB_FILE}"
   local added=0 dup=0 invalid=0
   local line norm rc line_num=0
   [[ -n "$invalid_log" ]] && : >"$invalid_log"
@@ -5068,7 +5070,7 @@ import_vocab_stream() {
       fi
       continue
     fi
-    append_vocab_entry "$norm"
+    append_vocab_entry "$norm" "$vocab_file"
     rc=$?
     case "$rc" in
       0) added=$((added + 1)) ;;
@@ -5114,6 +5116,24 @@ build_vocab_snapshot() {
   echo "$kept $dup $invalid"
 }
 
+prepare_vocab_work_file() {
+  local work_file="${1:-}"
+  [[ -n "$work_file" ]] || return 1
+  if [[ -f "$VOCAB_FILE" ]]; then
+    cp "$VOCAB_FILE" "$work_file"
+  else
+    : >"$work_file"
+  fi
+}
+
+make_vocab_backup() {
+  local src="${1:-}"
+  [[ -f "$src" ]] || return 1
+  local backup="${src}.bak.$(date +%Y%m%d-%H%M%S)"
+  cp "$src" "$backup"
+  printf "%s\n" "$backup"
+}
+
 show_vocab_invalid_preview() {
   local invalid_log="${1:-}"
   local limit="${2:-5}"
@@ -5154,20 +5174,44 @@ manage_vocab() {
       return 0
       ;;
     import)
+      local dry_run=0
+      if [[ "${1:-}" == "--dry-run" ]]; then
+        dry_run=1
+        shift
+      fi
       local src="${1:-}"
       [[ -n "$src" ]] || die "usage: tmux-whisper vocab import <file>"
       src="$(expand_path "$src")"
       [[ -f "$src" ]] || die "file not found: $src"
-      local stats added dup invalid invalid_tmp
+      local stats added dup invalid invalid_tmp work_file backup
       invalid_tmp="$(mktemp "${TMPDIR:-/tmp}/dictate-vocab-import-invalid.XXXXXX")"
-      stats="$(import_vocab_stream "$invalid_tmp" < "$src")"
+      work_file="$(mktemp "${TMPDIR:-/tmp}/dictate-vocab-import.XXXXXX")"
+      prepare_vocab_work_file "$work_file"
+      stats="$(import_vocab_stream "$invalid_tmp" "$work_file" < "$src")"
       added="$(printf "%s" "$stats" | awk "{print \$1}")"
       dup="$(printf "%s" "$stats" | awk "{print \$2}")"
       invalid="$(printf "%s" "$stats" | awk "{print \$3}")"
       [[ -n "$added" ]] || added=0
       [[ -n "$dup" ]] || dup=0
       [[ -n "$invalid" ]] || invalid=0
-      echo "Vocab import ($src): added=$added duplicate=$dup invalid=$invalid"
+      backup=""
+      if [[ "$dry_run" != "1" && "$added" -gt 0 ]]; then
+        mkdir -p "$(dirname "$VOCAB_FILE")"
+        if [[ -f "$VOCAB_FILE" ]]; then
+          backup="$(make_vocab_backup "$VOCAB_FILE" || true)"
+        fi
+        mv -f "$work_file" "$VOCAB_FILE"
+      else
+        rm -f "$work_file"
+      fi
+      if [[ "$dry_run" == "1" ]]; then
+        echo "Vocab import dry-run ($src): added=$added duplicate=$dup invalid=$invalid"
+      else
+        echo "Vocab import ($src): added=$added duplicate=$dup invalid=$invalid"
+      fi
+      if [[ -n "$backup" ]]; then
+        echo "Backup: $backup"
+      fi
       if [[ "$invalid" -gt 0 ]]; then
         show_vocab_invalid_preview "$invalid_tmp" 5
       fi
@@ -5208,19 +5252,43 @@ manage_vocab() {
       ;;
     clipboard|clip|paste)
       need pbpaste
+      local dry_run=0
+      if [[ "${1:-}" == "--dry-run" ]]; then
+        dry_run=1
+        shift
+      fi
       local clip
       clip="$(pbpaste)"
       [[ -n "${clip//[[:space:]]/}" ]] || die "clipboard is empty"
-      local stats added dup invalid invalid_tmp
+      local stats added dup invalid invalid_tmp work_file backup
       invalid_tmp="$(mktemp "${TMPDIR:-/tmp}/dictate-vocab-clipboard-invalid.XXXXXX")"
-      stats="$(printf "%s\n" "$clip" | import_vocab_stream "$invalid_tmp")"
+      work_file="$(mktemp "${TMPDIR:-/tmp}/dictate-vocab-clipboard.XXXXXX")"
+      prepare_vocab_work_file "$work_file"
+      stats="$(printf "%s\n" "$clip" | import_vocab_stream "$invalid_tmp" "$work_file")"
       added="$(printf "%s" "$stats" | awk "{print \$1}")"
       dup="$(printf "%s" "$stats" | awk "{print \$2}")"
       invalid="$(printf "%s" "$stats" | awk "{print \$3}")"
       [[ -n "$added" ]] || added=0
       [[ -n "$dup" ]] || dup=0
       [[ -n "$invalid" ]] || invalid=0
-      echo "Vocab clipboard import: added=$added duplicate=$dup invalid=$invalid"
+      backup=""
+      if [[ "$dry_run" != "1" && "$added" -gt 0 ]]; then
+        mkdir -p "$(dirname "$VOCAB_FILE")"
+        if [[ -f "$VOCAB_FILE" ]]; then
+          backup="$(make_vocab_backup "$VOCAB_FILE" || true)"
+        fi
+        mv -f "$work_file" "$VOCAB_FILE"
+      else
+        rm -f "$work_file"
+      fi
+      if [[ "$dry_run" == "1" ]]; then
+        echo "Vocab clipboard import dry-run: added=$added duplicate=$dup invalid=$invalid"
+      else
+        echo "Vocab clipboard import: added=$added duplicate=$dup invalid=$invalid"
+      fi
+      if [[ -n "$backup" ]]; then
+        echo "Backup: $backup"
+      fi
       if [[ "$invalid" -gt 0 ]]; then
         show_vocab_invalid_preview "$invalid_tmp" 5
       fi
@@ -5254,23 +5322,56 @@ manage_vocab() {
       rm -f "$invalid_tmp"
       ;;
     edit)
+      mkdir -p "$(dirname "$VOCAB_FILE")"
+      touch "$VOCAB_FILE"
       ${EDITOR:-nvim} "$VOCAB_FILE"
       ;;
     rm|remove)
+      local dry_run=0 use_regex=0
+      while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+          --dry-run) dry_run=1 ;;
+          --regex) use_regex=1 ;;
+          --) shift; break ;;
+          *) break ;;
+        esac
+        shift
+      done
       local pattern="$*"
       if [[ -z "$pattern" ]]; then
-        die "usage: tmux-whisper vocab rm \"pattern\""
+        die "usage: tmux-whisper vocab rm [--dry-run] [--regex] \"pattern\""
       fi
       if [[ ! -f "$VOCAB_FILE" ]]; then
         echo "No custom vocab file"
         return 0
       fi
-      local before after
-      before="$(wc -l < "$VOCAB_FILE")"
-      grep -v "$pattern" "$VOCAB_FILE" > "$VOCAB_FILE.tmp" || true
-      mv "$VOCAB_FILE.tmp" "$VOCAB_FILE"
-      after="$(wc -l < "$VOCAB_FILE")"
-      echo "Removed $((before - after)) entries matching: $pattern"
+      local before after removed tmp backup match_mode
+      before="$(wc -l < "$VOCAB_FILE" | tr -d ' ')"
+      tmp="$(mktemp "${TMPDIR:-/tmp}/dictate-vocab-rm.XXXXXX")"
+      if [[ "$use_regex" == "1" ]]; then
+        match_mode="regex"
+        grep -v -- "$pattern" "$VOCAB_FILE" >"$tmp" || true
+      else
+        match_mode="literal"
+        grep -F -v -- "$pattern" "$VOCAB_FILE" >"$tmp" || true
+      fi
+      after="$(wc -l < "$tmp" | tr -d ' ')"
+      removed=$((before - after))
+      backup=""
+      if [[ "$removed" -gt 0 && "$dry_run" != "1" ]]; then
+        backup="$(make_vocab_backup "$VOCAB_FILE" || true)"
+        mv -f "$tmp" "$VOCAB_FILE"
+      else
+        rm -f "$tmp"
+      fi
+      if [[ "$dry_run" == "1" ]]; then
+        echo "Vocab rm dry-run: removed=$removed match=$match_mode pattern=$pattern"
+      else
+        echo "Vocab rm: removed=$removed match=$match_mode pattern=$pattern"
+      fi
+      if [[ -n "$backup" ]]; then
+        echo "Backup: $backup"
+      fi
       ;;
     "")
       if [[ -f "$VOCAB_FILE" ]]; then
@@ -5282,10 +5383,11 @@ manage_vocab() {
         echo ""
         echo "Commands:"
         echo "  tmux-whisper vocab add \"wrong::right\" [\"a::b\" ...]"
-        echo "  tmux-whisper vocab import <file>"
+        echo "  tmux-whisper vocab import [--dry-run] <file>"
         echo "  tmux-whisper vocab export <file>"
-        echo "  tmux-whisper vocab clipboard"
+        echo "  tmux-whisper vocab clipboard [--dry-run]"
         echo "  tmux-whisper vocab dedupe"
+        echo "  tmux-whisper vocab rm [--dry-run] [--regex] \"pattern\""
       else
         echo "No custom vocab file yet."
         echo ""

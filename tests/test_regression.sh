@@ -731,9 +731,29 @@ import_out="$(HOME="$VOCAB_HOME" PATH="$VOCAB_BIN:/usr/bin:/bin" DICTATE_LIB_PAT
 assert_contains "vocab_import_summary" "$import_out" "Vocab import ($IMPORT_FILE): added=3 duplicate=0 invalid=1"
 assert_contains "vocab_import_invalid_preview" "$import_out" "line 4: bad line"
 
+DRY_RUN_IMPORT_FILE="$TMP_ROOT/vocab-import-dry-run.txt"
+cat >"$DRY_RUN_IMPORT_FILE" <<'EOF'
+later fix::LaterFix
+EOF
+import_dry_run_out="$(HOME="$VOCAB_HOME" PATH="$VOCAB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$VOCAB_CFG" DICTATE_CONFIG_FILE="$VOCAB_CFG/config.toml" tmux-whisper vocab import --dry-run "$DRY_RUN_IMPORT_FILE")"
+assert_contains "vocab_import_dry_run_summary" "$import_dry_run_out" "Vocab import dry-run ($DRY_RUN_IMPORT_FILE): added=1 duplicate=0 invalid=0"
+assert_not_contains "vocab_import_dry_run_no_backup" "$import_dry_run_out" "Backup: "
+if rg -q --fixed-strings "later fix → LaterFix" "$VOCAB_CFG/vocab"; then
+  echo "FAIL: vocab_import_dry_run_no_mutation" >&2
+  exit 1
+fi
+echo "PASS: vocab_import_dry_run_no_mutation"
+
+import_backup_out="$(HOME="$VOCAB_HOME" PATH="$VOCAB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$VOCAB_CFG" DICTATE_CONFIG_FILE="$VOCAB_CFG/config.toml" tmux-whisper vocab import "$DRY_RUN_IMPORT_FILE")"
+assert_contains "vocab_import_backup_summary" "$import_backup_out" "Vocab import ($DRY_RUN_IMPORT_FILE): added=1 duplicate=0 invalid=0"
+assert_contains "vocab_import_backup_line" "$import_backup_out" "Backup: "
+import_backup_file="$(printf "%s\n" "$import_backup_out" | sed -n 's/^Backup: //p' | head -n 1)"
+assert_file_exists "vocab_import_backup_exists" "$import_backup_file"
+assert_file_contains "vocab_import_backup_new_entry" "$VOCAB_CFG/vocab" "later fix → LaterFix"
+
 EXPORT_FILE="$TMP_ROOT/vocab-export.txt"
 export_out="$(HOME="$VOCAB_HOME" PATH="$VOCAB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$VOCAB_CFG" DICTATE_CONFIG_FILE="$VOCAB_CFG/config.toml" tmux-whisper vocab export "$EXPORT_FILE")"
-assert_contains "vocab_export_summary" "$export_out" "Vocab export ($EXPORT_FILE): entries=3 duplicate_skipped=0 invalid_skipped=0"
+assert_contains "vocab_export_summary" "$export_out" "Vocab export ($EXPORT_FILE): entries=4 duplicate_skipped=0 invalid_skipped=0"
 assert_file_contains "vocab_export_arrow_normalized" "$EXPORT_FILE" "my app → MyApp"
 
 printf '%s\n' 'health lag::help flag' 'still bad' >>"$VOCAB_CFG/vocab"
@@ -742,6 +762,24 @@ assert_contains "vocab_dedupe_summary" "$dedupe_out" "duplicate_removed=1 invali
 assert_contains "vocab_dedupe_backup_line" "$dedupe_out" "Backup: "
 dedupe_backup="$(printf "%s\n" "$dedupe_out" | sed -n 's/^Backup: //p' | head -n 1)"
 assert_file_exists "vocab_dedupe_backup_exists" "$dedupe_backup"
+
+printf '%s\n' 'a.b → Dot entry' 'axb → Regex casualty' >>"$VOCAB_CFG/vocab"
+rm_dry_run_out="$(HOME="$VOCAB_HOME" PATH="$VOCAB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$VOCAB_CFG" DICTATE_CONFIG_FILE="$VOCAB_CFG/config.toml" tmux-whisper vocab rm --dry-run "a.b")"
+assert_contains "vocab_rm_dry_run_summary" "$rm_dry_run_out" "Vocab rm dry-run: removed=1 match=literal pattern=a.b"
+assert_file_contains "vocab_rm_dry_run_keeps_literal_target" "$VOCAB_CFG/vocab" "a.b → Dot entry"
+assert_file_contains "vocab_rm_dry_run_keeps_regex_neighbor" "$VOCAB_CFG/vocab" "axb → Regex casualty"
+
+rm_out="$(HOME="$VOCAB_HOME" PATH="$VOCAB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$VOCAB_CFG" DICTATE_CONFIG_FILE="$VOCAB_CFG/config.toml" tmux-whisper vocab rm "a.b")"
+assert_contains "vocab_rm_summary" "$rm_out" "Vocab rm: removed=1 match=literal pattern=a.b"
+assert_contains "vocab_rm_backup_line" "$rm_out" "Backup: "
+rm_backup_file="$(printf "%s\n" "$rm_out" | sed -n 's/^Backup: //p' | head -n 1)"
+assert_file_exists "vocab_rm_backup_exists" "$rm_backup_file"
+if rg -q --fixed-strings "a.b → Dot entry" "$VOCAB_CFG/vocab"; then
+  echo "FAIL: vocab_rm_removed_literal_target" >&2
+  exit 1
+fi
+echo "PASS: vocab_rm_removed_literal_target"
+assert_file_contains "vocab_rm_keeps_regex_neighbor" "$VOCAB_CFG/vocab" "axb → Regex casualty"
 
 # --- Regression 14: bench-matrix UX checks are stable. ---
 BENCH_HOME="$TMP_ROOT/home-bench"

@@ -89,6 +89,12 @@ Accepted correction formats:
 Invalid import lines:
 
 - `tmux-whisper vocab import <file>` now reports line numbers for invalid entries (first 5).
+- Preview a batch without mutating your live vocab:
+
+```bash
+tmux-whisper vocab import --dry-run <file>
+```
+
 - Clean and normalize existing vocab safely:
 
 ```bash
@@ -101,6 +107,13 @@ Export a clean snapshot for sharing/versioning:
 
 ```bash
 tmux-whisper vocab export <file>
+```
+
+Remove entries safely:
+
+```bash
+tmux-whisper vocab rm "literal text"
+tmux-whisper vocab rm --regex "pattern"
 ```
 
 ## 5) Integration optionality

@@ -13,6 +13,7 @@
 - **Completed**: richer operator summaries for runtime state and recent history; dashboard/TUI remains a follow-up layer on top
 - **Completed**: mode/config UX validation polish in `tmux-whisper doctor`, including flow-aware checks, surgical fix hints, and text/JSON parity
 - **Completed**: public command/help/docs now standardize on `tmux-whisper ...`; internal `dictate` config/temp paths remain intentionally unchanged for now
+- **Completed**: vocab safety follow-up now adds dry-run import paths plus backup/literal-match guardrails for vocab import and removal flows
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`

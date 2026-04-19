@@ -132,7 +132,9 @@ tmux-whisper postprocess on
 - `tmux-whisper doctor` now includes a **Suggested fixes** block with copy/paste commands when it finds dependency, install, config, or stale-state issues.
 - `tmux-whisper doctor` now validates fixed/tmux mode values and core mode prompt files (`code`/`long`) and reports explicit fallback behavior when invalid.
 - `tmux-whisper vocab import <file>` now shows line-numbered previews for invalid entries (first 5).
+- `tmux-whisper vocab import --dry-run <file>` lets you preview additions before mutating your live vocab.
 - `tmux-whisper vocab dedupe` now creates a timestamped backup before rewriting your vocab file.
+- `tmux-whisper vocab rm "pattern"` now uses safer literal matching by default, with `--regex` available when you truly want regex behavior.
 - `tmux-whisper vocab export <file>` writes a normalized/deduped vocab snapshot you can share or version.
 - `tmux-whisper bench-matrix [N] [phrase_file]` runs a quick matrix over postprocess/vocab toggles (and LLM models when API key is set) on fixed phrases.
   - Phrase file format: one phrase per line (blank lines and `#` comments ignored). Optional `label<TAB>phrase` is supported.
@@ -162,6 +164,7 @@ Common fixes:
   - `tmux-whisper mode edit long`
 - Vocab import invalid lines:
   - use `wrong::right`, `wrong -> right`, or `wrong → right`
+  - preview a batch safely with `tmux-whisper vocab import --dry-run <file>`
   - export a clean snapshot with `tmux-whisper vocab export <file>`
 
 See `docs/TROUBLESHOOTING.md` for a fuller troubleshooting guide.

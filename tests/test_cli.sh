@@ -46,6 +46,14 @@ if [[ "$output" != *"tmux-whisper last [--json]"* ]]; then
   echo "Expected help output to document the last command" >&2
   exit 1
 fi
+if [[ "$output" != *"tmux-whisper vocab import [--dry-run] <file>"* ]]; then
+  echo "Expected help output to document vocab import dry-run" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper vocab rm [--dry-run] [--regex] \"pattern\""* ]]; then
+  echo "Expected help output to document safer vocab removal" >&2
+  exit 1
+fi
 if [[ "$output" != *"CONFIG FILES (kept under ~/.config/dictate/ for now):"* ]]; then
   echo "Expected help output to explain the intentional dictate config path" >&2
   exit 1
