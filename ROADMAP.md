@@ -31,7 +31,6 @@ Focus: make day-to-day usage cleaner and safer.
 
 - Improve mode/config UX and validation.
 - Keep public command/help/docs language aligned on `tmux-whisper` while deferring internal `dictate` path/env churn.
-- Add stronger config migration/version handling.
 - Improve vocab workflows (import/export/normalize safety).
 - Refine docs for real-world setup and troubleshooting.
 
