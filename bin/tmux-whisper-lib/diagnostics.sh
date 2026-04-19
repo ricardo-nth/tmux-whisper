@@ -625,15 +625,15 @@ doctor_json() {
     config_file_ok="1"
   else
     warnings=$((warnings + 1))
-    doctor_json_add_suggestion "Create default config: ./install.sh --force"
+    doctor_json_add_suggestion "Create default config: tmux-whisper config repair"
   fi
   local cfg_schema_status cfg_schema_version
   cfg_schema_status="$(config_schema_status)"
   cfg_schema_version="$(config_schema_version_label)"
   if [[ "$cfg_schema_status" == "mismatch" ]]; then
     issues=$((issues + 1))
-    doctor_json_add_suggestion "Replace config with repo defaults (manual): cp config/config.toml ~/.config/dictate/config.toml"
-    doctor_json_add_suggestion "Or refresh via bootstrap: curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force"
+    doctor_json_add_suggestion "Preview config repair: tmux-whisper config repair --dry-run"
+    doctor_json_add_suggestion "Repair config in place: tmux-whisper config repair"
   fi
   local raycast_inline_path
   raycast_inline_path="$DICTATE_CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh"
@@ -1263,7 +1263,7 @@ doctor() {
   echo "  - config file: $DICTATE_CONFIG_FILE $([[ -f "$DICTATE_CONFIG_FILE" ]] && echo '(ok)' || echo '(missing)')"
   if [[ ! -f "$DICTATE_CONFIG_FILE" ]]; then
     warnings=$((warnings + 1))
-    add_suggestion "Create default config: ./install.sh --force"
+    add_suggestion "Create default config: tmux-whisper config repair"
   fi
   local cfg_schema_status cfg_schema_version
   cfg_schema_status="$(config_schema_status)"
@@ -1272,9 +1272,9 @@ doctor() {
   case "$cfg_schema_status" in
     mismatch)
       issues=$((issues + 1))
-      echo "  - hint: this build requires config schema v${DICTATE_CONFIG_SCHEMA_VERSION}. Update or replace ~/.config/dictate/config.toml, then run ./install.sh --force to reinstall scripts."
-      add_suggestion "Replace config with repo defaults (manual): cp config/config.toml ~/.config/dictate/config.toml"
-      add_suggestion "Or refresh via bootstrap: curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force"
+      echo "  - hint: this build requires config schema v${DICTATE_CONFIG_SCHEMA_VERSION}. Preview repair with tmux-whisper config repair --dry-run, then apply with tmux-whisper config repair."
+      add_suggestion "Preview config repair: tmux-whisper config repair --dry-run"
+      add_suggestion "Repair config in place: tmux-whisper config repair"
       ;;
   esac
   echo "  - raycast inline: $DICTATE_CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh $([[ -f "$DICTATE_CONFIG_DIR/integrations/raycast/tmux-whisper-inline.sh" ]] && echo '(ok)' || echo '(missing)')"

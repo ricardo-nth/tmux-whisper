@@ -52,6 +52,10 @@ if ! rg -q '^\[swift_parakeet\]$' "$HOME/.config/dictate/config.toml"; then
   echo "Expected fresh install config to include swift_parakeet settings" >&2
   exit 1
 fi
+if ! rg -q '^[[:space:]]*budget_long_words_threshold = 120$' "$HOME/.config/dictate/config.toml"; then
+  echo "Expected fresh install config to include budget_long_words_threshold" >&2
+  exit 1
+fi
 if [[ "$(tr -d '[:space:]' < "$HOME/.config/dictate/current-mode")" != "auto" ]]; then
   echo "Expected fresh install current-mode to default to auto" >&2
   exit 1

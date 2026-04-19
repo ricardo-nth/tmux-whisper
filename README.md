@@ -131,6 +131,7 @@ tmux-whisper postprocess on
 
 - `tmux-whisper doctor` now includes a **Suggested fixes** block with copy/paste commands when it finds dependency, install, config, or stale-state issues.
 - `tmux-whisper doctor` now validates fixed/tmux mode values and core mode prompt files (`code`/`long`) and reports explicit fallback behavior when invalid.
+- `tmux-whisper config defaults` now prints the canonical default config template, and `tmux-whisper config repair [--dry-run]` can safely fill missing defaults + refresh schema version in place.
 - `tmux-whisper vocab import <file>` now shows line-numbered previews for invalid entries (first 5).
 - `tmux-whisper vocab import --dry-run <file>` lets you preview additions before mutating your live vocab.
 - `tmux-whisper vocab dedupe` now creates a timestamped backup before rewriting your vocab file.
@@ -153,7 +154,8 @@ tmux-whisper status
 Common fixes:
 
 - Schema mismatch in `tmux-whisper doctor`:
-  - `./install.sh --force`
+  - `tmux-whisper config repair --dry-run`
+  - `tmux-whisper config repair`
 - Invalid fixed mode fallback (`mode.current: <name> (invalid, fallback=auto)`):
   - `tmux-whisper mode auto`
   - or create it: `tmux-whisper mode create "<name>"`

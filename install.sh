@@ -120,7 +120,10 @@ migrate_legacy_mode_names() {
 }
 
 install_default_config_files() {
-  copy_if_missing "$REPO_ROOT/config/config.toml" "$CONFIG_DIR/config.toml"
+  if [[ ! -e "$CONFIG_DIR/config.toml" ]]; then
+    mkdir -p "$CONFIG_DIR"
+    "$BIN_DIR/tmux-whisper" config defaults > "$CONFIG_DIR/config.toml"
+  fi
   copy_if_missing "$REPO_ROOT/config/vocab" "$CONFIG_DIR/vocab"
   copy_if_missing "$REPO_ROOT/config/current-mode" "$CONFIG_DIR/current-mode"
 }

@@ -232,12 +232,34 @@ config_version = 0
 
 [audio]
 source = "auto"
+
+[inline]
+autosend = false
 EOF
 mismatch_doctor="$(HOME="$MISMATCH_HOME" PATH="$MISMATCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MISMATCH_CFG" DICTATE_CONFIG_FILE="$MISMATCH_CFG/config.toml" tmux-whisper doctor)"
 assert_contains "doctor_schema_mismatch_status" "$mismatch_doctor" "config schema: v0 (expected v1, status=mismatch)"
 assert_contains "doctor_schema_mismatch_hint" "$mismatch_doctor" "this build requires config schema v1"
 assert_contains "doctor_schema_suggested_fixes" "$mismatch_doctor" "Suggested fixes:"
-assert_contains "doctor_schema_suggested_install" "$mismatch_doctor" "Replace config with repo defaults (manual): cp config/config.toml ~/.config/dictate/config.toml"
+assert_contains "doctor_schema_suggested_preview" "$mismatch_doctor" "Preview config repair: tmux-whisper config repair --dry-run"
+assert_contains "doctor_schema_suggested_repair" "$mismatch_doctor" "Repair config in place: tmux-whisper config repair"
+
+mismatch_repair_dry_run="$(HOME="$MISMATCH_HOME" PATH="$MISMATCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MISMATCH_CFG" DICTATE_CONFIG_FILE="$MISMATCH_CFG/config.toml" tmux-whisper config repair --dry-run)"
+assert_contains "config_repair_dry_run_summary" "$mismatch_repair_dry_run" "Config repair dry-run: v0/mismatch -> v1"
+assert_contains "config_repair_dry_run_action" "$mismatch_repair_dry_run" "Action: merge missing defaults and normalize schema version"
+if rg -q 'budget_long_words_threshold' "$MISMATCH_CFG/config.toml"; then
+  echo "FAIL: config_repair_dry_run_no_mutation" >&2
+  exit 1
+fi
+echo "PASS: config_repair_dry_run_no_mutation"
+
+mismatch_repair_out="$(HOME="$MISMATCH_HOME" PATH="$MISMATCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$MISMATCH_CFG" DICTATE_CONFIG_FILE="$MISMATCH_CFG/config.toml" tmux-whisper config repair)"
+assert_contains "config_repair_summary" "$mismatch_repair_out" "Config repair: v0/mismatch -> v1"
+assert_contains "config_repair_backup_line" "$mismatch_repair_out" "Backup: "
+mismatch_repair_backup="$(printf "%s\n" "$mismatch_repair_out" | sed -n 's/^Backup: //p' | head -n 1)"
+assert_file_exists "config_repair_backup_exists" "$mismatch_repair_backup"
+assert_file_contains "config_repair_updated_version" "$MISMATCH_CFG/config.toml" "config_version = 1"
+assert_file_contains "config_repair_added_threshold" "$MISMATCH_CFG/config.toml" "budget_long_words_threshold = 120"
+assert_file_contains "config_repair_preserved_inline_autosend" "$MISMATCH_CFG/config.toml" "autosend = false"
 
 # --- Regression 5: doctor mode checks should show clear fallbacks + fixes. ---
 MODECHECK_HOME="$TMP_ROOT/home-modecheck"

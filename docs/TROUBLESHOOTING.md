@@ -22,7 +22,8 @@ Schema mismatch:
 - Fix:
 
 ```bash
-./install.sh --force
+tmux-whisper config repair --dry-run
+tmux-whisper config repair
 ```
 
 Missing dependencies:

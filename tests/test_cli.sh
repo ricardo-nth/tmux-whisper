@@ -46,6 +46,14 @@ if [[ "$output" != *"tmux-whisper last [--json]"* ]]; then
   echo "Expected help output to document the last command" >&2
   exit 1
 fi
+if [[ "$output" != *"tmux-whisper config defaults"* ]]; then
+  echo "Expected help output to document config defaults" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper config repair [--dry-run]"* ]]; then
+  echo "Expected help output to document config repair" >&2
+  exit 1
+fi
 if [[ "$output" != *"tmux-whisper vocab import [--dry-run] <file>"* ]]; then
   echo "Expected help output to document vocab import dry-run" >&2
   exit 1
@@ -56,6 +64,17 @@ if [[ "$output" != *"tmux-whisper vocab rm [--dry-run] [--regex] \"pattern\""* ]
 fi
 if [[ "$output" != *"CONFIG FILES (kept under ~/.config/dictate/ for now):"* ]]; then
   echo "Expected help output to explain the intentional dictate config path" >&2
+  exit 1
+fi
+
+default_output="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= "$BIN_DIR/tmux-whisper" config defaults)"
+repo_default="$(cat "$ROOT/config/config.toml")"
+if [[ "$default_output" != "$repo_default" ]]; then
+  echo "Expected config defaults output to match repo default config" >&2
+  exit 1
+fi
+if [[ -e "$HOME_DIR/.config/dictate/config.toml" ]]; then
+  echo "Expected config defaults to avoid creating a live config file" >&2
   exit 1
 fi
 
