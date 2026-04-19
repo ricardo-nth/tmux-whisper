@@ -30,49 +30,38 @@ Tmux Whisper is **tmux-first**.
 - `ffmpeg`
 - `python3` (with `tomllib`, Python 3.11+ recommended)
 - `swift` + Xcode toolchain (for building the local `tmux-whisperd` backend)
+- a local Parakeet model directory, either at `~/.local/share/tmux-whisper/models/...` or via `swift_parakeet.model_path`
 - Optional: `tmux`, Raycast, SwiftBar
 - Optional for LLM postprocess: `CEREBRAS_API_KEY`
 
-## Install
+## Install Channels
 
-Homebrew (recommended):
+Choose the channel that matches how you want to use the tool:
+
+### Homebrew stable
+
+Best for daily use when you want tagged releases and the simplest update path.
 
 ```bash
 brew tap ricardo-nth/tap
 brew install ricardo-nth/tap/tmux-whisper
 ```
 
-The default backend is local `swift_parakeet`.
-
-Preferred Parakeet model home:
-
-- `~/.local/share/tmux-whisper/models/parakeet-tdt-0.6b-v3-coreml`
-- `~/.local/share/tmux-whisper/models/parakeet-tdt-0.6b-v2-coreml`
-
-Tmux Whisper now expects Parakeet models to live in that owned path so the backend does not depend on another app being installed.
-
-Or one-line bootstrap:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash
-```
-
-Update:
+Update later with:
 
 ```bash
 brew upgrade tmux-whisper
 ```
 
-First run:
+### Bootstrap from GitHub
+
+Best for testing `main` or pinning a specific release without keeping a local clone.
 
 ```bash
-tmux-whisper debug
-tmux-whisper doctor
-tmux-whisper status
-tmux-whisper --help
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash
 ```
 
-Pinned to stable tag:
+Pinned to the current stable tag:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.5.2/bootstrap.sh | bash
@@ -84,7 +73,9 @@ Pass install flags through bootstrap:
 curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force --with-sounds
 ```
 
-Or install from a local clone:
+### Local clone / development
+
+Best when this repo is your source of truth and you want fast local iteration.
 
 ```bash
 git clone https://github.com/ricardo-nth/tmux-whisper.git
@@ -92,9 +83,28 @@ cd tmux-whisper
 ./install.sh
 ```
 
+Refresh a local clone after pulling new changes:
+
+```bash
+git pull
+./install.sh --force
+```
+
+## Install Notes
+
+The default backend is local `swift_parakeet`.
+
+Preferred Parakeet model home:
+
+- `~/.local/share/tmux-whisper/models/parakeet-tdt-0.6b-v3-coreml`
+- `~/.local/share/tmux-whisper/models/parakeet-tdt-0.6b-v2-coreml`
+
+Tmux Whisper expects a Parakeet model to already exist locally in that owned path, or to be pointed at an existing model directory via `swift_parakeet.model_path`. Install does not download model assets for you.
+
 Install behavior:
 
-- Does not overwrite existing `~/.config/dictate/*` defaults unless `--force` is used.
+- Preserves existing config, modes, and vocab by default, including when `--force` is used.
+- `--force` refreshes binaries/integrations and seeds missing defaults; it does not replace your live config file.
 - Installs Raycast scripts to `~/.config/dictate/integrations/raycast`.
 - Installs SwiftBar plugin to `~/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh`.
 - Installs sample sounds to `~/.local/share/sounds/dictate`.
@@ -112,6 +122,19 @@ Useful install flags:
 
 `bootstrap.sh` downloads a repository archive from GitHub and runs `install.sh` from that archive.
 
+## First Run Checklist
+
+Run these once after install or upgrade:
+
+```bash
+tmux-whisper debug
+tmux-whisper doctor
+tmux-whisper status
+tmux-whisper warmup
+```
+
+Use `tmux-whisper debug` if you are ever unsure which binary/channel you are running. It shows the resolved binary path and install channel.
+
 ## Quick Start
 
 ```bash
@@ -121,6 +144,40 @@ tmux-whisper devices
 tmux-whisper inline
 tmux-whisper mode auto
 tmux-whisper postprocess on
+```
+
+### Tmux-first daily loop
+
+- Start from the tmux pane you want to send back into.
+- Run `tmux-whisper`, speak, then stop.
+- Let processing finish while you keep working in tmux.
+
+If you are not inside tmux, use `tmux-whisper inline` or the Raycast inline integration instead.
+
+## Upgrade and Repair
+
+Daily-use upgrade flow depends on channel:
+
+- Homebrew:
+  - `brew upgrade tmux-whisper`
+- Bootstrap:
+  - rerun the bootstrap command you used before, typically with `--force`
+- Local clone:
+  - `git pull`
+  - `./install.sh --force`
+
+After any upgrade:
+
+```bash
+tmux-whisper doctor
+tmux-whisper status
+```
+
+If config drift is reported:
+
+```bash
+tmux-whisper config repair --dry-run
+tmux-whisper config repair
 ```
 
 ### Bench matrix
@@ -151,46 +208,36 @@ tmux-whisper doctor
 tmux-whisper status
 ```
 
-Common fixes:
+Common real-world fixes are documented in [docs/TROUBLESHOOTING.md](/Users/admin/Documents/Projects/tmux-whspr/tmux-whisper/docs/TROUBLESHOOTING.md), including:
 
-- Schema mismatch in `tmux-whisper doctor`:
-  - `tmux-whisper config repair --dry-run`
-  - `tmux-whisper config repair`
-- Invalid TOML in `tmux-whisper doctor` or `tmux-whisper status`:
-  - `tmux-whisper config repair --dry-run`
-  - `tmux-whisper config repair`
-- Invalid fixed mode fallback (`mode.current: <name> (invalid, fallback=auto)`):
-  - `tmux-whisper mode auto`
-  - or create it: `tmux-whisper mode create "<name>"`
-- Invalid tmux mode fallback (`tmux.mode: <name> (invalid, fallback=code)`):
-  - `tmux-whisper tmux mode code`
-- Missing core mode prompts:
-  - `tmux-whisper mode edit code`
-  - `tmux-whisper mode edit long`
-- Vocab import invalid lines:
-  - use `wrong::right`, `wrong -> right`, or `wrong → right`
-  - preview a batch safely with `tmux-whisper vocab import --dry-run <file>`
-  - export a clean snapshot with `tmux-whisper vocab export <file>`
-
-See `docs/TROUBLESHOOTING.md` for a fuller troubleshooting guide.
+- install-channel refresh and upgrade drift
+- invalid config repair
+- tmux vs inline usage errors
+- Raycast/SwiftBar environment issues
+- vocab and mode recovery flows
 
 ## Integrations
 
 ### Raycast
 
-Import or point Raycast script commands to:
+Installer-managed Raycast scripts live at:
 
 - `~/.config/dictate/integrations/raycast/tmux-whisper-inline.sh`
 - `~/.config/dictate/integrations/raycast/tmux-whisper-toggle.sh`
 - `~/.config/dictate/integrations/raycast/tmux-whisper-cancel.sh`
 
+Recommended setup:
+
+- create three Raycast Script Commands that point at those installed files
+- use `tmux-whisper-inline.sh` for frontmost-app paste/send
+- use `tmux-whisper-toggle.sh` for tmux-first recording from a hotkey
+- use `tmux-whisper-cancel.sh` for discard/cancel behavior
+
 ### SwiftBar
 
-Use plugin:
+Installer-managed plugin path:
 
 - `~/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh`
-
-If needed, set `DICTATE_INSTALL_SWIFTBAR=0` to skip plugin install.
 
 Runtime toggle (without uninstalling plugin file):
 
@@ -199,6 +246,12 @@ tmux-whisper swiftbar        # show ON/OFF
 tmux-whisper swiftbar off    # keep plugin loaded but show OFF state
 tmux-whisper swiftbar on
 ```
+
+If needed, set `DICTATE_INSTALL_SWIFTBAR=0` to skip plugin install.
+
+### Integration environment note
+
+Raycast and SwiftBar often run with a minimal shell environment. If you rely on `CEREBRAS_API_KEY`, custom PATH entries, or env-based overrides, put them in `~/.zshenv` so the integrations can see them consistently.
 
 ## Sounds
 
@@ -275,7 +328,7 @@ Release operators should also follow `docs/RELEASE_CHECKLIST.md`.
 
 - Runtime directories (`history`, caches, archives, temp logs) are not tracked.
 - API keys are not stored in this repository.
-- Existing local config is preserved unless `--force` is used.
+- Existing local config is preserved by default, including when `--force` is used.
 
 ## License
 

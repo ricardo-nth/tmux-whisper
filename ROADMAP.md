@@ -40,6 +40,7 @@ Recent progress (2026-02-19):
 - `tmux-whisper config defaults` and `config repair [--dry-run]` now provide a forward-safe config migration path, including reset/backup handling for malformed TOML.
 - Vocab safety flow now includes invalid-line previews, guarded dedupe backups, and export snapshots.
 - Added dedicated troubleshooting guide: `docs/TROUBLESHOOTING.md`.
+- Active docs now better reflect real-world use: install channel choice, tmux-first setup, integration env expectations, and upgrade/repair flow.
 - Added runtime SwiftBar integration toggle (`tmux-whisper swiftbar on|off|toggle`) so integration can be managed without reinstalling.
 - Public-facing command language is now standardized on `tmux-whisper` across the active docs/operator surface, while config/sound paths remain intentionally under `dictate` for now.
 

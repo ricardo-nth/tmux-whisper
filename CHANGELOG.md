@@ -16,6 +16,7 @@
 - **Completed**: vocab safety follow-up now adds dry-run import paths plus backup/literal-match guardrails for vocab import and removal flows
 - **Completed**: config repair flow now provides canonical `config defaults`, in-place `config repair [--dry-run]`, and install-time seeding from one default template
 - **Completed**: malformed `config.toml` now degrades into explicit `debug`/`doctor`/`status` warnings, and `config repair` can reset invalid TOML safely with a backup
+- **Completed**: real-world docs refresh now clarifies install channels, tmux-first setup, integration environment expectations, and channel-specific upgrade/repair flows
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
@@ -25,7 +26,6 @@
 
 - clipped-run hardening follow-up: use the new archived inline artifacts to compare true tail cuts vs stop timing, then decide whether the next step is adaptive stop logic rather than another fixed grace bump
 - audio-device cache observability follow-up: consider a lightweight debug/log note when a stale cached AVFoundation index is invalidated and re-resolved after device-order changes
-- docs refresh for real-world setup + troubleshooting (tmux-first, integrations, upgrade flow)
 - thin dashboard/TUI on top of the new operator data surface, after the CLI summary layer settles
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
 

@@ -16,6 +16,40 @@ tmux-whisper status
 
 ## 2) Setup and config issues
 
+Which install are you actually running?
+
+- Use `tmux-whisper debug`.
+- Check the resolved binary path and install channel before assuming the wrong copy is broken.
+
+Upgrade or refresh by channel:
+
+- Homebrew stable:
+
+```bash
+brew upgrade tmux-whisper
+tmux-whisper doctor
+tmux-whisper status
+```
+
+- Bootstrap install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force
+tmux-whisper doctor
+tmux-whisper status
+```
+
+- Local clone:
+
+```bash
+git pull
+./install.sh --force
+tmux-whisper doctor
+tmux-whisper status
+```
+
+`--force` refreshes binaries and integrations but preserves your live config, modes, and vocab.
+
 Schema mismatch:
 
 - Symptom in `tmux-whisper doctor`: `config schema: ... status=mismatch`
@@ -59,6 +93,16 @@ Parakeet backend unavailable:
   - run `tmux-whisper warmup`
   - verify `swift_parakeet.model_path` in `~/.config/dictate/config.toml`
   - ensure `swift` is installed if the native backend needs to rebuild
+  - if you keep models outside the default location, set `swift_parakeet.model_path` explicitly
+
+Not running inside tmux:
+
+- Symptom:
+  - `not running inside tmux and DICTATE_TARGET_PANE is not set`
+- Fix:
+  - start tmux and run `tmux-whisper` from the pane you want to target
+  - or set `DICTATE_TARGET_PANE` yourself
+  - or use `tmux-whisper inline` for frontmost-app dictation instead
 
 ## 3) Mode configuration issues
 
@@ -134,6 +178,7 @@ tmux-whisper vocab rm --regex "pattern"
 Tmux Whisper remains usable without Raycast/SwiftBar.
 
 - Missing integration scripts appear as warnings in `tmux-whisper doctor`, not hard failures.
+- Raycast and SwiftBar run in a minimal environment. If postprocess or custom PATH overrides work in your shell but not in integrations, put them in `~/.zshenv`.
 - Runtime SwiftBar toggle:
 
 ```bash
@@ -141,3 +186,9 @@ tmux-whisper swiftbar        # show state
 tmux-whisper swiftbar off    # disable SwiftBar runtime integration
 tmux-whisper swiftbar on
 ```
+
+Raycast paths installed by the app:
+
+- `~/.config/dictate/integrations/raycast/tmux-whisper-inline.sh`
+- `~/.config/dictate/integrations/raycast/tmux-whisper-toggle.sh`
+- `~/.config/dictate/integrations/raycast/tmux-whisper-cancel.sh`
