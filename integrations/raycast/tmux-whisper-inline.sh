@@ -15,17 +15,62 @@ echo "=== $(date) ==="
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 export DICTATE_CLEAN=1
 SWIFTBAR_PLUGIN_ID="tmux-whisper-status.0.2s.sh"
+INLINE_STATE_FILE="/tmp/whisper-dictate-inline.state"
+DICTATE_ZSHENV_LOADED="0"
 
-if [[ -f "$HOME/.zshenv" ]]; then
+load_zshenv_once() {
+  [[ "$DICTATE_ZSHENV_LOADED" == "1" ]] && return 0
+  [[ -f "$HOME/.zshenv" ]] || return 0
   source "$HOME/.zshenv"
-fi
+  DICTATE_ZSHENV_LOADED="1"
+}
 
-if [[ -z "${CEREBRAS_API_KEY:-}" && -f "${ZDOTDIR:-$HOME}/.zshrc" ]]; then
-  eval "$(grep '^export CEREBRAS_API_KEY=' "${ZDOTDIR:-$HOME}/.zshrc" 2>/dev/null || true)"
-fi
+resolve_dictate_bin() {
+  local candidate=""
+  if [[ -n "${DICTATE_BIN:-}" ]]; then
+    printf '%s\n' "${DICTATE_BIN}"
+    return 0
+  fi
 
-DICTATE_BIN="${DICTATE_BIN:-$(command -v tmux-whisper 2>/dev/null || true)}"
-DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/tmux-whisper}"
+  candidate="$HOME/.local/bin/tmux-whisper"
+  if [[ -x "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="$(command -v tmux-whisper 2>/dev/null || true)"
+  if [[ -x "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  load_zshenv_once
+  candidate="${DICTATE_BIN:-$HOME/.local/bin/tmux-whisper}"
+  if [[ -x "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="$(command -v tmux-whisper 2>/dev/null || true)"
+  printf '%s\n' "$candidate"
+}
+
+maybe_load_inline_api_key() {
+  # The API key is only needed on stop/transcribe paths. Skip this on start
+  # so the hotkey path stays as close to instant as possible.
+  [[ -f "$INLINE_STATE_FILE" ]] || return 0
+  [[ -n "${CEREBRAS_API_KEY:-}" ]] && return 0
+
+  load_zshenv_once
+  [[ -n "${CEREBRAS_API_KEY:-}" ]] && return 0
+
+  if [[ -f "${ZDOTDIR:-$HOME}/.zshrc" ]]; then
+    eval "$(grep '^export CEREBRAS_API_KEY=' "${ZDOTDIR:-$HOME}/.zshrc" 2>/dev/null || true)"
+  fi
+}
+
+maybe_load_inline_api_key
+DICTATE_BIN="$(resolve_dictate_bin)"
 
 notify_inline_error() {
   local msg="${1:-Tmux Whisper inline error}"
@@ -36,7 +81,7 @@ notify_inline_error() {
 }
 
 refresh_swiftbar() {
-  /usr/bin/open -g "swiftbar://refreshplugin?plugin=${SWIFTBAR_PLUGIN_ID}" 2>/dev/null || true
+  nohup /usr/bin/open -g "swiftbar://refreshplugin?plugin=${SWIFTBAR_PLUGIN_ID}" >/dev/null 2>&1 &
 }
 
 if [[ ! -x "$DICTATE_BIN" ]]; then
