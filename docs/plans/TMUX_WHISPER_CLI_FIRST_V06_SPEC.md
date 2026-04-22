@@ -136,7 +136,7 @@ The app can become more legible in-terminal without committing to a dashboard.
 Candidate slices:
 
 - `tmux-whisper watch [--interval SECONDS] [--iterations N]` (landed on this branch)
-- compact status/watch presets
+- compact status/watch presets (landed on this branch)
 - text-first session summaries from recent history
 - rolling operator views built from history + bench + runtime state
 
@@ -168,7 +168,7 @@ Highest ROI next:
 
 - filtered bench inspection
 - command cross-links between `status`, `logs`, `bench`, and `history`
-- compact status/watch presets
+- compact status/watch presets that are stable enough for shell wrappers/plugins
 
 Good follow-up after that:
 

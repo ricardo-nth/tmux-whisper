@@ -31,7 +31,7 @@ RECORDING:
   tmux-whisper inline start       # start background inline recording
   tmux-whisper inline stop        # stop background inline recording
   tmux-whisper inline toggle      # toggle background inline recording
-  tmux-whisper status [--json]    # show runtime + effective settings snapshot
+  tmux-whisper status [--json] [--preset compact]    # show runtime + effective settings snapshot
   tmux-whisper stop               # force stop any recording
   tmux-whisper cancel             # cancel recording (discard, no paste)
 
@@ -61,7 +61,7 @@ DIAGNOSTICS:
   tmux-whisper logs path [stream] [--json] # show log file paths
   tmux-whisper logs tail [stream] [--lines N] [--json] # tail one or all logs
   tmux-whisper logs follow [stream] [--lines N] [--json] # follow one or all logs
-  tmux-whisper watch [--interval SECONDS] [--iterations N] # live status + latest history + bench overview
+  tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N] # live status + latest history + bench overview
   tmux-whisper warmup            # preload the Swift Parakeet daemon/model
   tmux-whisper keep-logs          # show persistent log retention setting
   tmux-whisper keep-logs on|off   # persist log retention in config
@@ -3478,21 +3478,34 @@ watch() {
 
   local interval="2"
   local iterations=""
+  local preset="default"
 
   while [[ $# -gt 0 ]]; do
     case "${1:-}" in
+      --preset)
+        shift
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
+        case "${1:-}" in
+          default|compact)
+            preset="${1:-default}"
+            ;;
+          *)
+            die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
+            ;;
+        esac
+        ;;
       --interval)
         shift
-        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--interval SECONDS] [--iterations N]"
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
         interval="${1:-}"
         ;;
       --iterations)
         shift
-        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--interval SECONDS] [--iterations N]"
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
         iterations="${1:-}"
         ;;
       *)
-        die "usage: tmux-whisper watch [--interval SECONDS] [--iterations N]"
+        die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
         ;;
     esac
     shift
@@ -3539,6 +3552,7 @@ PYEOF
     WATCH_ITERATION="$iteration" \
     WATCH_ITERATIONS="$iterations" \
     WATCH_INTERACTIVE="$interactive" \
+    WATCH_PRESET="$preset" \
     python3 - <<'PYEOF'
 import json
 import os
@@ -3601,6 +3615,61 @@ def print_section(title: str):
     print(title)
 
 
+def compact_runtime_label(payload) -> str:
+    if not isinstance(payload, dict):
+        return "idle"
+    state = payload.get("state") or "idle"
+    if state == "active":
+        parts = ["active"]
+        if payload.get("pid") is not None:
+            parts.append(f"pid={payload['pid']}")
+        if payload.get("age_seconds") is not None:
+            parts.append(f"age={payload['age_seconds']}s")
+        return ",".join(parts)
+    if state == "stale":
+        if payload.get("age_seconds") is not None:
+            return f"stale,age={payload['age_seconds']}s"
+        return "stale"
+    return state
+
+
+def build_more_detail_commands(summary_state, active_flow, last_entry, status_more_detail):
+    if isinstance(status_more_detail, list):
+        normalized = []
+        for item in status_more_detail:
+            text = str(item or "").strip()
+            if text:
+                normalized.append(text)
+        if normalized:
+            return normalized
+
+    if summary_state == "recording":
+        record_stream = "inline-record" if active_flow == "inline" else "record"
+        return [
+            "tmux-whisper stop",
+            f"tmux-whisper logs follow {record_stream}",
+            "tmux-whisper status --json",
+        ]
+    if summary_state == "processing":
+        transcribe_stream = "inline-transcribe" if active_flow == "inline" else "transcribe"
+        return [
+            f"tmux-whisper logs follow {transcribe_stream}",
+            "tmux-whisper last",
+            "tmux-whisper bench",
+        ]
+    if summary_state in {"attention", "not_ready"}:
+        return [
+            "tmux-whisper doctor",
+            "tmux-whisper debug",
+            "tmux-whisper config repair --dry-run",
+        ]
+    return [
+        "tmux-whisper last" if isinstance(last_entry, dict) else "tmux-whisper history list 5",
+        "tmux-whisper bench",
+        "tmux-whisper logs tail transcribe --lines 20",
+    ]
+
+
 status = load_json_env("WATCH_STATUS_JSON") or {}
 bench = load_json_env("WATCH_BENCH_JSON") or {}
 last_payload = load_json_env("WATCH_LAST_JSON")
@@ -3613,6 +3682,7 @@ iteration = os.environ.get("WATCH_ITERATION", "1").strip() or "1"
 iterations = os.environ.get("WATCH_ITERATIONS", "").strip()
 interactive = bool_flag("WATCH_INTERACTIVE")
 interval = os.environ.get("WATCH_INTERVAL", "2").strip() or "2"
+preset = os.environ.get("WATCH_PRESET", "default").strip() or "default"
 snapshot_label = f"{iteration}/{iterations}" if iterations else iteration
 
 if interactive:
@@ -3626,6 +3696,8 @@ updated = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 print(f"Updated: {updated}")
 print(f"Refresh: every {interval}s")
 print(f"Snapshot: {snapshot_label}")
+if preset != "default":
+    print(f"Preset: {preset}")
 if interactive:
     print("Press Ctrl-C to stop.")
 print("")
@@ -3638,6 +3710,75 @@ tmux_mode = (((effective.get("mode") or {}).get("tmux") or {}).get("display_name
 config_schema = (summary.get("config_schema") or {}) if isinstance(summary, dict) else {}
 config_version = config_schema.get("version") or "unknown"
 config_status = config_schema.get("status") or "unknown"
+processing = runtime.get("processing_markers") if isinstance(runtime, dict) else {}
+tmux_queue = runtime.get("tmux_queue") if isinstance(runtime, dict) else {}
+last_entry = (last_payload or {}).get("entry") if isinstance(last_payload, dict) else None
+active_flow = summary.get("active_flow")
+commands = build_more_detail_commands(summary.get("state"), active_flow, last_entry, None)
+
+if preset == "compact":
+    print(
+        "Summary: state={state} backend={backend} flow={flow} config={version}/{status}".format(
+            state=summary.get("state", "unknown"),
+            backend=backend_readiness or "unknown",
+            flow=active_flow or "none",
+            version=config_version,
+            status=config_status,
+        )
+    )
+    print(
+        "Modes: inline={inline} [{source}], tmux={tmux}".format(
+            inline=inline_mode or "?",
+            source=inline_mode_source or "unknown",
+            tmux=tmux_mode or "?",
+        )
+    )
+    print(
+        "Runtime: tmux={tmux} inline={inline} proc={live}/{total} stale={stale} queue={recording}/{processing}".format(
+            tmux=compact_runtime_label(runtime.get("tmux")),
+            inline=compact_runtime_label(runtime.get("inline")),
+            live=(processing or {}).get("live", 0),
+            total=(processing or {}).get("total", 0),
+            stale=(processing or {}).get("stale", 0),
+            recording=(tmux_queue or {}).get("recording", 0),
+            processing=(tmux_queue or {}).get("processing", 0),
+        )
+    )
+    print(f"Headline: {summary.get('headline', 'Status unavailable.')}")
+    if isinstance(last_entry, dict):
+        compact_last = [
+            f"{last_entry.get('mode', '?')} @ {last_entry.get('app', '?')}",
+        ]
+        if last_entry.get("timestamp"):
+            compact_last.append(str(last_entry["timestamp"]))
+        metrics = last_entry.get("metrics") if isinstance(last_entry.get("metrics"), dict) else {}
+        if metrics.get("total_ms") is not None:
+            compact_last.append(f"total={format_ms_short(metrics.get('total_ms'))}")
+        if metrics.get("transcribe_ms") is not None:
+            compact_last.append(f"transcribe={format_ms_short(metrics.get('transcribe_ms'))}")
+        compact_last.append(f"preview={compact_text(str(last_entry.get('processed') or last_entry.get('raw') or ''), 80) or '<empty>'}")
+        print("Last: " + " ".join(compact_last))
+    else:
+        print("Last: none")
+    total_records = bench.get("total_records", 0) if isinstance(bench, dict) else 0
+    subset_records = bench.get("subset_records", 0) if isinstance(bench, dict) else 0
+    if not total_records:
+        print("Bench: none")
+    else:
+        latest = bench.get("latest") if isinstance(bench, dict) else {}
+        bench_bits = [f"window={subset_records}/{total_records}"]
+        if isinstance(latest, dict) and latest:
+            latest_bits = [str(latest.get("flow", "?")), str(latest.get("status", "?"))]
+            if latest.get("mode"):
+                latest_bits.append(f"mode={latest['mode']}")
+            latest_bits.append(f"total={format_ms_short(latest.get('total_ms', 0))}")
+            latest_bits.append(f"transcribe={format_ms_short(latest.get('transcribe_ms', 0))}")
+            if latest.get("paste_ms") is not None:
+                latest_bits.append(f"paste={format_ms_short(latest.get('paste_ms', 0))}")
+            bench_bits.append("latest=" + " ".join(latest_bits))
+        print("Bench: " + " ".join(bench_bits))
+    print("More: " + " | ".join(commands))
+    raise SystemExit(0)
 
 print_section("Summary")
 print(f"  state: {summary.get('state', 'unknown')}")
@@ -3678,8 +3819,6 @@ def render_runtime_line(label: str, payload):
 print_section("Runtime")
 render_runtime_line("tmux", runtime.get("tmux"))
 render_runtime_line("inline", runtime.get("inline"))
-processing = runtime.get("processing_markers") if isinstance(runtime, dict) else {}
-tmux_queue = runtime.get("tmux_queue") if isinstance(runtime, dict) else {}
 print(
     "  processing: live={live} stale={stale}".format(
         live=(processing or {}).get("live", 0),
@@ -3695,7 +3834,6 @@ print(
 print("")
 
 print_section("Latest dictation")
-last_entry = (last_payload or {}).get("entry") if isinstance(last_payload, dict) else None
 if not isinstance(last_entry, dict):
     print("  No history entries yet.")
 else:
@@ -3769,35 +3907,6 @@ else:
         )
     )
 print("")
-
-summary_state = summary.get("state")
-commands = []
-if summary_state == "recording":
-    record_stream = "inline-record" if active_flow == "inline" else "record"
-    commands = [
-        "tmux-whisper stop",
-        f"tmux-whisper logs follow {record_stream}",
-        "tmux-whisper status --json",
-    ]
-elif summary_state == "processing":
-    transcribe_stream = "inline-transcribe" if active_flow == "inline" else "transcribe"
-    commands = [
-        f"tmux-whisper logs follow {transcribe_stream}",
-        "tmux-whisper last",
-        "tmux-whisper bench",
-    ]
-elif summary_state in {"attention", "not_ready"}:
-    commands = [
-        "tmux-whisper doctor",
-        "tmux-whisper debug",
-        "tmux-whisper config repair --dry-run",
-    ]
-else:
-    commands = [
-        "tmux-whisper last" if isinstance(last_entry, dict) else "tmux-whisper history list 5",
-        "tmux-whisper bench",
-        "tmux-whisper logs tail transcribe --lines 20",
-    ]
 
 print_section("More detail")
 for command in commands:

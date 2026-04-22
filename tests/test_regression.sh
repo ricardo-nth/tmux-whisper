@@ -219,6 +219,13 @@ assert_json_equals "status_json_backend" "$backend_status_json" "effective_setti
 assert_json_equals "status_json_model_version" "$backend_status_json" "effective_settings.swift_parakeet.model.version" "v3"
 assert_json_equals "status_json_inline_process_sound" "$backend_status_json" "effective_settings.inline.process_sound" "true"
 assert_json_equals "status_json_tmux_queue_total" "$backend_status_json" "runtime.tmux_queue.total" "0"
+backend_status_compact="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" DICTATE_STATE_FILE="$BACKEND_STATE_FILE" DICTATE_INLINE_STATE_FILE="$BACKEND_INLINE_STATE_FILE" DICTATE_PROCESSING_DIR="$BACKEND_PROCESSING_DIR" DICTATE_TMUX_JOBS_DIR="$BACKEND_TMUX_JOBS_DIR" tmux-whisper status --preset compact)"
+assert_contains "status_compact_header" "$backend_status_compact" "Tmux Whisper status (compact)"
+assert_contains "status_compact_summary" "$backend_status_compact" "Summary: state=ready backend=cold flow=none config=v1/ok"
+assert_contains "status_compact_modes" "$backend_status_compact" "Modes: inline=code [auto], tmux=code"
+assert_contains "status_compact_runtime" "$backend_status_compact" "Runtime: tmux=idle inline=idle proc=0/0 stale=0 queue=0/0"
+assert_contains "status_compact_next" "$backend_status_compact" "Next: Use your normal hotkey, or run tmux-whisper warmup to pre-load the daemon."
+assert_contains "status_compact_more" "$backend_status_compact" "More: tmux-whisper watch --preset compact | tmux-whisper last | tmux-whisper bench"
 
 # --- Regression 4: doctor should fail on schema mismatch. ---
 MISMATCH_HOME="$TMP_ROOT/home-mismatch"
@@ -1202,6 +1209,16 @@ assert_contains "watch_latest_preview" "$watch_out" "  preview: Hello there, fri
 assert_contains "watch_bench_window" "$watch_out" "  window: last 2 of 2"
 assert_contains "watch_bench_latest" "$watch_out" "  latest: inline ok mode=code total=2.9s transcribe=300ms paste=120ms"
 assert_contains "watch_more_detail" "$watch_out" "  tmux-whisper last"
+
+watch_compact_out="$(HOME="$WATCH_HOME" PATH="$WATCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$WATCH_CFG" DICTATE_CONFIG_FILE="$WATCH_CFG/config.toml" DICTATE_STATE_FILE="$WATCH_RUNTIME/tmux.state" DICTATE_INLINE_STATE_FILE="$WATCH_RUNTIME/inline.state" DICTATE_TMUX_JOBS_DIR="$WATCH_RUNTIME/tmux-jobs" DICTATE_PROCESSING_DIR="$WATCH_RUNTIME/processing" tmux-whisper watch --preset compact --interval 0.01 --iterations 1)"
+assert_contains "watch_compact_header" "$watch_compact_out" "=== Tmux Whisper watch snapshot 1/1 ==="
+assert_contains "watch_compact_preset" "$watch_compact_out" "Preset: compact"
+assert_contains "watch_compact_summary" "$watch_compact_out" "Summary: state=ready backend=cold flow=none config=v1/ok"
+assert_contains "watch_compact_modes" "$watch_compact_out" "Modes: inline=code [auto], tmux=code"
+assert_contains "watch_compact_runtime" "$watch_compact_out" "Runtime: tmux=idle inline=idle proc=0/0 stale=0 queue=0/0"
+assert_contains "watch_compact_last" "$watch_compact_out" "Last: code @ Ghostty 2026-04-22T09:05:00Z total=2.9s transcribe=300ms preview=Hello there, friend."
+assert_contains "watch_compact_bench" "$watch_compact_out" "Bench: window=2/2 latest=inline ok mode=code total=2.9s transcribe=300ms paste=120ms"
+assert_contains "watch_compact_more" "$watch_compact_out" "More: tmux-whisper last | tmux-whisper bench | tmux-whisper logs tail transcribe --lines 20"
 
 WATCH_REFRESH_HOME="$TMP_ROOT/home-watch-refresh"
 WATCH_REFRESH_BIN="$WATCH_REFRESH_HOME/.local/bin"

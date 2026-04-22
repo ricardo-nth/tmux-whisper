@@ -46,6 +46,10 @@ if [[ "$output" != *"tmux-whisper last [--json]"* ]]; then
   echo "Expected help output to document the last command" >&2
   exit 1
 fi
+if [[ "$output" != *"tmux-whisper status [--json] [--preset compact]"* ]]; then
+  echo "Expected help output to document compact status preset" >&2
+  exit 1
+fi
 if [[ "$output" != *"tmux-whisper history list [N] [--json]"* ]]; then
   echo "Expected help output to document history list JSON output" >&2
   exit 1
@@ -74,7 +78,7 @@ if [[ "$output" != *"tmux-whisper logs follow [stream] [--lines N] [--json]"* ]]
   echo "Expected help output to document logs follow" >&2
   exit 1
 fi
-if [[ "$output" != *"tmux-whisper watch [--interval SECONDS] [--iterations N]"* ]]; then
+if [[ "$output" != *"tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"* ]]; then
   echo "Expected help output to document watch" >&2
   exit 1
 fi

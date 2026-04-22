@@ -20,6 +20,7 @@
 - **Completed**: `tmux-whisper devices --json` now turns AVFoundation device enumeration into a machine-readable support/debug surface instead of a text-only listing
 - **Completed**: `tmux-whisper config [--json]`, `config path [--json]`, and `config get <path> [--json]` now make config inspection first-class for humans, shell tooling, and future agents
 - **Completed**: `tmux-whisper watch [--interval SECONDS] [--iterations N]` now composes `status`, latest history, and bench data into a live text-first operator view instead of forcing a dashboard/TUI jump
+- **Completed**: `tmux-whisper status --preset compact` and `watch --preset compact` now give terminal operators a tighter summary surface for narrow panes, quick checks, and future plugin-style shells without changing the JSON contracts underneath
 - **Completed**: mode/config UX validation polish in `tmux-whisper doctor`, including flow-aware checks, surgical fix hints, and text/JSON parity
 - **Completed**: public command/help/docs now standardize on `tmux-whisper ...`; internal `dictate` config/temp paths remain intentionally unchanged for now
 - **Completed**: vocab safety follow-up now adds dry-run import paths plus backup/literal-match guardrails for vocab import and removal flows
@@ -43,6 +44,7 @@
 - expand history/logs/bench/config inspection before any dashboard work, so the terminal surface becomes the real source of truth for operators and future integrations
 - add filtered bench inspection and text-first live watch flows now that history, logs, devices, config, bench, and log-following all have a stronger operator baseline
 - add text-first live workflows such as watch/tail-style commands that keep terminal users in the CLI instead of forcing a TUI just for observability
+- keep refining compact operator views and cross-links so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
 - treat any future dashboard/TUI as an optional layer on top of stable CLI contracts, not as the next milestone itself
 
 ## 2026-04-19
