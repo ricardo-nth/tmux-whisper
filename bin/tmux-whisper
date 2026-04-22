@@ -36,7 +36,7 @@ RECORDING:
   tmux-whisper cancel             # cancel recording (discard, no paste)
 
 AUDIO:
-  tmux-whisper devices            # list macOS audio devices
+  tmux-whisper devices [--json]   # list macOS audio devices
   tmux-whisper device             # show current device + list available
   tmux-whisper device source <auto|external|mac|iphone|name>  # set mic source strategy
   tmux-whisper device external    # prefer plugged-in external mic, then fallback
@@ -52,15 +52,21 @@ AUDIO:
 DIAGNOSTICS:
   tmux-whisper debug [--json]     # show resolved device + relevant env/config
   tmux-whisper doctor [--json]    # quick health summary (state files, markers, logs)
-  tmux-whisper config             # show config path + schema health
-  tmux-whisper config path        # print active config path
+  tmux-whisper config [--json]    # show config path + schema health + key values
+  tmux-whisper config path [--json] # print active config path
+  tmux-whisper config get <path> [--json] # inspect one config value (file/default)
   tmux-whisper config defaults    # print canonical default config TOML
   tmux-whisper config repair [--dry-run] # fill missing defaults + bump schema safely
-  tmux-whisper logs               # show recent logs (record/transcribe)
+  tmux-whisper logs [--json]      # show log paths + recent tails
+  tmux-whisper logs path [stream] [--json] # show log file paths
+  tmux-whisper logs tail [stream] [--lines N] [--json] # tail one or all logs
+  tmux-whisper logs follow [stream] [--lines N] [--json] # follow one or all logs
+  tmux-whisper watch [--interval SECONDS] [--iterations N] # live status + latest history + bench overview
   tmux-whisper warmup            # preload the Swift Parakeet daemon/model
   tmux-whisper keep-logs          # show persistent log retention setting
   tmux-whisper keep-logs on|off   # persist log retention in config
-  tmux-whisper bench [N]          # summarize recent stage timings (default: 30 runs)
+  tmux-whisper bench [N] [--json] # summarize recent stage timings (default: 30 runs)
+  tmux-whisper bench export [N|all] [--json] # export raw bench rows (default: 30 recent)
   tmux-whisper bench-matrix [N] [phrase_file] # compare llm_model(post=on) x postprocess x vocab_clean on fixed phrases
   tmux-whisper changelog          # show recent Tmux Whisper changes
 
@@ -159,6 +165,9 @@ REPLAY (re-process text with different mode):
 
 HISTORY (saved transcripts, auto-cleanup after 7 days):
   tmux-whisper history            # list recent dictations (last 20)
+  tmux-whisper history list [N] [--json] # list recent dictations (default: 20)
+  tmux-whisper history search <query> [N] [--json] # find matching dictations
+  tmux-whisper history export [N|all] [--json] # export full recent/history entries
   tmux-whisper history N [--json] # show entry N (1 = most recent)
   tmux-whisper history stats [--json] # summarize saved dictations + operator timings
   tmux-whisper last [--json]      # concise summary of the most recent dictation
@@ -817,34 +826,349 @@ resolve_inline_stop_grace_ms() {
 }
 
 logs() {
-  echo "Logs"
-  echo ""
-  echo "  record:     $RECORD_LOG"
-  echo "  transcribe: $TRANSCRIBE_LOG"
-  echo "  inline rec: $TMPDIR/whisper-dictate-inline.record.log"
-  echo "  inline trn: $TMPDIR/whisper-dictate-inline.transcribe.log"
-  echo ""
-  if [[ -f "$RECORD_LOG" ]]; then
-    echo "--- record (tail) ---"
-    tail -n 40 "$RECORD_LOG" || true
-    echo ""
+  logs_usage() {
+    die "usage: tmux-whisper logs [--json] | logs path [record|transcribe|inline-record|inline-transcribe|all] [--json] | logs tail [record|transcribe|inline-record|inline-transcribe|all] [--lines N] [--json] | logs follow [record|transcribe|inline-record|inline-transcribe|all] [--lines N] [--json]"
+  }
+
+  logs_stream_keys() {
+    printf '%s\n' "record" "transcribe" "inline-record" "inline-transcribe"
+  }
+
+  logs_inline_record_path() {
+    printf '%s\n' "$TMPDIR/whisper-dictate-inline.record.log"
+  }
+
+  logs_inline_transcribe_path() {
+    printf '%s\n' "$TMPDIR/whisper-dictate-inline.transcribe.log"
+  }
+
+  logs_stream_path() {
+    case "${1:-}" in
+      record) printf '%s\n' "$RECORD_LOG" ;;
+      transcribe) printf '%s\n' "$TRANSCRIBE_LOG" ;;
+      inline-record) logs_inline_record_path ;;
+      inline-transcribe) logs_inline_transcribe_path ;;
+      *) return 1 ;;
+    esac
+  }
+
+  logs_stream_label() {
+    case "${1:-}" in
+      record) printf '%s\n' "record" ;;
+      transcribe) printf '%s\n' "transcribe" ;;
+      inline-record) printf '%s\n' "inline record" ;;
+      inline-transcribe) printf '%s\n' "inline transcribe" ;;
+      *) return 1 ;;
+    esac
+  }
+
+  logs_stream_default_lines() {
+    case "${1:-}" in
+      record|inline-record) printf '%s\n' "40" ;;
+      transcribe|inline-transcribe) printf '%s\n' "80" ;;
+      *) return 1 ;;
+    esac
+  }
+
+  logs_canonical_stream() {
+    case "${1:-}" in
+      all|"") printf '%s\n' "all" ;;
+      record) printf '%s\n' "record" ;;
+      transcribe) printf '%s\n' "transcribe" ;;
+      inline-record|inline_record|inline-rec|inline_record_log) printf '%s\n' "inline-record" ;;
+      inline-transcribe|inline_transcribe|inline-trn|inline_transcribe_log) printf '%s\n' "inline-transcribe" ;;
+      *) return 1 ;;
+    esac
+  }
+
+  logs_selected_streams() {
+    local spec="${1:-all}"
+    local canonical
+    canonical="$(logs_canonical_stream "$spec")" || die "unknown log stream: $spec (use: record, transcribe, inline-record, inline-transcribe, all)"
+    if [[ "$canonical" == "all" ]]; then
+      logs_stream_keys
+    else
+      printf '%s\n' "$canonical"
+    fi
+  }
+
+  logs_json() {
+    local subcmd="$1"
+    local rows_input=""
+    rows_input="$(cat)"
+    LOG_ROWS="$rows_input" python3 - "$subcmd" <<'PYEOF'
+import json
+import os
+import sys
+from collections import deque
+
+subcmd = sys.argv[1]
+streams = []
+
+for raw_line in os.environ.get("LOG_ROWS", "").splitlines():
+    if not raw_line:
+        continue
+    key, label, path, tail_lines = raw_line.split("\t", 3)
+    path = os.path.expanduser(path)
+    tail_n = int(tail_lines)
+    exists = os.path.exists(path)
+    item = {
+        "key": key,
+        "label": label,
+        "path": path,
+        "exists": exists,
+        "tail_lines_requested": tail_n,
+    }
+    if subcmd in ("show", "tail"):
+        lines = []
+        if exists:
+          try:
+              with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                  lines = list(deque((line.rstrip("\n") for line in fh), maxlen=tail_n))
+          except Exception as exc:
+              item["read_error"] = str(exc)
+        item["line_count"] = len(lines)
+        item["lines"] = lines
+    streams.append(item)
+
+print(json.dumps({"command": "logs", "subcommand": subcmd, "streams": streams}, indent=2, sort_keys=True))
+PYEOF
+  }
+
+  logs_follow_output() {
+    local rows_input="$1"
+    local json_output="$2"
+    LOG_ROWS="$rows_input" python3 -u - "$json_output" <<'PYEOF'
+import json
+import os
+import sys
+import time
+
+json_output = sys.argv[1] == "1"
+poll_ms_raw = os.environ.get("DICTATE_LOGS_FOLLOW_POLL_MS", "1000").strip()
+iterations_raw = os.environ.get("DICTATE_LOGS_FOLLOW_ITERATIONS", "").strip()
+
+try:
+    poll_ms = int(poll_ms_raw)
+except Exception:
+    poll_ms = 1000
+if poll_ms <= 0:
+    poll_ms = 1000
+
+iterations = None
+if iterations_raw:
+    try:
+        parsed_iterations = int(iterations_raw)
+    except Exception:
+        parsed_iterations = 0
+    if parsed_iterations > 0:
+        iterations = parsed_iterations
+
+streams = []
+for raw_line in os.environ.get("LOG_ROWS", "").splitlines():
+    if not raw_line:
+        continue
+    key, label, path, tail_lines = raw_line.split("\t", 3)
+    streams.append(
+        {
+            "key": key,
+            "label": label,
+            "path": os.path.expanduser(path),
+            "tail_lines_requested": int(tail_lines),
+            "seen_lines": 0,
+        }
+    )
+
+multi_stream = len(streams) > 1
+
+def emit_text(line: str = ""):
+    print(line, flush=True)
+
+def emit_json(payload):
+    print(json.dumps(payload, sort_keys=True), flush=True)
+
+def emit_line(stream, line, initial):
+    if json_output:
+        emit_json(
+            {
+                "command": "logs",
+                "subcommand": "follow",
+                "event": "line",
+                "stream": stream["key"],
+                "label": stream["label"],
+                "path": stream["path"],
+                "line": line,
+                "initial": initial,
+            }
+        )
+    else:
+        if multi_stream:
+            emit_text(f"[{stream['key']}] {line}")
+        else:
+            emit_text(line)
+
+def read_lines(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return [line.rstrip("\n") for line in fh]
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return []
+
+if json_output:
+    for stream in streams:
+        exists = os.path.exists(stream["path"])
+        emit_json(
+            {
+                "command": "logs",
+                "subcommand": "follow",
+                "event": "start",
+                "stream": stream["key"],
+                "label": stream["label"],
+                "path": stream["path"],
+                "exists": exists,
+                "tail_lines_requested": stream["tail_lines_requested"],
+                "poll_ms": poll_ms,
+            }
+        )
+else:
+    emit_text(f"Following logs (poll {poll_ms}ms). Press Ctrl-C to stop.")
+    for stream in streams:
+        emit_text("")
+        emit_text(f"--- {stream['label']} (follow tail {stream['tail_lines_requested']}) ---")
+
+for stream in streams:
+    current_lines = read_lines(stream["path"])
+    if current_lines is None:
+        if not json_output:
+            emit_text(f"No {stream['label']} log yet at: {stream['path']}")
+        stream["seen_lines"] = 0
+        continue
+
+    stream["seen_lines"] = len(current_lines)
+    initial_lines = current_lines[-stream["tail_lines_requested"] :]
+    for line in initial_lines:
+        emit_line(stream, line, True)
+
+poll_count = 0
+while iterations is None or poll_count < iterations:
+    time.sleep(poll_ms / 1000.0)
+    poll_count += 1
+    for stream in streams:
+        current_lines = read_lines(stream["path"])
+        if current_lines is None:
+            stream["seen_lines"] = 0
+            continue
+        if len(current_lines) < stream["seen_lines"]:
+            stream["seen_lines"] = 0
+        new_lines = current_lines[stream["seen_lines"] :]
+        stream["seen_lines"] = len(current_lines)
+        for line in new_lines:
+            emit_line(stream, line, False)
+PYEOF
+  }
+
+  local subcmd="show"
+  case "${1:-}" in
+    show|path|tail|follow)
+      subcmd="$1"
+      shift
+      ;;
+  esac
+
+  local json_output="0"
+  local stream_spec="all"
+  local lines_override=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json)
+        json_output="1"
+        ;;
+      --lines)
+        shift
+        [[ $# -gt 0 ]] || logs_usage
+        lines_override="$1"
+        ;;
+      record|transcribe|inline-record|inline_record|inline-rec|inline_record_log|inline-transcribe|inline_transcribe|inline-trn|inline_transcribe_log|all)
+        [[ "$stream_spec" == "all" ]] || logs_usage
+        stream_spec="$1"
+        ;;
+      *)
+        logs_usage
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -n "$lines_override" && ! "$lines_override" =~ ^[0-9]+$ ]]; then
+    die "logs --lines expects an integer"
   fi
-  if [[ -f "$TRANSCRIBE_LOG" ]]; then
-    echo "--- transcribe (tail) ---"
-    tail -n 80 "$TRANSCRIBE_LOG" || true
+  if [[ "$subcmd" == "path" && -n "$lines_override" ]]; then
+    die "logs path does not accept --lines"
   fi
-  local inline_record="$TMPDIR/whisper-dictate-inline.record.log"
-  local inline_transcribe="$TMPDIR/whisper-dictate-inline.transcribe.log"
-  if [[ -f "$inline_record" ]]; then
-    echo ""
-    echo "--- inline record (tail) ---"
-    tail -n 40 "$inline_record" || true
+
+  local selected rows=""
+  while IFS= read -r selected; do
+    [[ -n "$selected" ]] || continue
+    local path label tail_lines
+    path="$(logs_stream_path "$selected")"
+    label="$(logs_stream_label "$selected")"
+    tail_lines="${lines_override:-$(logs_stream_default_lines "$selected")}"
+    if [[ -n "$rows" ]]; then
+      rows+=$'\n'
+    fi
+    rows+="${selected}"$'\t'"${label}"$'\t'"${path}"$'\t'"${tail_lines}"
+  done < <(logs_selected_streams "$stream_spec")
+
+  if [[ "$subcmd" == "follow" ]]; then
+    logs_follow_output "$rows" "$json_output"
+    return 0
   fi
-  if [[ -f "$inline_transcribe" ]]; then
-    echo ""
-    echo "--- inline transcribe (tail) ---"
-    tail -n 80 "$inline_transcribe" || true
+
+  if [[ "$json_output" == "1" ]]; then
+    printf '%s\n' "$rows" | logs_json "$subcmd"
+    return 0
   fi
+
+  case "$subcmd" in
+    show|path)
+      echo "Log paths"
+      echo ""
+      while IFS=$'\t' read -r selected label path tail_lines; do
+        [[ -n "$selected" ]] || continue
+        local status="missing"
+        [[ -f "$path" ]] && status="present"
+        printf "  %-16s %s (%s)\n" "${selected}:" "$path" "$status"
+      done <<< "$rows"
+      ;;
+  esac
+
+  case "$subcmd" in
+    path)
+      ;;
+    show|tail)
+      local first_block="1"
+      while IFS=$'\t' read -r selected label path tail_lines; do
+        [[ -n "$selected" ]] || continue
+        if [[ "$first_block" == "1" ]]; then
+          echo ""
+          first_block="0"
+        else
+          echo ""
+        fi
+        echo "--- ${label} (tail ${tail_lines}) ---"
+        if [[ -f "$path" ]]; then
+          tail -n "$tail_lines" "$path" || true
+        else
+          echo "No ${label} log yet at: $path"
+        fi
+      done <<< "$rows"
+      ;;
+    *)
+      logs_usage
+      ;;
+  esac
 }
 
 changelog() {
@@ -1074,6 +1398,382 @@ print(f"schema_label\t{label}")
 print(f"schema_status\t{status}")
 print(f"parse_error\t{parse_error}")
 PYEOF
+}
+
+config_snapshot_rows() {
+  need python3
+  local default_cfg_text
+  default_cfg_text="$(default_config_toml)"
+  DEFAULT_CONFIG_TOML="$default_cfg_text" python3 - "$DICTATE_CONFIG_FILE" "$DICTATE_CONFIG_SCHEMA_VERSION" <<'PYEOF'
+import os
+import sys
+import tomllib
+
+path = os.path.expanduser(sys.argv[1])
+expected = int(sys.argv[2])
+default_cfg = tomllib.loads(os.environ["DEFAULT_CONFIG_TOML"])
+exists = os.path.isfile(path)
+cfg = {}
+parse_error = ""
+MISSING = object()
+
+if exists:
+    try:
+        with open(path, "rb") as f:
+            cfg = tomllib.load(f) or {}
+    except tomllib.TOMLDecodeError as exc:
+        parse_error = str(exc).replace("\n", " ")
+
+def get(tree, dotted_path, default=MISSING):
+    cur = tree
+    for part in dotted_path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+def get_effective(dotted_path):
+    value = get(cfg, dotted_path, MISSING)
+    if value is not MISSING:
+        return value
+    value = get(default_cfg, dotted_path, MISSING)
+    if value is not MISSING:
+        return value
+    return None
+
+raw_version = get(cfg, "meta.config_version", MISSING)
+if parse_error:
+    label = "invalid"
+    status = "invalid"
+elif exists:
+    if isinstance(raw_version, int):
+        label = f"v{raw_version}"
+        status = "ok" if raw_version == expected else "mismatch"
+    else:
+        label = "unset"
+        status = "mismatch"
+else:
+    label = "missing"
+    status = "missing"
+
+def fmt(value):
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    return str(value)
+
+rows = [
+    ("path", path),
+    ("exists", "1" if exists else "0"),
+    ("schema_label", label),
+    ("schema_status", status),
+    ("parse_error", parse_error),
+    ("audio_source", get_effective("audio.source")),
+    ("audio_device_name", get_effective("audio.device_name")),
+    ("audio_mac_name", get_effective("audio.mac_name")),
+    ("audio_iphone_name", get_effective("audio.iphone_name")),
+    ("audio_device_index", get_effective("audio.device_index")),
+    ("swift_parakeet_model_path", get_effective("swift_parakeet.model_path")),
+    ("swift_parakeet_socket_path", get_effective("swift_parakeet.socket_path")),
+    ("postprocess_enabled", get_effective("postprocess.enabled")),
+    ("postprocess_llm", get_effective("postprocess.llm")),
+    ("inline_autosend", get_effective("inline.autosend")),
+    ("inline_process_sound", get_effective("inline.process_sound")),
+    ("tmux_mode", get_effective("tmux.mode")),
+    ("debug_keep_logs", get_effective("debug.keep_logs")),
+]
+
+for key, value in rows:
+    print(f"{key}\t{fmt(value)}")
+PYEOF
+}
+
+config_show_text() {
+  local rows_input path exists label status parse_error
+  local audio_source audio_device_name audio_mac_name audio_iphone_name audio_device_index
+  local model_path socket_path postprocess_enabled postprocess_llm inline_autosend inline_process_sound tmux_mode debug_keep_logs
+  rows_input="$(config_snapshot_rows)"
+
+  while IFS=$'\t' read -r key value; do
+    case "$key" in
+      path) path="$value" ;;
+      exists) exists="$value" ;;
+      schema_label) label="$value" ;;
+      schema_status) status="$value" ;;
+      parse_error) parse_error="$value" ;;
+      audio_source) audio_source="$value" ;;
+      audio_device_name) audio_device_name="$value" ;;
+      audio_mac_name) audio_mac_name="$value" ;;
+      audio_iphone_name) audio_iphone_name="$value" ;;
+      audio_device_index) audio_device_index="$value" ;;
+      swift_parakeet_model_path) model_path="$value" ;;
+      swift_parakeet_socket_path) socket_path="$value" ;;
+      postprocess_enabled) postprocess_enabled="$value" ;;
+      postprocess_llm) postprocess_llm="$value" ;;
+      inline_autosend) inline_autosend="$value" ;;
+      inline_process_sound) inline_process_sound="$value" ;;
+      tmux_mode) tmux_mode="$value" ;;
+      debug_keep_logs) debug_keep_logs="$value" ;;
+    esac
+  done <<<"$rows_input"
+
+  config_show_text_value() {
+    local value="${1:-}"
+    if [[ -z "$value" ]]; then
+      printf '%s\n' "<unset>"
+    else
+      printf '%s\n' "$value"
+    fi
+  }
+
+  config_show_text_bool() {
+    if bool_is_on "${1:-0}"; then
+      printf '%s\n' "on"
+    else
+      printf '%s\n' "off"
+    fi
+  }
+
+  echo "Config path: $path $([[ "$exists" == "1" ]] && echo '(present)' || echo '(missing)')"
+  echo "Config schema: $label (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=$status)"
+  [[ -n "$parse_error" ]] && echo "Parse error: $parse_error"
+  echo ""
+  echo "Current values:"
+  echo "  audio.source: $(config_show_text_value "$audio_source")"
+  echo "  audio.device_name: $(config_show_text_value "$audio_device_name")"
+  echo "  audio.mac_name: $(config_show_text_value "$audio_mac_name")"
+  echo "  audio.iphone_name: $(config_show_text_value "$audio_iphone_name")"
+  echo "  audio.device_index: $(config_show_text_value "$audio_device_index")"
+  echo "  swift_parakeet.model_path: $(config_show_text_value "$model_path")"
+  echo "  swift_parakeet.socket_path: $(config_show_text_value "$socket_path")"
+  echo "  postprocess.enabled: $(config_show_text_bool "$postprocess_enabled")"
+  echo "  postprocess.llm: $(config_show_text_value "$postprocess_llm")"
+  echo "  inline.autosend: $(config_show_text_bool "$inline_autosend")"
+  echo "  inline.process_sound: $(config_show_text_bool "$inline_process_sound")"
+  echo "  tmux.mode: $(config_show_text_value "$tmux_mode")"
+  echo "  debug.keep_logs: $(config_show_text_bool "$debug_keep_logs")"
+  echo ""
+  echo "Commands:"
+  echo "  tmux-whisper config path"
+  echo "  tmux-whisper config get audio.source"
+  echo "  tmux-whisper config defaults"
+  echo "  tmux-whisper config repair --dry-run"
+  echo "  tmux-whisper config repair"
+}
+
+config_show_json() {
+  local rows_input
+  rows_input="$(config_snapshot_rows)"
+  CONFIG_SNAPSHOT_ROWS="$rows_input" python3 - "$DICTATE_CONFIG_SCHEMA_VERSION" <<'PYEOF'
+import json
+import os
+import sys
+
+rows = {}
+for raw_line in os.environ.get("CONFIG_SNAPSHOT_ROWS", "").splitlines():
+    if not raw_line:
+        continue
+    key, value = raw_line.split("\t", 1)
+    rows[key] = value
+
+def bool_value(key):
+    return rows.get(key, "0") == "1"
+
+def nullable(key):
+    value = rows.get(key, "")
+    return value if value != "" else None
+
+print(json.dumps({
+    "command": "config",
+    "subcommand": "show",
+    "config_path": rows.get("path", ""),
+    "config_exists": bool_value("exists"),
+    "schema": {
+        "expected": f"v{sys.argv[1]}",
+        "label": rows.get("schema_label", "missing"),
+        "status": rows.get("schema_status", "missing"),
+    },
+    "parse_error": rows.get("parse_error", ""),
+    "effective": {
+        "audio": {
+            "source": nullable("audio_source"),
+            "device_name": nullable("audio_device_name"),
+            "mac_name": nullable("audio_mac_name"),
+            "iphone_name": nullable("audio_iphone_name"),
+            "device_index": int(rows["audio_device_index"]) if rows.get("audio_device_index", "") else None,
+        },
+        "swift_parakeet": {
+            "model_path": nullable("swift_parakeet_model_path"),
+            "socket_path": nullable("swift_parakeet_socket_path"),
+        },
+        "postprocess": {
+            "enabled": bool_value("postprocess_enabled"),
+            "llm": nullable("postprocess_llm"),
+        },
+        "inline": {
+            "autosend": bool_value("inline_autosend"),
+            "process_sound": bool_value("inline_process_sound"),
+        },
+        "tmux": {
+            "mode": nullable("tmux_mode"),
+        },
+        "debug": {
+            "keep_logs": bool_value("debug_keep_logs"),
+        },
+    },
+}, indent=2, sort_keys=True))
+PYEOF
+}
+
+config_path_json() {
+  local rows_input
+  rows_input="$(config_snapshot_rows)"
+  CONFIG_SNAPSHOT_ROWS="$rows_input" python3 - <<'PYEOF'
+import json
+import os
+
+rows = {}
+for raw_line in os.environ.get("CONFIG_SNAPSHOT_ROWS", "").splitlines():
+    if not raw_line:
+        continue
+    key, value = raw_line.split("\t", 1)
+    rows[key] = value
+
+print(json.dumps({
+    "command": "config",
+    "subcommand": "path",
+    "config_path": rows.get("path", ""),
+    "config_exists": rows.get("exists", "0") == "1",
+}, indent=2, sort_keys=True))
+PYEOF
+}
+
+config_get_emit() {
+  local query_path="${1:-}"
+  local render="${2:-text}"
+  [[ -n "$query_path" ]] || die "usage: tmux-whisper config get <path> [--json]"
+  need python3
+
+  local default_cfg_text
+  default_cfg_text="$(default_config_toml)"
+  DEFAULT_CONFIG_TOML="$default_cfg_text" python3 - "$DICTATE_CONFIG_FILE" "$DICTATE_CONFIG_SCHEMA_VERSION" "$query_path" "$render" <<'PYEOF'
+import json
+import os
+import sys
+import tomllib
+
+path = os.path.expanduser(sys.argv[1])
+expected = int(sys.argv[2])
+query_path = sys.argv[3]
+render = sys.argv[4]
+default_cfg = tomllib.loads(os.environ["DEFAULT_CONFIG_TOML"])
+exists = os.path.isfile(path)
+cfg = {}
+parse_error = ""
+MISSING = object()
+
+if exists:
+    try:
+        with open(path, "rb") as f:
+            cfg = tomllib.load(f) or {}
+    except tomllib.TOMLDecodeError as exc:
+        parse_error = str(exc).replace("\n", " ")
+
+def get(tree, dotted_path, default=MISSING):
+    cur = tree
+    for part in dotted_path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+raw_version = get(cfg, "meta.config_version", MISSING)
+if parse_error:
+    label = "invalid"
+    status = "invalid"
+elif exists:
+    if isinstance(raw_version, int):
+        label = f"v{raw_version}"
+        status = "ok" if raw_version == expected else "mismatch"
+    else:
+        label = "unset"
+        status = "mismatch"
+else:
+    label = "missing"
+    status = "missing"
+
+file_value = get(cfg, query_path, MISSING)
+default_value = get(default_cfg, query_path, MISSING)
+
+if file_value is not MISSING:
+    source = "file"
+    found = True
+    value = file_value
+elif default_value is not MISSING:
+    source = "default"
+    found = True
+    value = default_value
+else:
+    source = "unset"
+    found = False
+    value = None
+
+def value_type(input_value):
+    if input_value is None:
+        return "null"
+    if isinstance(input_value, bool):
+        return "boolean"
+    if isinstance(input_value, int):
+        return "integer"
+    if isinstance(input_value, float):
+        return "number"
+    if isinstance(input_value, str):
+        return "string"
+    if isinstance(input_value, list):
+        return "array"
+    if isinstance(input_value, dict):
+        return "object"
+    return type(input_value).__name__
+
+payload = {
+    "command": "config",
+    "subcommand": "get",
+    "path": query_path,
+    "config_path": path,
+    "config_exists": exists,
+    "schema": {
+        "expected": f"v{expected}",
+        "label": label,
+        "status": status,
+    },
+    "parse_error": parse_error,
+    "found": found,
+    "source": source,
+    "value_type": value_type(value),
+    "value": value,
+}
+
+if render == "json":
+    print(json.dumps(payload, indent=2, sort_keys=True))
+else:
+    if found:
+        print(f"{query_path} = {json.dumps(value, ensure_ascii=False)}")
+    else:
+        print(f"{query_path} = <unset>")
+    print(f"source: {source}")
+    print(f"config path: {path}")
+    if parse_error:
+        print(f"parse error: {parse_error}")
+PYEOF
+}
+
+config_get_text() {
+  config_get_emit "${1:-}" "text"
+}
+
+config_get_json() {
+  config_get_emit "${1:-}" "json"
 }
 
 config_repair() {
@@ -1381,35 +2081,55 @@ PYEOF
 }
 
 manage_config() {
-  local action="${1:-show}"
+  local json_output="0"
+  local args=()
+  local arg
+
+  for arg in "$@"; do
+    if [[ "$arg" == "--json" ]]; then
+      json_output="1"
+    else
+      args+=("$arg")
+    fi
+  done
+
+  local action="${args[0]:-show}"
   case "$action" in
     ""|show|status)
-      local inspect exists label status parse_error
-      inspect="$(config_inspect_raw)"
-      exists="$(printf "%s\n" "$inspect" | sed -n 's/^exists\t//p')"
-      label="$(printf "%s\n" "$inspect" | sed -n 's/^schema_label\t//p')"
-      status="$(printf "%s\n" "$inspect" | sed -n 's/^schema_status\t//p')"
-      parse_error="$(printf "%s\n" "$inspect" | sed -n 's/^parse_error\t//p')"
-      echo "Config path: $DICTATE_CONFIG_FILE $([[ "$exists" == "1" ]] && echo '(present)' || echo '(missing)')"
-      echo "Config schema: $label (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=$status)"
-      [[ -n "$parse_error" ]] && echo "Parse error: $parse_error"
-      echo ""
-      echo "Commands:"
-      echo "  tmux-whisper config defaults"
-      echo "  tmux-whisper config repair --dry-run"
-      echo "  tmux-whisper config repair"
+      [[ "${#args[@]}" -le 1 ]] || die "usage: tmux-whisper config [show|path|get <path>|defaults|repair [--dry-run]] [--json]"
+      if [[ "$json_output" == "1" ]]; then
+        config_show_json
+      else
+        config_show_text
+      fi
       ;;
     path)
-      echo "$DICTATE_CONFIG_FILE"
+      [[ "${#args[@]}" -eq 1 ]] || die "usage: tmux-whisper config path [--json]"
+      if [[ "$json_output" == "1" ]]; then
+        config_path_json
+      else
+        echo "$DICTATE_CONFIG_FILE"
+      fi
+      ;;
+    get)
+      [[ "${#args[@]}" -eq 2 ]] || die "usage: tmux-whisper config get <path> [--json]"
+      if [[ "$json_output" == "1" ]]; then
+        config_get_json "${args[1]}"
+      else
+        config_get_text "${args[1]}"
+      fi
       ;;
     defaults|default)
+      [[ "$json_output" == "0" ]] || die "config defaults does not accept --json"
+      [[ "${#args[@]}" -eq 1 ]] || die "usage: tmux-whisper config defaults"
       default_config_toml
       ;;
     repair)
-      config_repair "${@:2}"
+      [[ "$json_output" == "0" ]] || die "config repair does not accept --json"
+      config_repair "${args[@]:1}"
       ;;
     *)
-      die "usage: tmux-whisper config [show|path|defaults|repair [--dry-run]]"
+      die "usage: tmux-whisper config [show|path|get <path>|defaults|repair [--dry-run]] [--json]"
       ;;
   esac
 }
@@ -2455,85 +3175,112 @@ append_bench_entry() {
 }
 
 bench() {
-  local arg="${1:-}"
-  local limit="30"
+  local json_output="0"
+  local args=()
+  local arg
 
-  case "$arg" in
-    "" ) ;;
+  for arg in "$@"; do
+    if [[ "$arg" == "--json" ]]; then
+      json_output="1"
+    else
+      args+=("$arg")
+    fi
+  done
+
+  local subcmd="show"
+  local spec="30"
+  case "${args[0]:-}" in
+    "")
+      ;;
     clear)
+      [[ "$json_output" == "0" ]] || die "bench clear does not accept --json"
+      [[ "${#args[@]}" -eq 1 ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
       rm -f "$BENCH_FILE" 2>/dev/null || true
       echo "Bench data cleared."
       return 0
       ;;
+    export)
+      subcmd="export"
+      [[ "${#args[@]}" -le 2 ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+      spec="${args[1]:-30}"
+      if [[ "$spec" != "all" ]]; then
+        [[ "$spec" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+        (( spec > 0 )) || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+      fi
+      ;;
     *)
-      [[ "$arg" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper bench [N|clear]"
-      limit="$arg"
+      [[ "${#args[@]}" -eq 1 ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+      [[ "${args[0]}" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+      (( ${args[0]} > 0 )) || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+      spec="${args[0]}"
       ;;
   esac
 
-  if [[ ! -f "$BENCH_FILE" ]]; then
-    echo "No bench data yet."
-    echo "Run a dictation first, then: tmux-whisper bench"
-    return 0
-  fi
-
   need python3
-  python3 - "$BENCH_FILE" "$limit" <<'PYEOF'
-import collections, statistics, sys
+  python3 - "$BENCH_FILE" "$subcmd" "$spec" "$json_output" <<'PYEOF'
+import collections
+import json
+import os
+import statistics
+import sys
 
-path = sys.argv[1]
-limit = int(sys.argv[2]) if len(sys.argv) > 2 else 30
+path = os.path.expanduser(sys.argv[1])
+subcmd = sys.argv[2]
+spec = sys.argv[3]
+json_output = sys.argv[4] == "1"
 
 records = []
-with open(path, "r", encoding="utf-8", errors="replace") as fh:
-    for line in fh:
-        parts = line.rstrip("\n").split("\t")
-        if len(parts) < 14:
-            continue
-        ts, flow, status, model, mode, post, rawc, outc, rec, trn, cln, pps, pst, tot = parts[:14]
-        startup_total = parts[14] if len(parts) > 14 else "0"
-        startup_audio = parts[15] if len(parts) > 15 else "0"
-        startup_live = parts[16] if len(parts) > 16 else "0"
-        startup_target = parts[17] if len(parts) > 17 else "0"
-        startup_source = parts[18] if len(parts) > 18 else ""
+if os.path.isfile(path):
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for line_number, line in enumerate(fh, start=1):
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 14:
+                continue
+            ts, flow, status, model, mode, post, rawc, outc, rec, trn, cln, pps, pst, tot = parts[:14]
+            startup_total = parts[14] if len(parts) > 14 else "0"
+            startup_audio = parts[15] if len(parts) > 15 else "0"
+            startup_live = parts[16] if len(parts) > 16 else "0"
+            startup_target = parts[17] if len(parts) > 17 else "0"
+            startup_source = parts[18] if len(parts) > 18 else ""
 
-        def to_int(v: str) -> int:
-            try:
-                return int(v)
-            except Exception:
-                return 0
+            def to_int(v: str) -> int:
+                try:
+                    return int(v)
+                except Exception:
+                    return 0
 
-        records.append(
-            {
-                "ts": ts,
-                "flow": flow,
-                "status": status,
-                "model": model,
-                "mode": mode,
-                "post": post in {"1", "true", "on", "yes"},
-                "raw_chars": to_int(rawc),
-                "out_chars": to_int(outc),
-                "record_ms": to_int(rec),
-                "transcribe_ms": to_int(trn),
-                "clean_ms": to_int(cln),
-                "postprocess_ms": to_int(pps),
-                "paste_ms": to_int(pst),
-                "total_ms": to_int(tot),
-                "startup_total_ms": to_int(startup_total),
-                "startup_audio_ms": to_int(startup_audio),
-                "startup_ffmpeg_live_ms": to_int(startup_live),
-                "startup_target_ms": to_int(startup_target),
-                "startup_audio_source": startup_source,
-            }
-        )
+            records.append(
+                {
+                    "line_number": line_number,
+                    "timestamp": ts,
+                    "flow": flow,
+                    "status": status,
+                    "model": model,
+                    "mode": mode,
+                    "postprocess_enabled": post in {"1", "true", "on", "yes"},
+                    "raw_chars": to_int(rawc),
+                    "out_chars": to_int(outc),
+                    "record_ms": to_int(rec),
+                    "transcribe_ms": to_int(trn),
+                    "clean_ms": to_int(cln),
+                    "postprocess_ms": to_int(pps),
+                    "paste_ms": to_int(pst),
+                    "total_ms": to_int(tot),
+                    "startup_total_ms": to_int(startup_total),
+                    "startup_audio_ms": to_int(startup_audio),
+                    "startup_ffmpeg_live_ms": to_int(startup_live),
+                    "startup_target_ms": to_int(startup_target),
+                    "startup_audio_source": startup_source,
+                }
+            )
 
-if not records:
-    print("No bench data yet.")
-    raise SystemExit(0)
-
-if limit <= 0:
-    limit = 1
-subset = records[-limit:]
+def select_subset(rows, raw_spec):
+    if raw_spec == "all":
+        return list(rows)
+    limit = int(raw_spec)
+    if limit <= 0:
+        limit = 1
+    return rows[-limit:]
 
 def percentile(values, pct):
     if not values:
@@ -2547,23 +3294,135 @@ def percentile(values, pct):
     frac = pos - lo
     return int(round(vals[lo] * (1 - frac) + vals[hi] * frac))
 
-def fmt_stage(name, values):
+def metric_summary(values):
     if not values:
+        return {"n": 0, "median": 0, "p90": 0, "max": 0}
+    return {
+        "n": len(values),
+        "median": int(statistics.median(values)),
+        "p90": percentile(values, 0.90),
+        "max": max(values),
+    }
+
+def fmt_stage(name, values):
+    metric = metric_summary(values)
+    if metric["n"] == 0:
         return f"{name}: n=0"
-    return (
-        f"{name}: n={len(values)} median={int(statistics.median(values))}ms "
-        f"p90={percentile(values, 0.90)}ms max={max(values)}ms"
-    )
+    return f"{name}: n={metric['n']} median={metric['median']}ms p90={metric['p90']}ms max={metric['max']}ms"
+
+def export_entries(rows):
+    newest_first = list(reversed(rows))
+    entries = []
+    for idx, row in enumerate(newest_first, start=1):
+        item = dict(row)
+        item["index"] = idx
+        entries.append(item)
+    return entries
+
+subset = select_subset(records, spec)
+exported = export_entries(subset)
+
+if subcmd == "export":
+    if json_output:
+        print(json.dumps(exported, indent=2, sort_keys=True))
+        raise SystemExit(0)
+    if not exported:
+        print("No bench data yet.")
+        raise SystemExit(0)
+    for entry in exported:
+        print(f"=== Bench {entry['index']} ===")
+        print(f"Timestamp: {entry['timestamp']}")
+        print(f"Flow: {entry['flow']}")
+        print(f"Status: {entry['status']}")
+        print(f"Model: {entry['model']}")
+        print(f"Mode: {entry['mode']}")
+        print(f"Postprocess: {'on' if entry['postprocess_enabled'] else 'off'}")
+        print("")
+        print("Metrics:")
+        for key in (
+            "record_ms",
+            "transcribe_ms",
+            "clean_ms",
+            "postprocess_ms",
+            "paste_ms",
+            "total_ms",
+            "raw_chars",
+            "out_chars",
+        ):
+            print(f"  {key}: {entry[key]}")
+        if (
+            entry["startup_total_ms"] > 0
+            or entry["startup_audio_ms"] > 0
+            or entry["startup_ffmpeg_live_ms"] > 0
+            or entry["startup_target_ms"] > 0
+            or entry["startup_audio_source"]
+        ):
+            print("")
+            print("Startup:")
+            print(f"  startup_total_ms: {entry['startup_total_ms']}")
+            print(f"  startup_audio_ms: {entry['startup_audio_ms']}")
+            print(f"  startup_ffmpeg_live_ms: {entry['startup_ffmpeg_live_ms']}")
+            print(f"  startup_target_ms: {entry['startup_target_ms']}")
+            if entry["startup_audio_source"]:
+                print(f"  startup_audio_source: {entry['startup_audio_source']}")
+        print("")
+    raise SystemExit(0)
 
 flow_counts = collections.Counter(r["flow"] for r in subset)
 status_counts = collections.Counter(r["status"] for r in subset)
+latest = subset[-1] if subset else None
+
+payload = {
+    "command": "bench",
+    "subcommand": "show",
+    "source": path,
+    "total_records": len(records),
+    "subset_records": len(subset),
+    "counts": {
+        "flows": {k: flow_counts[k] for k in sorted(flow_counts)},
+        "statuses": {k: status_counts[k] for k in sorted(status_counts)},
+    },
+    "stages": {
+        "record_ms": metric_summary([r["record_ms"] for r in subset if r["record_ms"] > 0]),
+        "transcribe_ms": metric_summary([r["transcribe_ms"] for r in subset if r["transcribe_ms"] >= 0]),
+        "clean_ms": metric_summary([r["clean_ms"] for r in subset if r["clean_ms"] >= 0]),
+        "postprocess_ms": metric_summary([r["postprocess_ms"] for r in subset if r["postprocess_ms"] > 0]),
+        "paste_ms": metric_summary([r["paste_ms"] for r in subset if r["paste_ms"] > 0]),
+        "total_ms": metric_summary([r["total_ms"] for r in subset if r["total_ms"] > 0]),
+    },
+    "startup": {
+        "available": any(
+            r["startup_total_ms"] > 0
+            or r["startup_audio_ms"] > 0
+            or r["startup_ffmpeg_live_ms"] > 0
+            or r["startup_target_ms"] > 0
+            for r in subset
+        ),
+        "total_ms": metric_summary([r["startup_total_ms"] for r in subset if r["startup_total_ms"] > 0]),
+        "audio_ms": metric_summary([r["startup_audio_ms"] for r in subset if r["startup_audio_ms"] > 0]),
+        "ffmpeg_live_ms": metric_summary([r["startup_ffmpeg_live_ms"] for r in subset if r["startup_ffmpeg_live_ms"] > 0]),
+        "target_ms": metric_summary([r["startup_target_ms"] for r in subset if r["startup_target_ms"] > 0]),
+    },
+    "latest": latest,
+}
+
+if json_output:
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    raise SystemExit(0)
+
+if not records:
+    print("No bench data yet.")
+    print("Run a dictation first, then: tmux-whisper bench")
+    raise SystemExit(0)
 
 print(f"Tmux Whisper bench (last {len(subset)} of {len(records)} runs)")
 print(f"Source: {path}")
 print("")
 print("Counts:")
-print("  by flow: " + ", ".join(f"{k}={v}" for k, v in sorted(flow_counts.items())))
-print("  by status: " + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())))
+flow_counts_text = ", ".join(f"{k}={v}" for k, v in sorted(flow_counts.items())) if flow_counts else "<none>"
+status_counts_text = ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())) if status_counts else "<none>"
+print("  by flow: " + flow_counts_text)
+print("  by status: " + status_counts_text)
 
 print("")
 print("Stages:")
@@ -2586,32 +3445,371 @@ if startup_total_vals or startup_audio_vals or startup_live_vals or startup_targ
     print("  " + fmt_stage("startup.ffmpeg_livecheck", startup_live_vals))
     print("  " + fmt_stage("startup.target_capture", startup_target_vals))
 
-latest = subset[-1]
-print("")
-print("Latest:")
-print(
-    "  "
-    + f"{latest['ts']} flow={latest['flow']} status={latest['status']} "
-    + f"model={latest['model']} mode={latest['mode']} postprocess={'on' if latest['post'] else 'off'}"
-)
-print(
-    (
+if latest is not None:
+    print("")
+    print("Latest:")
+    print(
         "  "
-        + "record={record_ms}ms transcribe={transcribe_ms}ms clean={clean_ms}ms "
-        + "postprocess={postprocess_ms}ms paste={paste_ms}ms total={total_ms}ms "
-        + "raw_chars={raw_chars} out_chars={out_chars}"
-    ).format(**latest)
-)
-if latest.get("startup_total_ms", 0) > 0:
+        + f"{latest['timestamp']} flow={latest['flow']} status={latest['status']} "
+        + f"model={latest['model']} mode={latest['mode']} postprocess={'on' if latest['postprocess_enabled'] else 'off'}"
+    )
     print(
         (
             "  "
-            + "startup_total={startup_total_ms}ms startup_audio={startup_audio_ms}ms "
-            + "startup_ffmpeg_live={startup_ffmpeg_live_ms}ms startup_target={startup_target_ms}ms "
-            + "audio_source={startup_audio_source}"
+            + "record={record_ms}ms transcribe={transcribe_ms}ms clean={clean_ms}ms "
+            + "postprocess={postprocess_ms}ms paste={paste_ms}ms total={total_ms}ms "
+            + "raw_chars={raw_chars} out_chars={out_chars}"
         ).format(**latest)
     )
+    if latest.get("startup_total_ms", 0) > 0:
+        print(
+            (
+                "  "
+                + "startup_total={startup_total_ms}ms startup_audio={startup_audio_ms}ms "
+                + "startup_ffmpeg_live={startup_ffmpeg_live_ms}ms startup_target={startup_target_ms}ms "
+                + "audio_source={startup_audio_source}"
+            ).format(**latest)
+        )
 PYEOF
+}
+
+watch() {
+  need python3
+
+  local interval="2"
+  local iterations=""
+
+  while [[ $# -gt 0 ]]; do
+    case "${1:-}" in
+      --interval)
+        shift
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--interval SECONDS] [--iterations N]"
+        interval="${1:-}"
+        ;;
+      --iterations)
+        shift
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--interval SECONDS] [--iterations N]"
+        iterations="${1:-}"
+        ;;
+      *)
+        die "usage: tmux-whisper watch [--interval SECONDS] [--iterations N]"
+        ;;
+    esac
+    shift
+  done
+
+  WATCH_INTERVAL="$interval" python3 - <<'PYEOF' >/dev/null || die "watch --interval expects a non-negative number of seconds"
+import os
+import sys
+
+raw = os.environ.get("WATCH_INTERVAL", "").strip()
+try:
+    value = float(raw)
+except Exception:
+    raise SystemExit(1)
+
+raise SystemExit(0 if value >= 0 else 1)
+PYEOF
+
+  if [[ -n "$iterations" ]]; then
+    [[ "$iterations" =~ ^[0-9]+$ ]] || die "watch --iterations expects a positive integer"
+    (( iterations > 0 )) || die "watch --iterations expects a positive integer"
+  fi
+
+  local interactive="0"
+  [[ -t 1 ]] && interactive="1"
+
+  local iteration=0
+  while :; do
+    iteration=$((iteration + 1))
+
+    local status_json bench_json last_json history_file
+    status_json="$(status --json 2>/dev/null || true)"
+    bench_json="$(bench --json 2>/dev/null || true)"
+    last_json=""
+    history_file="$(history_entry_file_by_index 1 2>/dev/null || true)"
+    if [[ -n "$history_file" && -f "$history_file" ]]; then
+      last_json="$(show_last_history json 2>/dev/null || true)"
+    fi
+
+    WATCH_STATUS_JSON="$status_json" \
+    WATCH_BENCH_JSON="$bench_json" \
+    WATCH_LAST_JSON="$last_json" \
+    WATCH_INTERVAL="$interval" \
+    WATCH_ITERATION="$iteration" \
+    WATCH_ITERATIONS="$iterations" \
+    WATCH_INTERACTIVE="$interactive" \
+    python3 - <<'PYEOF'
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+
+def load_json_env(name: str):
+    raw = os.environ.get(name, "")
+    if not raw.strip():
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def bool_flag(name: str) -> bool:
+    return os.environ.get(name, "0") == "1"
+
+
+def compact_text(value: str, limit: int = 120) -> str:
+    text = re.sub(r"\s+", " ", value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
+
+
+def format_ms_short(value) -> str:
+    try:
+        ms = int(value)
+    except Exception:
+        return "?"
+    if ms < 1000:
+        return f"{ms}ms"
+    seconds = ms / 1000.0
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = int(seconds // 60)
+    rem = seconds - (minutes * 60)
+    if minutes < 60:
+        return f"{minutes}m {rem:04.1f}s"
+    hours = int(minutes // 60)
+    minutes = minutes % 60
+    return f"{hours}h {minutes:02d}m"
+
+
+def word_count(text: str) -> int:
+    return len(re.findall(r"\b\w+\b", text or ""))
+
+
+def fmt_counts(mapping) -> str:
+    if not isinstance(mapping, dict) or not mapping:
+        return "<none>"
+    return ", ".join(f"{key}={mapping[key]}" for key in sorted(mapping))
+
+
+def print_section(title: str):
+    print(title)
+
+
+status = load_json_env("WATCH_STATUS_JSON") or {}
+bench = load_json_env("WATCH_BENCH_JSON") or {}
+last_payload = load_json_env("WATCH_LAST_JSON")
+
+summary = status.get("summary") if isinstance(status, dict) else {}
+runtime = status.get("runtime") if isinstance(status, dict) else {}
+effective = status.get("effective_settings") if isinstance(status, dict) else {}
+
+iteration = os.environ.get("WATCH_ITERATION", "1").strip() or "1"
+iterations = os.environ.get("WATCH_ITERATIONS", "").strip()
+interactive = bool_flag("WATCH_INTERACTIVE")
+interval = os.environ.get("WATCH_INTERVAL", "2").strip() or "2"
+snapshot_label = f"{iteration}/{iterations}" if iterations else iteration
+
+if interactive:
+    sys.stdout.write("\033[H\033[2J")
+    sys.stdout.flush()
+    print("Tmux Whisper watch")
+else:
+    print(f"=== Tmux Whisper watch snapshot {snapshot_label} ===")
+
+updated = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+print(f"Updated: {updated}")
+print(f"Refresh: every {interval}s")
+print(f"Snapshot: {snapshot_label}")
+if interactive:
+    print("Press Ctrl-C to stop.")
+print("")
+
+backend_name = effective.get("backend") if isinstance(effective, dict) else None
+backend_readiness = summary.get("backend_readiness") if isinstance(summary, dict) else None
+inline_mode = (((effective.get("mode") or {}).get("inline") or {}).get("display_name")) if isinstance(effective, dict) else None
+inline_mode_source = (((effective.get("mode") or {}).get("inline") or {}).get("source")) if isinstance(effective, dict) else None
+tmux_mode = (((effective.get("mode") or {}).get("tmux") or {}).get("display_name")) if isinstance(effective, dict) else None
+config_schema = (summary.get("config_schema") or {}) if isinstance(summary, dict) else {}
+config_version = config_schema.get("version") or "unknown"
+config_status = config_schema.get("status") or "unknown"
+
+print_section("Summary")
+print(f"  state: {summary.get('state', 'unknown')}")
+print(f"  headline: {summary.get('headline', 'Status unavailable.')}")
+if backend_name or backend_readiness:
+    print(f"  backend: {(backend_name or 'unknown')} ({backend_readiness or 'unknown'})")
+print(
+    "  modes: inline={inline} [{source}], tmux={tmux}".format(
+        inline=inline_mode or "?",
+        source=inline_mode_source or "unknown",
+        tmux=tmux_mode or "?",
+    )
+)
+print(f"  config: {config_version} ({config_status})")
+active_flow = summary.get("active_flow")
+print(f"  active_flow: {active_flow or 'none'}")
+print(f"  next_action: {summary.get('next_action', 'n/a')}")
+print("")
+
+
+def render_runtime_line(label: str, payload):
+    if not isinstance(payload, dict):
+        print(f"  {label}: unavailable")
+        return
+    state = payload.get("state") or "idle"
+    pieces = [state]
+    if payload.get("pid") is not None:
+        pieces.append(f"pid={payload['pid']}")
+    if payload.get("age_seconds") is not None:
+        pieces.append(f"age={payload['age_seconds']}s")
+    if payload.get("display_target"):
+        pieces.append(f"target={payload['display_target']}")
+    if payload.get("model"):
+        pieces.append(f"model={payload['model']}")
+    print(f"  {label}: " + " ".join(pieces))
+
+
+print_section("Runtime")
+render_runtime_line("tmux", runtime.get("tmux"))
+render_runtime_line("inline", runtime.get("inline"))
+processing = runtime.get("processing_markers") if isinstance(runtime, dict) else {}
+tmux_queue = runtime.get("tmux_queue") if isinstance(runtime, dict) else {}
+print(
+    "  processing: live={live} stale={stale}".format(
+        live=(processing or {}).get("live", 0),
+        stale=(processing or {}).get("stale", 0),
+    )
+)
+print(
+    "  tmux_queue: recording={recording} processing={processing}".format(
+        recording=(tmux_queue or {}).get("recording", 0),
+        processing=(tmux_queue or {}).get("processing", 0),
+    )
+)
+print("")
+
+print_section("Latest dictation")
+last_entry = (last_payload or {}).get("entry") if isinstance(last_payload, dict) else None
+if not isinstance(last_entry, dict):
+    print("  No history entries yet.")
+else:
+    raw = str(last_entry.get("raw", "") or "")
+    processed = str(last_entry.get("processed", "") or "")
+    metrics = last_entry.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+    print(
+        "  mode/app: {mode} @ {app}".format(
+            mode=last_entry.get("mode", "?") or "?",
+            app=last_entry.get("app", "?") or "?",
+        )
+    )
+    if last_entry.get("timestamp"):
+        print(f"  timestamp: {last_entry['timestamp']}")
+    print(f"  words: raw={word_count(raw)} processed={word_count(processed)}")
+    metric_bits = []
+    if metrics.get("record_ms") is not None:
+        metric_bits.append(f"capture={format_ms_short(metrics.get('record_ms'))}")
+    if metrics.get("total_ms") is not None:
+        metric_bits.append(f"total={format_ms_short(metrics.get('total_ms'))}")
+    if metrics.get("transcribe_ms") is not None:
+        metric_bits.append(f"transcribe={format_ms_short(metrics.get('transcribe_ms'))}")
+    if metrics.get("paste_ms") is not None:
+        metric_bits.append(f"paste={format_ms_short(metrics.get('paste_ms'))}")
+    if metric_bits:
+        print("  timings: " + " ".join(metric_bits))
+    preview = compact_text(processed or raw)
+    print(f"  preview: {preview or '<empty>'}")
+print("")
+
+print_section("Bench")
+total_records = bench.get("total_records", 0) if isinstance(bench, dict) else 0
+subset_records = bench.get("subset_records", 0) if isinstance(bench, dict) else 0
+if not total_records:
+    print("  No bench data yet.")
+else:
+    print(f"  window: last {subset_records} of {total_records}")
+    latest = bench.get("latest") if isinstance(bench, dict) else {}
+    if isinstance(latest, dict) and latest:
+        latest_parts = [
+            latest.get("flow", "?"),
+            latest.get("status", "?"),
+            f"total={format_ms_short(latest.get('total_ms', 0))}",
+            f"transcribe={format_ms_short(latest.get('transcribe_ms', 0))}",
+            f"paste={format_ms_short(latest.get('paste_ms', 0))}",
+        ]
+        if latest.get("mode"):
+            latest_parts.insert(2, f"mode={latest['mode']}")
+        print("  latest: " + " ".join(str(part) for part in latest_parts if part))
+    stages = bench.get("stages") if isinstance(bench, dict) else {}
+    startup = bench.get("startup") if isinstance(bench, dict) else {}
+    median_parts = []
+    startup_total = (startup.get("total_ms") or {}).get("median") if isinstance(startup, dict) else None
+    if startup_total:
+        median_parts.append(f"startup={format_ms_short(startup_total)}")
+    transcribe_median = (stages.get("transcribe_ms") or {}).get("median") if isinstance(stages, dict) else None
+    if transcribe_median is not None and (stages.get("transcribe_ms") or {}).get("n", 0) > 0:
+        median_parts.append(f"transcribe={format_ms_short(transcribe_median)}")
+    total_median = (stages.get("total_ms") or {}).get("median") if isinstance(stages, dict) else None
+    if total_median is not None and (stages.get("total_ms") or {}).get("n", 0) > 0:
+        median_parts.append(f"total={format_ms_short(total_median)}")
+    if median_parts:
+        print("  medians: " + " ".join(median_parts))
+    counts = bench.get("counts") if isinstance(bench, dict) else {}
+    print(
+        "  counts: flows[{flows}] statuses[{statuses}]".format(
+            flows=fmt_counts((counts or {}).get("flows")),
+            statuses=fmt_counts((counts or {}).get("statuses")),
+        )
+    )
+print("")
+
+summary_state = summary.get("state")
+commands = []
+if summary_state == "recording":
+    record_stream = "inline-record" if active_flow == "inline" else "record"
+    commands = [
+        "tmux-whisper stop",
+        f"tmux-whisper logs follow {record_stream}",
+        "tmux-whisper status --json",
+    ]
+elif summary_state == "processing":
+    transcribe_stream = "inline-transcribe" if active_flow == "inline" else "transcribe"
+    commands = [
+        f"tmux-whisper logs follow {transcribe_stream}",
+        "tmux-whisper last",
+        "tmux-whisper bench",
+    ]
+elif summary_state in {"attention", "not_ready"}:
+    commands = [
+        "tmux-whisper doctor",
+        "tmux-whisper debug",
+        "tmux-whisper config repair --dry-run",
+    ]
+else:
+    commands = [
+        "tmux-whisper last" if isinstance(last_entry, dict) else "tmux-whisper history list 5",
+        "tmux-whisper bench",
+        "tmux-whisper logs tail transcribe --lines 20",
+    ]
+
+print_section("More detail")
+for command in commands:
+    print(f"  {command}")
+PYEOF
+
+    if [[ -n "$iterations" && "$iteration" -ge "$iterations" ]]; then
+      break
+    fi
+
+    sleep "$interval"
+  done
 }
 
 bench_matrix() {
@@ -3477,11 +4675,62 @@ sys.exit(1)
 
 devices() {
   need ffmpeg
+  local json_output="0"
+  case "${1:-}" in
+    "") ;;
+    --json) json_output="1" ;;
+    *) die "usage: tmux-whisper devices [--json]" ;;
+  esac
+
   # ffmpeg prints an expected "Error opening input" after listing devices; hide that noise.
   # On some macOS setups, device enumeration can fail entirely (e.g., missing Microphone permission).
   local out trimmed
   out="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
   trimmed="$(printf "%s\n" "$out" | awk '/Error opening input/ { exit } { print }' || true)"
+
+  if [[ "$json_output" == "1" ]]; then
+    DEVICES_LISTING_RAW="$trimmed" DEVICES_FULL_RAW="$out" python3 - <<'PYEOF'
+import json
+import os
+import re
+
+listing = os.environ.get("DEVICES_LISTING_RAW", "")
+full_raw = os.environ.get("DEVICES_FULL_RAW", "")
+devices = []
+in_audio = False
+
+for line in listing.splitlines():
+    if "AVFoundation audio devices:" in line:
+        in_audio = True
+        continue
+    if "AVFoundation video devices:" in line:
+        in_audio = False
+        continue
+    if not in_audio:
+        continue
+    match = re.search(r"\[(\d+)\]\s+(.*)$", line)
+    if not match:
+        continue
+    devices.append({
+        "index": int(match.group(1)),
+        "name": match.group(2),
+    })
+
+hint = None
+if not devices and "Input/output error" in full_raw:
+    hint = "On macOS, grant Microphone permission to your terminal app (System Settings -> Privacy & Security -> Microphone), then rerun: tmux-whisper devices"
+
+print(json.dumps({
+    "command": "devices",
+    "platform": "macos",
+    "count": len(devices),
+    "devices": devices,
+    "permission_hint": hint,
+}, indent=2, sort_keys=True))
+PYEOF
+    return 0
+  fi
+
   printf "%s\n" "$trimmed"
 
   # If no indices were printed, show a hint for the common macOS failure mode.
@@ -6313,13 +7562,14 @@ manage_sounds() {
 
 case "$cmd" in
   -h|--help|help) usage ;;
-  devices) devices ;;
+  devices) devices "${@:2}" ;;
   device) set_device "${@:2}" ;;
   debug) debug "${@:2}" ;;
   doctor) doctor "${@:2}" ;;
-  logs) logs ;;
+  logs) logs "${@:2}" ;;
+  watch) watch "${@:2}" ;;
   warmup) warmup_backend "${@:2}" ;;
-  bench) bench "${2:-}" ;;
+  bench) bench "${@:2}" ;;
   bench-matrix|bench_matrix) bench_matrix "${2:-}" "${3:-}" ;;
   changelog) changelog ;;
   config) manage_config "${2:-}" "${@:3}" ;;

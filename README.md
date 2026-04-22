@@ -194,6 +194,14 @@ tmux-whisper config repair
 - `tmux-whisper vocab dedupe` now creates a timestamped backup before rewriting your vocab file.
 - `tmux-whisper vocab rm "pattern"` now uses safer literal matching by default, with `--regex` available when you truly want regex behavior.
 - `tmux-whisper vocab export <file>` writes a normalized/deduped vocab snapshot you can share or version.
+- `tmux-whisper history list [N] --json` now exposes recent dictation summaries as a machine-readable array for shell scripts and future operator tooling.
+- `tmux-whisper history search <query> [N] [--json]` turns saved dictations into a searchable operator surface without leaving the CLI.
+- `tmux-whisper history export [N|all] [--json]` now exports full history entries for shell pipelines, sharing, and agent/operator replay flows.
+- `tmux-whisper logs path|tail|follow|--json` now gives log inspection both snapshot and live-follow workflows instead of one fixed text dump.
+- `tmux-whisper devices --json` now exposes AVFoundation audio devices as structured CLI output for support/debug flows.
+- `tmux-whisper config [--json]`, `config path [--json]`, and `config get <path> [--json]` now give config inspection a real read-only operator surface instead of only repair-oriented guidance.
+- `tmux-whisper bench [N] --json` now exposes timing summaries as structured data, and `tmux-whisper bench export [N|all] [--json]` exports the raw recent rows behind those summaries.
+- `tmux-whisper watch [--interval SECONDS] [--iterations N]` now turns `status` + `last` + `bench` into a text-first live operator overview without committing the project to a TUI.
 - `tmux-whisper bench-matrix [N] [phrase_file]` runs a quick matrix over postprocess/vocab toggles (and LLM models when API key is set) on fixed phrases.
   - Phrase file format: one phrase per line (blank lines and `#` comments ignored). Optional `label<TAB>phrase` is supported.
   - Set `DICTATE_BENCH_MATRIX_PROGRESS=0` for summary-only output (no per-combo progress lines).
@@ -278,6 +286,7 @@ Then test your local command:
 ```bash
 tmux-whisper debug
 tmux-whisper bench 10
+tmux-whisper bench --json
 tmux-whisper bench-matrix 1
 ```
 

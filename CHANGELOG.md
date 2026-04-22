@@ -3,14 +3,23 @@
 ## Current working version
 
 - **Stable release**: `v0.5.2` (tagged on 2026-04-19)
-- **Next target**: `v0.5.x` (UX + config maturity)
+- **Maintenance track**: `v0.5.x` (stress-test the latest hardening and keep the release path calm)
+- **Next expansion target**: `v0.6.x` (CLI-first operator platform)
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
 - **Completed**: inline/Raycast stop-grace retuned to `1000ms` plus inline stop breadcrumbs when `keep_logs` is enabled
 - **Completed**: inline/Raycast processing cue now plays immediately on stop, before the grace window finishes recording
 - **Completed**: inline `keep_logs` now archives per-run WAV + record/transcribe logs under `history/inline-debug` for clipped-run forensics
 - **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
 - **Completed**: operator CLI foundation for `status`, `debug`, `doctor`, `history`, and `last` with machine-readable JSON output
-- **Completed**: richer operator summaries for runtime state and recent history; dashboard/TUI remains a follow-up layer on top
+- **Completed**: richer operator summaries for runtime state and recent history; these now become the base layer for a CLI-first operator expansion rather than a near-term dashboard/TUI
+- **Completed**: `tmux-whisper history list [N] --json` now exposes recent dictation summaries as machine-readable arrays, seeding the next operator-grade CLI layer
+- **Completed**: `tmux-whisper history search <query> [N] [--json]` now turns saved dictation history into a usable lookup surface for operators and agents
+- **Completed**: `tmux-whisper history export [N|all] [--json]` now exports full recent/history entries for shell pipelines, handoff artifacts, and agent-readable replay/debug flows
+- **Completed**: `tmux-whisper bench [N] --json` and `bench export [N|all] [--json]` now give operator timing data both summary-level JSON and full-row export paths instead of one text-only view
+- **Completed**: `tmux-whisper logs` now has proper CLI subcommands for `path`, `tail`, `follow`, and `--json`, so log inspection no longer depends on scraping one fixed human-only dump
+- **Completed**: `tmux-whisper devices --json` now turns AVFoundation device enumeration into a machine-readable support/debug surface instead of a text-only listing
+- **Completed**: `tmux-whisper config [--json]`, `config path [--json]`, and `config get <path> [--json]` now make config inspection first-class for humans, shell tooling, and future agents
+- **Completed**: `tmux-whisper watch [--interval SECONDS] [--iterations N]` now composes `status`, latest history, and bench data into a live text-first operator view instead of forcing a dashboard/TUI jump
 - **Completed**: mode/config UX validation polish in `tmux-whisper doctor`, including flow-aware checks, surgical fix hints, and text/JSON parity
 - **Completed**: public command/help/docs now standardize on `tmux-whisper ...`; internal `dictate` config/temp paths remain intentionally unchanged for now
 - **Completed**: vocab safety follow-up now adds dry-run import paths plus backup/literal-match guardrails for vocab import and removal flows
@@ -23,11 +32,18 @@
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
   - Bootstrap/local install (testing): `bootstrap.sh` or `./install.sh --force`
 
-### Planned next (v0.5 queue)
+### Planned next (v0.5 maintenance queue)
 
 - clipped-run hardening follow-up: use the new archived inline artifacts to compare true tail cuts vs stop timing, then decide whether the next step is adaptive stop logic rather than another fixed grace bump
-- thin dashboard/TUI on top of the new operator data surface, after the CLI summary layer settles
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
+
+### Planned next (v0.6 CLI-first queue)
+
+- promote the operator CLI from a summary layer into the primary operator surface: consistent machine-readable read commands, export-friendly listings, and better shell composability
+- expand history/logs/bench/config inspection before any dashboard work, so the terminal surface becomes the real source of truth for operators and future integrations
+- add filtered bench inspection and text-first live watch flows now that history, logs, devices, config, bench, and log-following all have a stronger operator baseline
+- add text-first live workflows such as watch/tail-style commands that keep terminal users in the CLI instead of forcing a TUI just for observability
+- treat any future dashboard/TUI as an optional layer on top of stable CLI contracts, not as the next milestone itself
 
 ## 2026-04-19
 
@@ -484,7 +500,7 @@ Attempted to speed up transcription by implementing a persistent daemon that kee
 - [x] Add explicit `short` vs `long` postprocess profiles (mode-specific LLM/token/chunk defaults).
 - [x] Evolve budget handling to `budget auto` (dynamic transcript-length-aware sizing for `max_tokens` / `chunk_words`), with `short` / `long` budget profiles kept as internal guardrails/presets.
 - [x] Improve vocab workflow: bulk import/batch add and easier correction review from recent history.
-- [ ] Add a lightweight session dashboard/TUI (Bubble Tea candidate) to summarize usage (sessions, words processed, postprocess/tokens, time saved trends) from recent history/bench data.
+- [ ] Expand the operator CLI around history/logs/bench/config before any dashboard work: JSON parity, export/search/tail helpers, and live text-first watch surfaces.
 - [ ] Package/install polish: bootstrap/update scripts + docs for reproducible setup across machines.
 - [x] Add explicit “SwiftBar integration on/off” toggle (Dictate should remain fully usable without SwiftBar).
 - [ ] When `CHANGELOG.md` gets too long, archive older entries into a single `CHANGELOG.archive.md` (keep current/recent work in `CHANGELOG.md`).

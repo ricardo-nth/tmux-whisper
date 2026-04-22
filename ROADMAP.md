@@ -50,17 +50,21 @@ Success criteria:
 - Fewer setup/support issues caused by config mismatches.
 - Predictable behavior after upgrades.
 
-## v0.6.x - Terminal-First UX Layer
+## v0.6.x - CLI-First Operator Platform
 
-Focus: optional richer UX while staying CLI-first.
+Focus: turn the existing operator summary layer into a first-class terminal product before adding any dashboard/TUI.
 
-- Explore TUI path (e.g., Bubble Tea) for status/control flows.
+- Expand read-only/operator commands so shell users can inspect history, logs, bench data, devices, and config state without scraping human-only output.
+- Keep pushing from parity into workflow depth: export/search/follow/watch commands should build on the read-only contracts rather than bypass them.
+- Add export-friendly and watch/tail-style workflows that keep tmux/terminal users inside the CLI.
 - Keep tmux-first workflow as the primary operating model.
-- Ensure TUI complements, not replaces, scriptability.
+- Treat any future TUI as a later convenience layer built on stable CLI contracts, not as the next milestone.
 
 Success criteria:
 
-- Better discoverability without sacrificing speed for power users.
+- Common support and inspection tasks are answerable from the CLI alone.
+- Read-only operator surfaces have clear text plus machine-readable contracts.
+- Future integrations/TUI work can consume stable CLI data instead of re-implementing logic.
 
 ## v0.7.x - Integration Platform
 
