@@ -202,7 +202,7 @@ ENV OPTIONS:
   DICTATE_AUDIO_INDEX=N      # audio device index
   DICTATE_AUDIO_NAME="X"     # preferred device name substring (more stable than index)
   DICTATE_STOP_GRACE_MS=700 # shared stop grace (tmux; inline falls back here if unset)
-  DICTATE_INLINE_STOP_GRACE_MS=1000 # inline/Raycast stop grace before ffmpeg interrupt
+  DICTATE_INLINE_STOP_GRACE_MS=1250 # inline/Raycast stop grace before ffmpeg interrupt
   DICTATE_TRANSCRIBE_TAIL_PAD_MS=500 # append a little silence before ASR to preserve final words
   DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
   DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
@@ -822,7 +822,7 @@ resolve_stop_grace_ms() {
 }
 
 resolve_inline_stop_grace_ms() {
-  resolve_stop_grace_ms "${DICTATE_INLINE_STOP_GRACE_MS:-${DICTATE_STOP_GRACE_MS:-}}" "1000"
+  resolve_stop_grace_ms "${DICTATE_INLINE_STOP_GRACE_MS:-${DICTATE_STOP_GRACE_MS:-}}" "1250"
 }
 
 logs() {

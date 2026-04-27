@@ -34,7 +34,7 @@ if [[ "$output" != *"DICTATE_STOP_GRACE_MS=700"* ]]; then
   echo "Expected help output to document stop grace tuning" >&2
   exit 1
 fi
-if [[ "$output" != *"DICTATE_INLINE_STOP_GRACE_MS=1000"* ]]; then
+if [[ "$output" != *"DICTATE_INLINE_STOP_GRACE_MS=1250"* ]]; then
   echo "Expected help output to document inline stop grace tuning" >&2
   exit 1
 fi
