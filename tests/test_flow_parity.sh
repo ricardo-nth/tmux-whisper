@@ -689,6 +689,11 @@ run_inline_keep_logs_archive_round() {
   [[ -n "$transcribe_archive" && -f "$transcribe_archive" ]] || fail "inline_archive_transcribe_exists"
   pass "inline_archive_transcribe_exists"
   assert_file_contains "inline_archive_meta_status" "$meta_archive" "status=ok"
+  assert_file_contains "inline_archive_meta_stop_grace" "$meta_archive" "stop_grace_ms="
+  assert_file_contains "inline_archive_meta_capture_bytes" "$meta_archive" "capture_wav_bytes="
+  assert_file_contains "inline_archive_meta_archive_bytes" "$meta_archive" "archive_wav_bytes="
+  assert_file_contains "inline_archive_record_snapshot" "${meta_archive%.meta}.record.log" "inline_capture_snapshot:"
+  assert_file_contains "inline_archive_stop_after_grace_logged" "${meta_archive%.meta}.record.log" "after_grace"
 }
 
 run_inline_swift_round() {

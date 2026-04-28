@@ -759,6 +759,23 @@ keep_logs_enabled() {
   [[ "${DICTATE_KEEP_LOGS:-${CFG_DEBUG_KEEP_LOGS:-0}}" == "1" ]]
 }
 
+file_size_bytes() {
+  local path="${1:-}"
+  [[ -n "$path" && -f "$path" ]] || return 0
+  stat -f '%z' "$path" 2>/dev/null || stat -c '%s' "$path" 2>/dev/null || true
+}
+
+audio_duration_ms() {
+  local path="${1:-}"
+  [[ -n "$path" && -f "$path" ]] || return 0
+  command -v ffprobe >/dev/null 2>&1 || return 0
+
+  local duration
+  duration="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$path" 2>/dev/null || true)"
+  [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 0
+  awk -v duration="$duration" 'BEGIN { printf "%.0f\n", duration * 1000 }'
+}
+
 inline_debug_archive_dir() {
   printf "%s\n" "$HISTORY_DIR/inline-debug"
 }
@@ -792,6 +809,10 @@ archive_inline_debug_artifacts() {
   local session_id="${12:-}"
 
   if [[ -n "$prefix" ]]; then
+    local archive_wav_ms archive_wav_bytes
+    archive_wav_ms="$(audio_duration_ms "$wav" 2>/dev/null || true)"
+    archive_wav_bytes="$(file_size_bytes "$wav" 2>/dev/null || true)"
+
     [[ -f "$wav" ]] && cp -f "$wav" "${prefix}.wav" 2>/dev/null || true
     [[ -f "$record_log" ]] && cp -f "$record_log" "${prefix}.record.log" 2>/dev/null || true
     [[ -f "$transcribe_log" ]] && cp -f "$transcribe_log" "${prefix}.transcribe.log" 2>/dev/null || true
@@ -799,6 +820,13 @@ archive_inline_debug_artifacts() {
       printf 'session_id=%q\n' "$session_id"
       printf 'status=%q\n' "$status"
       printf 'record_ms=%q\n' "$record_ms"
+      printf 'stop_grace_ms=%q\n' "${INLINE_STOP_GRACE_MS:-}"
+      printf 'capture_wav_ms=%q\n' "${INLINE_CAPTURE_WAV_MS:-}"
+      printf 'capture_wav_bytes=%q\n' "${INLINE_CAPTURE_WAV_BYTES:-}"
+      printf 'capture_gap_to_record_ms=%q\n' "${INLINE_CAPTURE_GAP_TO_RECORD_MS:-}"
+      printf 'capture_gap_to_record_plus_grace_ms=%q\n' "${INLINE_CAPTURE_GAP_TO_RECORD_PLUS_GRACE_MS:-}"
+      printf 'archive_wav_ms=%q\n' "$archive_wav_ms"
+      printf 'archive_wav_bytes=%q\n' "$archive_wav_bytes"
       printf 'transcribe_ms=%q\n' "$transcribe_ms"
       printf 'clean_ms=%q\n' "$clean_ms"
       printf 'postprocess_ms=%q\n' "$postprocess_ms"
@@ -5180,7 +5208,7 @@ start() {
 
   while :; do
     ffmpeg \
-      -hide_banner -loglevel error \
+      -hide_banner -nostdin -loglevel error \
       -f avfoundation -i ":${audio_index}" \
       -ac 1 -ar 16000 -c:a pcm_s16le \
       "$wav" >>"$RECORD_LOG" 2>&1 &
@@ -5455,35 +5483,75 @@ terminate_recording_pid() {
   local stop_grace_ms
   local int_wait_attempts="60"
   local term_wait_attempts="40"
+  local stop_begin_ms alive_before_grace alive_after_grace signal_sent_ms exit_ms
   [[ -n "$target_pid" && "$target_pid" =~ ^[0-9]+$ ]] || return 0
   stop_grace_ms="$(resolve_stop_grace_ms "$requested_stop_grace_ms" "700")"
+  stop_begin_ms="$(now_ms)"
+  alive_before_grace="0"
+  kill -0 "$target_pid" 2>/dev/null && alive_before_grace="1"
 
   if keep_logs_enabled; then
-    printf "[%s] stop_recording: pid=%s grace_ms=%s int_wait_ms=%s term_wait_ms=%s\n" \
+    printf "[%s] stop_recording: pid=%s grace_ms=%s int_wait_ms=%s term_wait_ms=%s stop_begin_ms=%s alive_before_grace=%s\n" \
       "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$stop_grace_ms" \
-      "$(( int_wait_attempts * 50 ))" "$(( term_wait_attempts * 50 ))" \
+      "$(( int_wait_attempts * 50 ))" "$(( term_wait_attempts * 50 ))" "$stop_begin_ms" "$alive_before_grace" \
       >>"$record_log_path" 2>/dev/null || true
   fi
 
-  # A small grace window makes hotkey stop feel less "hard cut" when the user
+  # This grace window makes hotkey stop feel less "hard cut" when the user
   # finishes the last word right as they trigger stop.
   sleep_ms "$stop_grace_ms"
+
+  alive_after_grace="0"
+  kill -0 "$target_pid" 2>/dev/null && alive_after_grace="1"
+  if keep_logs_enabled; then
+    printf "[%s] stop_recording: after_grace pid=%s alive_after_grace=%s elapsed_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$alive_after_grace" "$(( $(now_ms) - stop_begin_ms ))" \
+      >>"$record_log_path" 2>/dev/null || true
+  fi
+  if [[ "$alive_after_grace" != "1" ]]; then
+    return 0
+  fi
+
   kill -INT "$target_pid" 2>/dev/null || true
+  signal_sent_ms="$(now_ms)"
   for ((attempt=1; attempt<=int_wait_attempts; attempt++)); do
     if ! kill -0 "$target_pid" 2>/dev/null; then
+      if keep_logs_enabled; then
+        exit_ms="$(now_ms)"
+        printf "[%s] stop_recording: exit_after_int pid=%s wait_ms=%s total_ms=%s\n" \
+          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( exit_ms - signal_sent_ms ))" "$(( exit_ms - stop_begin_ms ))" \
+          >>"$record_log_path" 2>/dev/null || true
+      fi
       return 0
     fi
     sleep 0.05
   done
 
   kill -TERM "$target_pid" 2>/dev/null || true
+  signal_sent_ms="$(now_ms)"
+  if keep_logs_enabled; then
+    printf "[%s] stop_recording: term_after_int_timeout pid=%s elapsed_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( signal_sent_ms - stop_begin_ms ))" \
+      >>"$record_log_path" 2>/dev/null || true
+  fi
   for ((attempt=1; attempt<=term_wait_attempts; attempt++)); do
     if ! kill -0 "$target_pid" 2>/dev/null; then
+      if keep_logs_enabled; then
+        exit_ms="$(now_ms)"
+        printf "[%s] stop_recording: exit_after_term pid=%s wait_ms=%s total_ms=%s\n" \
+          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( exit_ms - signal_sent_ms ))" "$(( exit_ms - stop_begin_ms ))" \
+          >>"$record_log_path" 2>/dev/null || true
+      fi
       return 0
     fi
     sleep 0.05
   done
 
+  if keep_logs_enabled; then
+    printf "[%s] stop_recording: kill_after_term_timeout pid=%s elapsed_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( $(now_ms) - stop_begin_ms ))" \
+      >>"$record_log_path" 2>/dev/null || true
+  fi
   kill -KILL "$target_pid" 2>/dev/null || true
 }
 
@@ -5570,6 +5638,7 @@ process_inline_recording() {
   local startup_target_ms="${8:-0}"
   local startup_audio_source="${9:-}"
   local inline_session_id="${10:-}"
+  local stop_grace_ms="${11:-}"
 
   need ffmpeg
 
@@ -5592,6 +5661,34 @@ process_inline_recording() {
   transcribe_log="$TMPDIR/whisper-dictate-inline.transcribe.log"
   local archive_prefix=""
   archive_prefix="$(inline_archive_prefix "$inline_session_id" 2>/dev/null || true)"
+  local capture_wav_ms capture_wav_bytes capture_gap_to_record_ms capture_gap_to_record_plus_grace_ms
+  capture_wav_ms=""
+  capture_wav_bytes=""
+  capture_gap_to_record_ms=""
+  capture_gap_to_record_plus_grace_ms=""
+  if [[ -s "$wav" ]]; then
+    capture_wav_ms="$(audio_duration_ms "$wav" 2>/dev/null || true)"
+    capture_wav_bytes="$(file_size_bytes "$wav" 2>/dev/null || true)"
+    if [[ "$capture_wav_ms" =~ ^[0-9]+$ && "$record_ms" =~ ^[0-9]+$ ]]; then
+      capture_gap_to_record_ms=$(( capture_wav_ms - record_ms ))
+      if [[ "$stop_grace_ms" =~ ^[0-9]+$ ]]; then
+        capture_gap_to_record_plus_grace_ms=$(( capture_wav_ms - record_ms - stop_grace_ms ))
+      fi
+    fi
+  fi
+  INLINE_STOP_GRACE_MS="$stop_grace_ms"
+  INLINE_CAPTURE_WAV_MS="$capture_wav_ms"
+  INLINE_CAPTURE_WAV_BYTES="$capture_wav_bytes"
+  INLINE_CAPTURE_GAP_TO_RECORD_MS="$capture_gap_to_record_ms"
+  INLINE_CAPTURE_GAP_TO_RECORD_PLUS_GRACE_MS="$capture_gap_to_record_plus_grace_ms"
+
+  if keep_logs_enabled; then
+    printf "[%s] inline_capture_snapshot: record_ms=%s stop_grace_ms=%s capture_wav_ms=%s capture_wav_bytes=%s gap_to_record_ms=%s gap_to_record_plus_grace_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$record_ms" "$stop_grace_ms" "${capture_wav_ms:-unknown}" "${capture_wav_bytes:-unknown}" \
+      "${capture_gap_to_record_ms:-unknown}" "${capture_gap_to_record_plus_grace_ms:-unknown}" \
+      >>"$record_log" 2>/dev/null || true
+  fi
+
   local now_ms_value
   now_ms_value="$(now_ms)"
   flow_started_ms=$(( now_ms_value - record_ms ))
@@ -5932,7 +6029,7 @@ inline_start() {
   fi
 
   while :; do
-    ffmpeg -hide_banner -loglevel error \
+    ffmpeg -hide_banner -nostdin -loglevel error \
       -f avfoundation -i ":${audio_selector}" \
       -ac 1 -ar 16000 -c:a pcm_s16le \
       "$wav" >>"$record_log" 2>&1 &
@@ -5952,6 +6049,11 @@ inline_start() {
     startup_ffmpeg_live_ms=$(( $(now_ms) - ffmpeg_started_ms ))
 
     if [[ "$live_ok" == "1" ]]; then
+      if keep_logs_enabled; then
+        printf "[%s] inline_start: pid=%s record_started_ms=%s startup_ffmpeg_live_ms=%s selector=%s audio_source=%s wav=%q\n" \
+          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$pid" "$record_started_ms" "$startup_ffmpeg_live_ms" \
+          "$audio_selector_kind" "$startup_audio_source" "$wav" >>"$record_log" 2>/dev/null || true
+      fi
       break
     fi
 
@@ -6021,6 +6123,13 @@ inline_stop() {
   local inline_record_log inline_process_sound
   inline_record_log="$TMPDIR/whisper-dictate-inline.record.log"
   inline_process_sound="${DICTATE_INLINE_PROCESS_SOUND:-${CFG_INLINE_PROCESS_SOUND:-1}}"
+  local inline_stop_grace_ms
+  inline_stop_grace_ms="$(resolve_inline_stop_grace_ms)"
+  if keep_logs_enabled; then
+    printf "[%s] inline_stop_request: pid=%s record_ms=%s stop_grace_ms=%s wav=%q\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$pid" "$record_ms" "$inline_stop_grace_ms" "$wav" \
+      >>"$inline_record_log" 2>/dev/null || true
+  fi
   if [[ "$inline_process_sound" == "1" ]]; then
     if keep_logs_enabled; then
       printf "[%s] inline_process_sound: immediate_on_stop\n" \
@@ -6029,13 +6138,13 @@ inline_stop() {
     play_sound process
   fi
 
-  terminate_recording_pid "$pid" "$(resolve_inline_stop_grace_ms)" "$inline_record_log"
+  terminate_recording_pid "$pid" "$inline_stop_grace_ms" "$inline_record_log"
 
   (
     trap '' HUP
     set -euo pipefail
     process_inline_recording "$wav" "${target_app:-}" "$model_id" "$record_ms" \
-      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}"
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}" "$inline_stop_grace_ms"
   ) >"$TMPDIR/whisper-dictate-inline.transcribe.log" 2>&1 &
 
   echo "⏹️ STOPPED → transcribing → inline"
@@ -6117,7 +6226,7 @@ inline() {
   inline_stop_grace_ms="$(resolve_inline_stop_grace_ms)"
   : >"$record_log" 2>/dev/null || true
   log_audio_cache_note_if_any "${audio_cache_note:-}" "$record_log"
-  ffmpeg -hide_banner -loglevel error \
+  ffmpeg -hide_banner -nostdin -loglevel error \
     -f avfoundation -i ":${audio_index}" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
     "$wav" >>"$record_log" 2>&1 &
@@ -6131,7 +6240,7 @@ inline() {
   (( record_ms < 0 )) && record_ms=0
 
   process_inline_recording "$wav" "$target_app" "$model_id" "$record_ms" \
-    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "$inline_session_id"
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "$inline_session_id" "$inline_stop_grace_ms"
 }
 
 toggle() {

@@ -6,7 +6,8 @@
 - **Maintenance track**: `v0.5.x` (stress-test the latest hardening and keep the release path calm)
 - **Next expansion target**: `v0.6.x` (CLI-first operator platform)
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
-- **Completed**: inline/Raycast stop-grace retuned to `1250ms` after real-world clipped-run review, plus inline stop breadcrumbs when `keep_logs` is enabled
+- **Completed**: inline/Raycast stop-grace retuned to `1250ms` as a diagnostic clipping probe, plus inline stop breadcrumbs when `keep_logs` is enabled
+- **Completed**: FFmpeg capture/shutdown diagnostics now archive WAV duration, byte counts, grace timing, and SIGINT/TERM exit timing for clipped-run forensics
 - **Completed**: inline/Raycast processing cue now plays immediately on stop, before the grace window finishes recording
 - **Completed**: inline `keep_logs` now archives per-run WAV + record/transcribe logs under `history/inline-debug` for clipped-run forensics
 - **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
@@ -50,7 +51,8 @@
 ## 2026-04-19
 
 - **Inline/Raycast clipping hardening**:
-  - Retuned the inline stop grace window to `1250ms` after testing `2000ms` as a clean-but-slower ceiling for April 27 clipped-run artifacts.
+  - Retuned the inline stop grace window back to `1250ms` as a diagnostic probe now that FFmpeg capture/shutdown breadcrumbs are archived for clipped-run analysis.
+  - Added FFmpeg capture/shutdown breadcrumbs so clipped inline runs can distinguish early capture gaps, already-dead FFmpeg processes, slow SIGINT exits, and post-transcription WAV mutation.
   - Retuned the inline stop grace window to `1000ms` so Raycast stop feels snappier while still buffering trailing words better than the original baseline.
   - Moved the inline processing cue to fire immediately on stop, so the sound matches the hotkey action instead of waiting for the grace window to finish.
   - Added per-run inline `keep_logs` archiving under `history/inline-debug` so rare clipped runs preserve the WAV, stop log, transcribe log, and timing metadata for inspection.
