@@ -205,6 +205,8 @@ ENV OPTIONS:
   DICTATE_INLINE_STOP_GRACE_MS=1250 # inline/Raycast stop grace before ffmpeg interrupt
   DICTATE_TRANSCRIBE_TAIL_PAD_MS=500 # append a little silence before ASR to preserve final words
   DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
+  DICTATE_HISTORY_RETENTION_DAYS=7 # keep transcript JSON history for stats/search
+  DICTATE_HISTORY_AUDIO_RETENTION_DAYS=2 # keep archived inline debug WAVs; metadata/logs remain
   DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
   DICTATE_BENCH_MATRIX_MODE=code # force mode used by bench-matrix cleanup/postprocess
   DICTATE_BENCH_MATRIX_MODELS=fast,smart,qwen,gpt # LLM list for postprocess-on matrix runs
@@ -218,7 +220,8 @@ CONFIG FILES (kept under ~/.config/dictate/ for now):
   modes/<mode>/apps          # apps that trigger this mode (one per line)
   modes/<mode>/prompt        # mode-specific LLM prompt
   modes/<mode>/vocab         # mode-specific corrections
-  history/                   # saved transcripts (auto-cleaned after 7 days)
+  history/                   # saved transcripts + stats metadata (JSON auto-cleaned after history.retention_days)
+  history/inline-debug/      # keep_logs artifacts; WAVs auto-pruned after history.audio_retention_days
   sounds/                    # sample sounds still install under ~/.local/share/sounds/dictate in this phase
 EOF
 }
@@ -479,6 +482,10 @@ silence_keep_ms = 50
 [clean]
 repeats_level = 1
 
+[history]
+retention_days = 7
+audio_retention_days = 2
+
 [swift_parakeet]
 model_path = ""
 model_version = ""
@@ -613,6 +620,8 @@ out = {
   "CFG_AUDIO_SOUNDS_PROCESS_ENABLED": "1" if b(get("audio.sounds.process_enabled", True), True) else "0",
   "CFG_AUDIO_SOUNDS_ERROR_ENABLED": "1" if b(get("audio.sounds.error_enabled", True), True) else "0",
   "CFG_AUDIO_SOUNDS_CANCEL_ENABLED": "1" if b(get("audio.sounds.cancel_enabled", True), True) else "0",
+  "CFG_HISTORY_RETENTION_DAYS": str(get("history.retention_days", "7")),
+  "CFG_HISTORY_AUDIO_RETENTION_DAYS": str(get("history.audio_retention_days", "2")),
   "CFG_SWIFT_PARAKEET_MODEL_PATH": str(get("swift_parakeet.model_path", "")),
   "CFG_SWIFT_PARAKEET_MODEL_VERSION": str(get("swift_parakeet.model_version", "")),
   "CFG_SWIFT_PARAKEET_SOCKET_PATH": str(get("swift_parakeet.socket_path", "~/.config/dictate/.cache/tmux-whisperd.sock")),
@@ -812,6 +821,11 @@ archive_inline_debug_artifacts() {
     local archive_wav_ms archive_wav_bytes
     archive_wav_ms="$(audio_duration_ms "$wav" 2>/dev/null || true)"
     archive_wav_bytes="$(file_size_bytes "$wav" 2>/dev/null || true)"
+    INLINE_ARCHIVE_WAV_MS="$archive_wav_ms"
+    INLINE_ARCHIVE_WAV_BYTES="$archive_wav_bytes"
+    INLINE_DEBUG_ARCHIVE_PREFIX="$prefix"
+    INLINE_DEBUG_WAV_RETENTION_DAYS="$(history_audio_retention_days)"
+    INLINE_DEBUG_AUDIO_RETENTION_NOTE="WAV retained for ${INLINE_DEBUG_WAV_RETENTION_DAYS} day(s); JSON history and .meta/.log artifacts remain for stats/roundups."
 
     [[ -f "$wav" ]] && cp -f "$wav" "${prefix}.wav" 2>/dev/null || true
     [[ -f "$record_log" ]] && cp -f "$record_log" "${prefix}.record.log" 2>/dev/null || true
@@ -827,6 +841,8 @@ archive_inline_debug_artifacts() {
       printf 'capture_gap_to_record_plus_grace_ms=%q\n' "${INLINE_CAPTURE_GAP_TO_RECORD_PLUS_GRACE_MS:-}"
       printf 'archive_wav_ms=%q\n' "$archive_wav_ms"
       printf 'archive_wav_bytes=%q\n' "$archive_wav_bytes"
+      printf 'wav_retention_days=%q\n' "$INLINE_DEBUG_WAV_RETENTION_DAYS"
+      printf 'retention_note=%q\n' "$INLINE_DEBUG_AUDIO_RETENTION_NOTE"
       printf 'transcribe_ms=%q\n' "$transcribe_ms"
       printf 'clean_ms=%q\n' "$clean_ms"
       printf 'postprocess_ms=%q\n' "$postprocess_ms"
@@ -834,6 +850,7 @@ archive_inline_debug_artifacts() {
       printf 'total_ms=%q\n' "$total_ms"
       printf 'archived_at=%q\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } >"${prefix}.meta" 2>/dev/null || true
+    cleanup_inline_debug_audio "$INLINE_DEBUG_WAV_RETENTION_DAYS"
   fi
 
   rm -f "$wav" 2>/dev/null || true
@@ -1290,6 +1307,7 @@ preferred_table_order = [
   "audio",
   "audio.sounds",
   "clean",
+  "history",
   "whisper",
   "swift_parakeet",
   "postprocess",
@@ -1308,6 +1326,7 @@ preferred_key_order = {
   "audio": ["source", "device_name", "mac_name", "iphone_name", "device_index", "silence_trim", "silence_trim_mode", "silence_threshold_db", "silence_min_ms", "silence_keep_ms"],
   "audio.sounds": ["cancel", "cancel_enabled", "enabled", "error", "error_enabled", "process", "process_enabled", "start", "start_enabled", "stop", "stop_enabled"],
   "clean": ["repeats_level"],
+  "history": ["retention_days", "audio_retention_days"],
   "whisper": ["models_dir", "backend", "model", "threads", "beam_size", "best_of", "vad", "vad_model", "vad_threshold", "vad_min_speech_ms", "vad_min_silence_ms", "vad_speech_pad_ms"],
   "swift_parakeet": ["model_path", "model_version", "socket_path"],
   "postprocess": ["enabled", "llm", "max_tokens", "chunk_words", "budget_long_words_threshold"],
@@ -1506,6 +1525,8 @@ rows = [
     ("swift_parakeet_socket_path", get_effective("swift_parakeet.socket_path")),
     ("postprocess_enabled", get_effective("postprocess.enabled")),
     ("postprocess_llm", get_effective("postprocess.llm")),
+    ("history_retention_days", get_effective("history.retention_days")),
+    ("history_audio_retention_days", get_effective("history.audio_retention_days")),
     ("inline_autosend", get_effective("inline.autosend")),
     ("inline_process_sound", get_effective("inline.process_sound")),
     ("tmux_mode", get_effective("tmux.mode")),
@@ -1520,7 +1541,7 @@ PYEOF
 config_show_text() {
   local rows_input path exists label status parse_error
   local audio_source audio_device_name audio_mac_name audio_iphone_name audio_device_index
-  local model_path socket_path postprocess_enabled postprocess_llm inline_autosend inline_process_sound tmux_mode debug_keep_logs
+  local model_path socket_path postprocess_enabled postprocess_llm history_retention_days history_audio_retention_days inline_autosend inline_process_sound tmux_mode debug_keep_logs
   rows_input="$(config_snapshot_rows)"
 
   while IFS=$'\t' read -r key value; do
@@ -1539,6 +1560,8 @@ config_show_text() {
       swift_parakeet_socket_path) socket_path="$value" ;;
       postprocess_enabled) postprocess_enabled="$value" ;;
       postprocess_llm) postprocess_llm="$value" ;;
+      history_retention_days) history_retention_days="$value" ;;
+      history_audio_retention_days) history_audio_retention_days="$value" ;;
       inline_autosend) inline_autosend="$value" ;;
       inline_process_sound) inline_process_sound="$value" ;;
       tmux_mode) tmux_mode="$value" ;;
@@ -1577,6 +1600,8 @@ config_show_text() {
   echo "  swift_parakeet.socket_path: $(config_show_text_value "$socket_path")"
   echo "  postprocess.enabled: $(config_show_text_bool "$postprocess_enabled")"
   echo "  postprocess.llm: $(config_show_text_value "$postprocess_llm")"
+  echo "  history.retention_days: $(config_show_text_value "$history_retention_days")"
+  echo "  history.audio_retention_days: $(config_show_text_value "$history_audio_retention_days")"
   echo "  inline.autosend: $(config_show_text_bool "$inline_autosend")"
   echo "  inline.process_sound: $(config_show_text_bool "$inline_process_sound")"
   echo "  tmux.mode: $(config_show_text_value "$tmux_mode")"
@@ -1638,6 +1663,10 @@ print(json.dumps({
         "postprocess": {
             "enabled": bool_value("postprocess_enabled"),
             "llm": nullable("postprocess_llm"),
+        },
+        "history": {
+            "retention_days": int(rows["history_retention_days"]) if rows.get("history_retention_days", "") else None,
+            "audio_retention_days": int(rows["history_audio_retention_days"]) if rows.get("history_audio_retention_days", "") else None,
         },
         "inline": {
             "autosend": bool_value("inline_autosend"),
@@ -1902,6 +1931,7 @@ preferred_table_order = [
   "audio",
   "audio.sounds",
   "clean",
+  "history",
   "whisper",
   "swift_parakeet",
   "postprocess",
@@ -1920,6 +1950,7 @@ preferred_key_order = {
   "audio": ["source", "device_name", "mac_name", "iphone_name", "device_index", "silence_trim", "silence_trim_mode", "silence_threshold_db", "silence_min_ms", "silence_keep_ms"],
   "audio.sounds": ["cancel", "cancel_enabled", "enabled", "error", "error_enabled", "process", "process_enabled", "start", "start_enabled", "stop", "stop_enabled"],
   "clean": ["repeats_level"],
+  "history": ["retention_days", "audio_retention_days"],
   "whisper": ["models_dir", "backend", "model", "threads", "beam_size", "best_of", "vad", "vad_model", "vad_threshold", "vad_min_speech_ms", "vad_min_silence_ms", "vad_speech_pad_ms"],
   "swift_parakeet": ["model_path", "model_version", "socket_path"],
   "postprocess": ["enabled", "llm", "max_tokens", "chunk_words", "budget_long_words_threshold"],

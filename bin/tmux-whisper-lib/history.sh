@@ -20,7 +20,8 @@ save_history() {
   mkdir -p "$HISTORY_DIR"
 
   # Get retention days from config (default 7)
-  local retention="${CFG_HISTORY_RETENTION_DAYS:-7}"
+  local retention="${DICTATE_HISTORY_RETENTION_DAYS:-${CFG_HISTORY_RETENTION_DAYS:-7}}"
+  [[ "$retention" =~ ^[0-9]+$ ]] || retention=7
 
   # Clean old entries first
   cleanup_history "$retention"
@@ -54,6 +55,36 @@ save_history() {
   append_metric_line "paste_ms" "$paste_ms"
   append_metric_line "total_ms" "$total_ms"
 
+  local audio_lines=""
+  append_audio_line() {
+    local key="$1"
+    local val="$2"
+    local kind="${3:-number}"
+    [[ -n "$val" ]] || return 0
+    if [[ "$kind" == "number" ]]; then
+      [[ "$val" =~ ^[0-9]+$ ]] || return 0
+    fi
+    if [[ -n "$audio_lines" ]]; then
+      audio_lines="${audio_lines},"$'\n'
+    fi
+    if [[ "$kind" == "string" ]]; then
+      local escaped
+      escaped="$(printf '%s' "$val" | jq -Rs .)"
+      audio_lines="${audio_lines}    \"${key}\": ${escaped}"
+    else
+      audio_lines="${audio_lines}    \"${key}\": ${val}"
+    fi
+  }
+  append_audio_line "capture_wav_ms" "${INLINE_CAPTURE_WAV_MS:-}"
+  append_audio_line "capture_wav_bytes" "${INLINE_CAPTURE_WAV_BYTES:-}"
+  append_audio_line "capture_gap_to_record_ms" "${INLINE_CAPTURE_GAP_TO_RECORD_MS:-}"
+  append_audio_line "capture_gap_to_record_plus_grace_ms" "${INLINE_CAPTURE_GAP_TO_RECORD_PLUS_GRACE_MS:-}"
+  append_audio_line "archive_wav_ms" "${INLINE_ARCHIVE_WAV_MS:-}"
+  append_audio_line "archive_wav_bytes" "${INLINE_ARCHIVE_WAV_BYTES:-}"
+  append_audio_line "wav_retention_days" "${INLINE_DEBUG_WAV_RETENTION_DAYS:-}"
+  append_audio_line "debug_archive_prefix" "${INLINE_DEBUG_ARCHIVE_PREFIX:-}" "string"
+  append_audio_line "retention_note" "${INLINE_DEBUG_AUDIO_RETENTION_NOTE:-}" "string"
+
   local budget_obs_lines=""
   if [[ "${DICTATE_LAST_POSTPROCESS_BUDGET_OBS_ACTIVE:-0}" == "1" ]]; then
     local _profile _llm
@@ -75,6 +106,9 @@ save_history() {
   local extra_fields=""
   if [[ -n "$metrics_lines" ]]; then
     extra_fields="${extra_fields},"$'\n'"  \"metrics\": {"$'\n'"${metrics_lines}"$'\n'"  }"
+  fi
+  if [[ -n "$audio_lines" ]]; then
+    extra_fields="${extra_fields},"$'\n'"  \"audio\": {"$'\n'"${audio_lines}"$'\n'"  }"
   fi
   if [[ -n "$budget_obs_lines" ]]; then
     extra_fields="${extra_fields},"$'\n'"  \"postprocess_budget\": {"$'\n'"${budget_obs_lines}"$'\n'"  }"
@@ -98,6 +132,26 @@ cleanup_history() {
 
   # Find and delete files older than N days
   find "$HISTORY_DIR" -name "*.json" -type f -mtime +"$days" -delete 2>/dev/null || true
+}
+
+history_audio_retention_days() {
+  local days="${DICTATE_HISTORY_AUDIO_RETENTION_DAYS:-${CFG_HISTORY_AUDIO_RETENTION_DAYS:-2}}"
+  [[ "$days" =~ ^[0-9]+$ ]] || days=2
+  printf "%s\n" "$days"
+}
+
+cleanup_inline_debug_audio() {
+  local days="${1:-$(history_audio_retention_days)}"
+  local dir
+  dir="$(inline_debug_archive_dir 2>/dev/null || true)"
+  [[ -n "$dir" && -d "$dir" ]] || return 0
+  [[ "$days" =~ ^[0-9]+$ ]] || days=2
+
+  if [[ "$days" == "0" ]]; then
+    find "$dir" -name "*.wav" -type f -delete 2>/dev/null || true
+  else
+    find "$dir" -name "*.wav" -type f -mtime +"$days" -delete 2>/dev/null || true
+  fi
 }
 
 history_entry_file_by_index() {
@@ -275,6 +329,9 @@ for path in files:
     budget = data.get("postprocess_budget")
     if not isinstance(budget, dict):
         budget = {}
+    audio = data.get("audio")
+    if not isinstance(audio, dict):
+        audio = {}
 
     entries.append(
         {
@@ -288,6 +345,7 @@ for path in files:
             "raw_words": word_count(raw),
             "processed_words": word_count(processed),
             "metrics": metrics,
+            "audio": audio,
             "postprocess_budget": budget,
         }
     )
@@ -430,6 +488,9 @@ for overall_index, path in enumerate(files, start=1):
     budget = data.get("postprocess_budget")
     if not isinstance(budget, dict):
         budget = {}
+    audio = data.get("audio")
+    if not isinstance(audio, dict):
+        audio = {}
 
     entries.append(
         {
@@ -444,6 +505,7 @@ for overall_index, path in enumerate(files, start=1):
             "processed_words": word_count(processed),
             "match_fields": match_fields,
             "metrics": metrics,
+            "audio": audio,
             "postprocess_budget": budget,
         }
     )
@@ -460,7 +522,7 @@ history_render_entry_text() {
   [[ -n "$file" && -f "$file" ]] || die "history entry $n not found"
 
   local timestamp mode app raw processed
-  local metrics_lines budget_lines
+  local metrics_lines audio_lines budget_lines
   timestamp="$(jq -r '.timestamp // ""' "$file" 2>/dev/null)"
   mode="$(jq -r '.mode // "?"' "$file")"
   app="$(jq -r '.app // "?"' "$file")"
@@ -471,6 +533,12 @@ history_render_entry_text() {
     | ["record_ms","transcribe_ms","clean_ms","postprocess_ms","paste_ms","total_ms"][]
     | select($m[.] != null)
     | "\(.) : \($m[.])"
+  ' "$file" 2>/dev/null || true)"
+  audio_lines="$(jq -r '
+    (.audio // {}) as $a
+    | ["capture_wav_ms","capture_wav_bytes","capture_gap_to_record_ms","capture_gap_to_record_plus_grace_ms","archive_wav_ms","archive_wav_bytes","wav_retention_days","debug_archive_prefix","retention_note"][]
+    | select($a[.] != null)
+    | "\(.) : \($a[.])"
   ' "$file" 2>/dev/null || true)"
   budget_lines="$(jq -r '
     (.postprocess_budget // {}) as $b
@@ -491,6 +559,14 @@ history_render_entry_text() {
       [[ -n "$line" ]] || continue
       echo "$line"
     done <<< "$metrics_lines"
+  fi
+  if [[ -n "${audio_lines//[[:space:]]/}" ]]; then
+    echo ""
+    echo "--- Audio Artifacts ---"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      echo "$line"
+    done <<< "$audio_lines"
   fi
   if [[ -n "${budget_lines//[[:space:]]/}" ]]; then
     echo ""
@@ -565,6 +641,9 @@ for path in files:
     budget = data.get("postprocess_budget")
     if not isinstance(budget, dict):
         budget = {}
+    audio = data.get("audio")
+    if not isinstance(audio, dict):
+        audio = {}
 
     entries.append(
         {
@@ -579,6 +658,7 @@ for path in files:
             "raw_words": word_count(raw),
             "processed_words": word_count(processed),
             "metrics": metrics,
+            "audio": audio,
             "postprocess_budget": budget,
         }
     )

@@ -62,6 +62,14 @@ if [[ "$output" != *"tmux-whisper history export [N|all] [--json]"* ]]; then
   echo "Expected help output to document history export" >&2
   exit 1
 fi
+if [[ "$output" != *"DICTATE_HISTORY_RETENTION_DAYS=7"* ]]; then
+  echo "Expected help output to document history JSON retention" >&2
+  exit 1
+fi
+if [[ "$output" != *"DICTATE_HISTORY_AUDIO_RETENTION_DAYS=2"* ]]; then
+  echo "Expected help output to document history audio retention" >&2
+  exit 1
+fi
 if [[ "$output" != *"tmux-whisper devices [--json]"* ]]; then
   echo "Expected help output to document devices JSON output" >&2
   exit 1

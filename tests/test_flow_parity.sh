@@ -395,6 +395,7 @@ setup_case() {
   export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
   export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/${socket_tag}.sock"
   export DICTATE_KEEP_LOGS=1
+  unset DICTATE_HISTORY_AUDIO_RETENTION_DAYS
   export DICTATE_AUDIO_INDEX=0
   export DICTATE_TMUX_AUTOSEND=1
   export DICTATE_TMUX_SEND_DELAY_MS=0
@@ -692,8 +693,46 @@ run_inline_keep_logs_archive_round() {
   assert_file_contains "inline_archive_meta_stop_grace" "$meta_archive" "stop_grace_ms="
   assert_file_contains "inline_archive_meta_capture_bytes" "$meta_archive" "capture_wav_bytes="
   assert_file_contains "inline_archive_meta_archive_bytes" "$meta_archive" "archive_wav_bytes="
+  assert_file_contains "inline_archive_meta_retention_days" "$meta_archive" "wav_retention_days=2"
+  assert_file_contains "inline_archive_meta_retention_note" "$meta_archive" "retention_note="
   assert_file_contains "inline_archive_record_snapshot" "${meta_archive%.meta}.record.log" "inline_capture_snapshot:"
   assert_file_contains "inline_archive_stop_after_grace_logged" "${meta_archive%.meta}.record.log" "after_grace"
+}
+
+run_inline_audio_retention_round() {
+  setup_case "inline-audio-retention"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline retention transcript"
+  export DICTATE_AUTOSEND=1
+  export DICTATE_HISTORY_AUDIO_RETENTION_DAYS=0
+
+  local start_out stop_out archive_dir wav_archive meta_archive history_file
+  archive_dir="$CASE_DIR/config/history/inline-debug"
+
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_audio_retention_start" "$start_out" "RECORDING"
+
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_audio_retention_stop" "$stop_out" "STOPPED"
+
+  wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "inline retention transcript" || fail "inline_audio_retention_complete"
+  wait_for_matching_file "$archive_dir" '*.meta' || fail "inline_audio_retention_meta_ready"
+  wait_for_matching_file "$CASE_DIR/config/history" '*.json' || fail "inline_audio_retention_history_ready"
+
+  wav_archive="$(find "$archive_dir" -name '*.wav' -type f | head -n 1)"
+  [[ -z "$wav_archive" ]] || fail "inline_audio_retention_wav_pruned"
+  pass "inline_audio_retention_wav_pruned"
+
+  meta_archive="$(find "$archive_dir" -name '*.meta' -type f | head -n 1)"
+  assert_file_contains "inline_audio_retention_meta_kept" "$meta_archive" "wav_retention_days=0"
+  assert_file_contains "inline_audio_retention_meta_archive_bytes" "$meta_archive" "archive_wav_bytes="
+
+  history_file="$(find "$CASE_DIR/config/history" -maxdepth 1 -name '*.json' -type f | head -n 1)"
+  wait_for_file_contains "$history_file" "\"audio\": {" || fail "inline_audio_retention_history_audio_ready"
+  pass "inline_audio_retention_history_audio_ready"
+  assert_file_contains "inline_audio_retention_history_audio" "$history_file" "\"audio\": {"
+  assert_file_contains "inline_audio_retention_history_retention" "$history_file" "\"wav_retention_days\": 0"
+  assert_file_contains "inline_audio_retention_history_record_ms" "$history_file" "\"record_ms\":"
 }
 
 run_inline_swift_round() {
@@ -832,6 +871,7 @@ run_inline_toggle_process_sound_immediate_round
 run_inline_audio_cache_note_round
 run_inline_audio_cache_refresh_round
 run_inline_keep_logs_archive_round
+run_inline_audio_retention_round
 run_inline_swift_round
 run_inline_swift_superseded_round
 run_tmux_audio_cache_note_round

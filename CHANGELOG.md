@@ -10,6 +10,7 @@
 - **Completed**: FFmpeg capture/shutdown diagnostics now archive WAV duration, byte counts, grace timing, and SIGINT/TERM exit timing for clipped-run forensics
 - **Completed**: inline/Raycast processing cue now plays immediately on stop, before the grace window finishes recording
 - **Completed**: inline `keep_logs` now archives per-run WAV + record/transcribe logs under `history/inline-debug` for clipped-run forensics
+- **Completed**: history now records inline audio artifact metadata while pruning archived debug WAVs after `history.audio_retention_days`, keeping stats/roundup inputs without unbounded audio growth
 - **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
 - **Completed**: operator CLI foundation for `status`, `debug`, `doctor`, `history`, and `last` with machine-readable JSON output
 - **Completed**: richer operator summaries for runtime state and recent history; these now become the base layer for a CLI-first operator expansion rather than a near-term dashboard/TUI

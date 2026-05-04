@@ -15,6 +15,10 @@ silence_keep_ms = 50
 [clean]
 repeats_level = 1
 
+[history]
+retention_days = 7
+audio_retention_days = 2
+
 [swift_parakeet]
 model_path = ""
 model_version = ""

@@ -197,6 +197,7 @@ tmux-whisper config repair
 - `tmux-whisper history list [N] --json` now exposes recent dictation summaries as a machine-readable array for shell scripts and future operator tooling.
 - `tmux-whisper history search <query> [N] [--json]` turns saved dictations into a searchable operator surface without leaving the CLI.
 - `tmux-whisper history export [N|all] [--json]` now exports full history entries for shell pipelines, sharing, and agent/operator replay flows.
+- History JSON keeps transcript, word-count, timing, and audio-artifact metadata for stats/roundups; inline debug WAVs are pruned separately with `history.audio_retention_days` / `DICTATE_HISTORY_AUDIO_RETENTION_DAYS` so audio cannot grow forever.
 - `tmux-whisper logs path|tail|follow|--json` now gives log inspection both snapshot and live-follow workflows instead of one fixed text dump.
 - `tmux-whisper devices --json` now exposes AVFoundation audio devices as structured CLI output for support/debug flows.
 - `tmux-whisper config [--json]`, `config path [--json]`, and `config get <path> [--json]` now give config inspection a real read-only operator surface instead of only repair-oriented guidance.
