@@ -49,6 +49,7 @@
 - add filtered bench inspection and text-first live watch flows now that history, logs, devices, config, bench, and log-following all have a stronger operator baseline
 - add text-first live workflows such as watch/tail-style commands that keep terminal users in the CLI instead of forcing a TUI just for observability
 - keep refining compact operator views and cross-links so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
+- known polish: SwiftBar's polling/render loop can still leave a tiny stop-to-processing visual delay; future work should explore an event-driven refresh/signal path for the stop hotkey, and longer-term a very light native macOS menu bar companion for push-style state updates
 - treat any future dashboard/TUI as an optional layer on top of stable CLI contracts, not as the next milestone itself
 
 ## 2026-04-19
