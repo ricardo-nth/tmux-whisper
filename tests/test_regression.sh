@@ -573,6 +573,12 @@ assert_not_contains "swiftbar_inline_silence_trim_removed" "$swiftbar_modes_out"
 assert_contains "swiftbar_inline_repeats_present" "$swiftbar_modes_out" "Repeats level"
 assert_contains "swiftbar_inline_repeats_action" "$swiftbar_modes_out" "param1=repeats param2=1"
 assert_not_contains "swiftbar_inline_backend_removed" "$swiftbar_modes_out" "Backend:"
+
+mkdir -p "$SWIFTBAR_MODES_HOME/dictate-processing"
+printf 'pid=%s\nkind=inline\n' "$$" >"$SWIFTBAR_MODES_HOME/dictate-processing/inline-test"
+swiftbar_processing_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail DICTATE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_MODES_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_MODES_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_MODES_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_MODES_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_inline_processing_marker_state" "$swiftbar_processing_out" "Processing (1)"
+rm -f "$SWIFTBAR_MODES_HOME/dictate-processing/inline-test"
 assert_contains "swiftbar_tmux_target_present" "$swiftbar_modes_out" "param1=tmux param2=target"
 
 # --- Regression 12: budget profile auto-selection is based on transcript length, not mode name. ---

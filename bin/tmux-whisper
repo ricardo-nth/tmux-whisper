@@ -340,6 +340,10 @@ AUDIO_CACHE_DIR="$DICTATE_CONFIG_DIR/.cache"
 AUDIO_INDEX_CACHE="$AUDIO_CACHE_DIR/audio-index.sh"
 BACKEND_RUNTIME_CACHE="$AUDIO_CACHE_DIR/backend-state.sh"
 INLINE_SESSION_CACHE="$AUDIO_CACHE_DIR/inline-session.sh"
+PROCESSING_DIR="${DICTATE_PROCESSING_DIR:-/tmp/dictate-processing}"
+PROCESSED_FLAG="${DICTATE_PROCESSED_FLAG:-/tmp/dictate-just-processed}"
+PROCESSING_LONG_FLAG="${DICTATE_PROCESSING_LONG_FLAG:-/tmp/dictate-inline-processing-long.flag}"
+PROCESSING_MARKER_FILE=""
 DICTATE_LAST_AUDIO_INDEX_SOURCE=""
 DICTATE_LAST_AUDIO_INDEX_MS="0"
 DICTATE_LAST_AUDIO_CACHE_NOTE=""
@@ -381,8 +385,87 @@ write_audio_index_cache() {
   mv -f "$tmp" "$AUDIO_INDEX_CACHE" 2>/dev/null || true
 }
 
+audio_index_cache_file_is_fresh() {
+  local max_age_ms="${DICTATE_AUDIO_CACHE_FAST_MAX_AGE_MS:-21600000}"
+  [[ "$max_age_ms" =~ ^[0-9]+$ ]] || max_age_ms=21600000
+  (( max_age_ms > 0 )) || return 1
+  [[ -f "$AUDIO_INDEX_CACHE" ]] || return 1
+
+  local mtime now max_age_s age_s
+  mtime="$(stat -f '%m' "$AUDIO_INDEX_CACHE" 2>/dev/null || stat -c '%Y' "$AUDIO_INDEX_CACHE" 2>/dev/null || true)"
+  [[ "$mtime" =~ ^[0-9]+$ ]] || return 1
+  now="$(date +%s)"
+  [[ "$now" =~ ^[0-9]+$ ]] || return 1
+
+  max_age_s=$(( (max_age_ms + 999) / 1000 ))
+  age_s=$(( now - mtime ))
+  (( age_s < 0 )) && age_s=0
+  (( age_s <= max_age_s ))
+}
+
+refresh_audio_index_cache_hit() {
+  local key="${1:-}"
+  local idx="${2:-}"
+  local name="${3:-}"
+  local match="${4:-}"
+  local async="${5:-0}"
+  [[ -n "$key" && -n "$idx" ]] || return 0
+
+  if bool_is_on "$async"; then
+    touch "$AUDIO_INDEX_CACHE" 2>/dev/null || true
+    (
+      trap '' HUP
+      write_audio_index_cache "$key" "$idx" "$name" "$match"
+    ) >/dev/null 2>&1 &
+  else
+    write_audio_index_cache "$key" "$idx" "$name" "$match"
+  fi
+}
+
 clear_audio_index_cache() {
   rm -f "$AUDIO_INDEX_CACHE" 2>/dev/null || true
+}
+
+processing_marker_start() {
+  local kind="${1:-inline}"
+  local session_id="${2:-}"
+  local pid_override="${3:-}"
+  PROCESSING_MARKER_FILE=""
+  mkdir -p "$PROCESSING_DIR" 2>/dev/null || return 0
+
+  local marker_pid f
+  marker_pid="$pid_override"
+  [[ -n "$marker_pid" ]] || marker_pid="${BASHPID:-$$}"
+  f="$PROCESSING_DIR/${kind}-${marker_pid}"
+  {
+    printf 'pid=%s\n' "$marker_pid"
+    printf 'kind=%s\n' "$kind"
+    [[ -n "$session_id" ]] && printf 'session_id=%s\n' "$session_id"
+    printf 'started_at=%s\n' "$(date +%s)"
+  } >"$f" 2>/dev/null || return 0
+  PROCESSING_MARKER_FILE="$f"
+}
+
+processing_marker_stop() {
+  local f="${1:-}"
+  [[ -n "$f" ]] && rm -f "$f" 2>/dev/null || true
+}
+
+processing_marker_stop_by_session() {
+  local session_id="${1:-}"
+  [[ -n "$session_id" && -d "$PROCESSING_DIR" ]] || return 0
+
+  local f marker_session
+  for f in "$PROCESSING_DIR"/inline-*; do
+    [[ -f "$f" ]] || continue
+    marker_session="$(sed -n 's/^session_id=//p' "$f" 2>/dev/null | head -n 1)"
+    [[ "$marker_session" == "$session_id" ]] && rm -f "$f" 2>/dev/null || true
+  done
+}
+
+signal_just_processed() {
+  touch "$PROCESSED_FLAG" 2>/dev/null || true
+  rm -f "$PROCESSING_LONG_FLAG" 2>/dev/null || true
 }
 
 generate_inline_session_id() {
@@ -4763,7 +4846,7 @@ PYEOF
     detected_name="${CACHED_AUDIO_NAME:-}"
     detected_match="${cached_match:-cache}"
     local allow_fast_cache="0"
-    if bool_is_on "$skip_cache_validate" && audio_cache_entry_is_fresh "$cached_at"; then
+    if bool_is_on "$skip_cache_validate" && audio_index_cache_file_is_fresh; then
       allow_fast_cache="1"
     fi
     if [[ -n "$detected_idx" ]] && ( [[ "$allow_fast_cache" == "1" ]] || cached_audio_entry_is_valid "$detected_idx" "$detected_name" ); then
@@ -4772,7 +4855,7 @@ PYEOF
       DICTATE_LAST_AUDIO_INDEX="$detected_idx"
       # Keep the cache age sliding forward on successful hits so the fast path
       # stays warm during normal use instead of aging into repeated revalidation.
-      write_audio_index_cache "$cache_key" "$detected_idx" "$detected_name" "$detected_match"
+      refresh_audio_index_cache_hit "$cache_key" "$detected_idx" "$detected_name" "$detected_match" "$allow_fast_cache"
       printf '%s\t%s\t%s\t%s\n' "$detected_idx" "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS" "${DICTATE_LAST_AUDIO_CACHE_NOTE:-}"
       return 0
     fi
@@ -5670,8 +5753,18 @@ process_inline_recording() {
   local startup_audio_source="${9:-}"
   local inline_session_id="${10:-}"
   local stop_grace_ms="${11:-}"
+  local processing_marker_owner="${12:-self}"
 
   need ffmpeg
+
+  local inline_proc_file=""
+  if [[ "$processing_marker_owner" == "external" && -n "$inline_session_id" ]]; then
+    trap 'processing_marker_stop_by_session "$inline_session_id"; trap - RETURN' RETURN
+  else
+    processing_marker_start "inline" "$inline_session_id" 2>/dev/null || true
+    inline_proc_file="$PROCESSING_MARKER_FILE"
+    trap 'processing_marker_stop "$inline_proc_file"; trap - RETURN' RETURN
+  fi
 
   local do_postprocess="${DICTATE_POSTPROCESS:-}"
   [[ -z "$do_postprocess" ]] && do_postprocess="${CFG_POSTPROCESS_ENABLED:-0}"
@@ -5828,12 +5921,7 @@ process_inline_recording() {
   if [[ "$do_postprocess" == "1" ]]; then
     stage_started_ms="$(now_ms)"
     echo "🤖 Post-processing ($detected_mode mode)..."
-    
-    # Signal processing for SwiftBar
-    local proc_file="/tmp/dictate-processing/inline-$$"
-    mkdir -p /tmp/dictate-processing
-    printf "pid=%s\nkind=inline\n" "$$" >"$proc_file" 2>/dev/null || true
-    
+
     local inline_postprocess_obs_file=""
     inline_postprocess_obs_file="$(mktemp "${TMPDIR:-/tmp}/dictate-inline-postprocess-obs.XXXXXX" 2>/dev/null || true)"
     if [[ -n "$inline_postprocess_obs_file" ]]; then
@@ -5843,9 +5931,6 @@ process_inline_recording() {
     else
       txt="$(DICTATE_FORCE_MODE="$detected_mode" postprocess_llm "$txt" "$target_app")"
     fi
-    rm -f "$proc_file"
-    # Signal "just processed" for SwiftBar
-    touch /tmp/dictate-just-processed
     postprocess_ms=$(( $(now_ms) - stage_started_ms ))
   elif bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
     txt="$(printf "%s" "$txt" | apply_vocab_corrections "$detected_mode")"
@@ -5963,6 +6048,7 @@ process_inline_recording() {
   append_bench_entry "inline" "ok" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
 
+  signal_just_processed
   play_sound stop
 
   archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "ok" \
@@ -6142,7 +6228,6 @@ inline_stop() {
   local startup_audio_source="${startup_audio_source:-}"
   local stop_requested_ms
   stop_requested_ms="$(now_ms)"
-  rm -f "$INLINE_STATE_FILE"
 
   [[ -n "${pid:-}" && -n "${wav:-}" ]] || die "state file invalid; try: tmux-whisper inline start"
   local record_ms="0"
@@ -6150,6 +6235,11 @@ inline_stop() {
     record_ms=$((stop_requested_ms - state_record_started_ms))
     (( record_ms < 0 )) && record_ms=0
   fi
+
+  local inline_pending_proc_file=""
+  processing_marker_start "inline" "${inline_session_id:-}" "$$" 2>/dev/null || true
+  inline_pending_proc_file="$PROCESSING_MARKER_FILE"
+  rm -f "$INLINE_STATE_FILE"
 
   local inline_record_log inline_process_sound
   inline_record_log="$TMPDIR/whisper-dictate-inline.record.log"
@@ -6171,12 +6261,16 @@ inline_stop() {
 
   terminate_recording_pid "$pid" "$inline_stop_grace_ms" "$inline_record_log"
 
+  local inline_bg_pid
   (
     trap '' HUP
     set -euo pipefail
     process_inline_recording "$wav" "${target_app:-}" "$model_id" "$record_ms" \
-      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}" "$inline_stop_grace_ms"
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}" "$inline_stop_grace_ms" "external"
   ) >"$TMPDIR/whisper-dictate-inline.transcribe.log" 2>&1 &
+  inline_bg_pid="$!"
+  processing_marker_start "inline" "${inline_session_id:-}" "$inline_bg_pid" 2>/dev/null || true
+  processing_marker_stop "$inline_pending_proc_file"
 
   echo "⏹️ STOPPED → transcribing → inline"
 }

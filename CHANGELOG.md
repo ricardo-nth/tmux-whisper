@@ -30,6 +30,8 @@
 - **Completed**: malformed `config.toml` now degrades into explicit `debug`/`doctor`/`status` warnings, and `config repair` can reset invalid TOML safely with a backup
 - **Completed**: real-world docs refresh now clarifies install channels, tmux-first setup, integration environment expectations, and channel-specific upgrade/repair flows
 - **Completed**: stale cached AVFoundation audio-index invalidations now leave lightweight breadcrumbs in `debug`, `debug --json`, and active record logs when device order changes force a re-resolve
+- **Completed**: inline/Raycast fresh audio-cache hits now use a lighter mtime-based fast path and refresh cache timestamps in the background, reducing rare hotkey-to-start-cue stalls
+- **Completed**: SwiftBar inline processing now stays active until transcription, paste, and optional autosend finish, so the menu-bar state reflects when the frontmost window is safe to move away from
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
