@@ -2051,6 +2051,7 @@ status() {
       more_detail_commands=(
         "tmux-whisper watch --preset compact"
         "tmux-whisper last"
+        "tmux-whisper history sessions 5"
         "tmux-whisper logs follow $transcribe_stream"
       )
       ;;
@@ -2066,6 +2067,7 @@ status() {
         "tmux-whisper watch --preset compact"
         "tmux-whisper last"
         "tmux-whisper bench"
+        "tmux-whisper history sessions 5"
       )
       ;;
   esac
