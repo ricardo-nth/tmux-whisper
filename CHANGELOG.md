@@ -3,35 +3,73 @@
 ## Current working version
 
 - **Stable release**: `v0.5.2` (tagged on 2026-04-19)
-- **Next target**: `v0.5.x` (UX + config maturity)
+- **Maintenance track**: `v0.5.x` (stress-test the latest hardening and keep the release path calm)
+- **Next expansion target**: `v0.6.x` (CLI-first operator platform)
+- **Completed**: FFmpeg AVFoundation capture now uses async resampling so WAV duration tracks wall-clock recording time instead of drifting short
+- **Completed**: inline/Raycast stop-grace retuned back down to `1000ms` after capture-layer drift was isolated upstream of stop timing
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
-- **Completed**: inline/Raycast stop-grace retuned to `1000ms` plus inline stop breadcrumbs when `keep_logs` is enabled
+- **Completed**: inline/Raycast stop breadcrumbs when `keep_logs` is enabled
+- **Completed**: FFmpeg capture/shutdown diagnostics now archive WAV duration, byte counts, grace timing, and SIGINT/TERM exit timing for clipped-run forensics
 - **Completed**: inline/Raycast processing cue now plays immediately on stop, before the grace window finishes recording
 - **Completed**: inline `keep_logs` now archives per-run WAV + record/transcribe logs under `history/inline-debug` for clipped-run forensics
+- **Completed**: history now records inline audio artifact metadata while pruning archived debug WAVs after `history.audio_retention_days`, keeping stats/roundup inputs without unbounded audio growth
 - **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
 - **Completed**: operator CLI foundation for `status`, `debug`, `doctor`, `history`, and `last` with machine-readable JSON output
-- **Completed**: richer operator summaries for runtime state and recent history; dashboard/TUI remains a follow-up layer on top
+- **Completed**: richer operator summaries for runtime state and recent history; these now become the base layer for a CLI-first operator expansion rather than a near-term dashboard/TUI
+- **Completed**: `tmux-whisper history list [N] --json` now exposes recent dictation summaries as machine-readable arrays, seeding the next operator-grade CLI layer
+- **Completed**: `tmux-whisper history search <query> [N] [--json]` now turns saved dictation history into a usable lookup surface for operators and agents
+- **Completed**: `tmux-whisper history export [N|all] [--json]` now exports full recent/history entries for shell pipelines, handoff artifacts, and agent-readable replay/debug flows
+- **Completed**: `tmux-whisper bench [N] --json` and `bench export [N|all] [--json]` now give operator timing data both summary-level JSON and full-row export paths instead of one text-only view
+- **Completed**: `tmux-whisper logs` now has proper CLI subcommands for `path`, `tail`, `follow`, and `--json`, so log inspection no longer depends on scraping one fixed human-only dump
+- **Completed**: `tmux-whisper devices --json` now turns AVFoundation device enumeration into a machine-readable support/debug surface instead of a text-only listing
+- **Completed**: `tmux-whisper config [--json]`, `config path [--json]`, and `config get <path> [--json]` now make config inspection first-class for humans, shell tooling, and future agents
+- **Completed**: `tmux-whisper watch [--interval SECONDS] [--iterations N]` now composes `status`, latest history, and bench data into a live text-first operator view instead of forcing a dashboard/TUI jump
+- **Completed**: `tmux-whisper status --preset compact` and `watch --preset compact` now give terminal operators a tighter summary surface for narrow panes, quick checks, and future plugin-style shells without changing the JSON contracts underneath
+- **Completed**: filtered bench inspection, history session summaries, and command cross-links now connect `bench`, `history sessions`, `logs`, `status`, and `watch` into a more navigable operator workflow
+- **Completed**: `docs/CLI_CONTRACTS.md` now marks stable JSON read surfaces versus experimental streaming/watch/benchmark output so future wrappers can build on the CLI without guessing
 - **Completed**: mode/config UX validation polish in `tmux-whisper doctor`, including flow-aware checks, surgical fix hints, and text/JSON parity
 - **Completed**: public command/help/docs now standardize on `tmux-whisper ...`; internal `dictate` config/temp paths remain intentionally unchanged for now
 - **Completed**: vocab safety follow-up now adds dry-run import paths plus backup/literal-match guardrails for vocab import and removal flows
 - **Completed**: config repair flow now provides canonical `config defaults`, in-place `config repair [--dry-run]`, and install-time seeding from one default template
 - **Completed**: malformed `config.toml` now degrades into explicit `debug`/`doctor`/`status` warnings, and `config repair` can reset invalid TOML safely with a backup
 - **Completed**: real-world docs refresh now clarifies install channels, tmux-first setup, integration environment expectations, and channel-specific upgrade/repair flows
+- **Completed**: bootstrap/install reproducibility pass now supports explicit bootstrap `--ref`, `--repo`, and `--archive-url` flags, records the installed source in `install-receipt.env`, and documents pinned setup across machines
 - **Completed**: stale cached AVFoundation audio-index invalidations now leave lightweight breadcrumbs in `debug`, `debug --json`, and active record logs when device order changes force a re-resolve
+- **Completed**: inline/Raycast fresh audio-cache hits now use a lighter mtime-based fast path and refresh cache timestamps in the background, reducing rare hotkey-to-start-cue stalls
+- **Completed**: SwiftBar inline processing now stays active until transcription, paste, and optional autosend finish, so the menu-bar state reflects when the frontmost window is safe to move away from
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
   - Bootstrap/local install (testing): `bootstrap.sh` or `./install.sh --force`
 
-### Planned next (v0.5 queue)
+### Planned next (v0.5 maintenance queue)
 
-- clipped-run hardening follow-up: use the new archived inline artifacts to compare true tail cuts vs stop timing, then decide whether the next step is adaptive stop logic rather than another fixed grace bump
-- thin dashboard/TUI on top of the new operator data surface, after the CLI summary layer settles
+- clipped-run hardening follow-up: use the archived inline artifacts to confirm async-resampled WAV duration stays close to wall-clock capture time during daily use
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
+
+### Planned next (v0.6 CLI-first queue)
+
+- keep using the operator CLI as the primary support surface: inspect reliability from `status`, `history sessions`, `bench`, and `logs` before adding dashboard/TUI layers
+- deepen workflow guidance around the remaining real reliability questions: FFmpeg drift soak, morning-delay/warm-cache behavior, SwiftBar/sound-start timing, and event-driven menu refresh
+- keep filtered bench inspection, history session summaries, and text-first watch/log flows evolving from real usage now that the core operator surfaces have stronger contracts
+- add text-first live workflows such as watch/tail-style commands that keep terminal users in the CLI instead of forcing a TUI just for observability
+- keep refining compact operator views from real morning-delay/SwiftBar/sound-delay evidence so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
+- known polish: SwiftBar's polling/render loop can still leave a tiny stop-to-processing visual delay; future work should explore an event-driven refresh/signal path for the stop hotkey, and longer-term a very light native macOS menu bar companion for push-style state updates
+- treat any future dashboard/TUI as an optional layer on top of stable CLI contracts, not as the next milestone itself
+
+## 2026-05-09
+
+- **Inline/Raycast clipping hardening**:
+  - Added async FFmpeg resampling (`aresample=async=1000:first_pts=0`) to tmux and inline capture so AVFoundation sample-clock drift does not produce short WAVs before transcription.
+  - Retuned the inline stop grace window back down to `1000ms` now that the observed clipping source is upstream in FFmpeg/AVFoundation capture rather than only stop timing.
+- **Validation**:
+  - Ran `bash -n`, `./tests/test_cli.sh`, `./tests/test_regression.sh`, `./tests/test_flow_parity.sh`, `./tests/ci.sh`, `./install.sh --force`, and a fixed-duration FFmpeg probe that produced a `15.000s` WAV from a `15s` capture.
 
 ## 2026-04-19
 
 - **Inline/Raycast clipping hardening**:
+  - Retuned the inline stop grace window back to `1250ms` as a diagnostic probe now that FFmpeg capture/shutdown breadcrumbs are archived for clipped-run analysis.
+  - Added FFmpeg capture/shutdown breadcrumbs so clipped inline runs can distinguish early capture gaps, already-dead FFmpeg processes, slow SIGINT exits, and post-transcription WAV mutation.
   - Retuned the inline stop grace window to `1000ms` so Raycast stop feels snappier while still buffering trailing words better than the original baseline.
   - Moved the inline processing cue to fire immediately on stop, so the sound matches the hotkey action instead of waiting for the grace window to finish.
   - Added per-run inline `keep_logs` archiving under `history/inline-debug` so rare clipped runs preserve the WAV, stop log, transcribe log, and timing metadata for inspection.
@@ -478,15 +516,15 @@ Attempted to speed up transcription by implementing a persistent daemon that kee
 
 ### Next queue (core product)
 
-- [x] Add stage timings and a lightweight `dictate bench` summary (record stop → transcribe → clean → postprocess → paste).
-- [ ] Tune whisper decode defaults (`threads` / `beam_size` / `best_of`) using benchmark data, not intuition.
-- [x] Add a `dictate bench-matrix` command (`model × postprocess × vocab_clean`) to compare speed + output quality on a fixed phrase set.
+- [x] Add stage timings and a lightweight `tmux-whisper bench` summary (record stop -> transcribe -> clean -> postprocess -> paste).
+- [x] Retire legacy whisper.cpp decode-default tuning from the active queue; the runtime is Parakeet-only now, so future tuning belongs in Swift Parakeet warmup/cache/latency work.
+- [x] Add a `tmux-whisper bench-matrix` command (`model x postprocess x vocab_clean`) to compare speed + output quality on a fixed phrase set.
 - [x] Add explicit `short` vs `long` postprocess profiles (mode-specific LLM/token/chunk defaults).
 - [x] Evolve budget handling to `budget auto` (dynamic transcript-length-aware sizing for `max_tokens` / `chunk_words`), with `short` / `long` budget profiles kept as internal guardrails/presets.
 - [x] Improve vocab workflow: bulk import/batch add and easier correction review from recent history.
-- [ ] Add a lightweight session dashboard/TUI (Bubble Tea candidate) to summarize usage (sessions, words processed, postprocess/tokens, time saved trends) from recent history/bench data.
-- [ ] Package/install polish: bootstrap/update scripts + docs for reproducible setup across machines.
-- [x] Add explicit “SwiftBar integration on/off” toggle (Dictate should remain fully usable without SwiftBar).
+- [x] Expand the operator CLI around history/logs/bench/config before any dashboard work: JSON parity, export/search/tail helpers, live text-first watch surfaces, filtered bench inspection, session summaries, command cross-links, and documented JSON contracts.
+- [x] Package/install polish: bootstrap/update scripts + docs for reproducible setup across machines.
+- [x] Add explicit SwiftBar integration on/off toggle (Tmux Whisper remains fully usable without SwiftBar).
 - [ ] When `CHANGELOG.md` gets too long, archive older entries into a single `CHANGELOG.archive.md` (keep current/recent work in `CHANGELOG.md`).
 
 ### Future labs (deferred, separate projects)

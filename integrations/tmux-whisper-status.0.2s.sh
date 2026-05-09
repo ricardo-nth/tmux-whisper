@@ -641,14 +641,13 @@ fi
 # Processing count can be mildly expensive; avoid unless needed.
 processing_count="$(count_processing)"
 
-# Check if processing (inline-only, threshold-based).
+# Check if processing (inline-only). Inline owns the frontmost window until
+# transcription, paste, and optional send have completed.
 processing_long="0"
-if [[ -f "$PROCESSING_LONG_FLAG" ]]; then
-  if [[ "$processing_count" -gt 0 ]]; then
-    processing_long="1"
-  else
-    rm -f "$PROCESSING_LONG_FLAG" 2>/dev/null || true
-  fi
+if [[ "$processing_count" -gt 0 ]]; then
+  processing_long="1"
+elif [[ -f "$PROCESSING_LONG_FLAG" ]]; then
+  rm -f "$PROCESSING_LONG_FLAG" 2>/dev/null || true
 fi
 
 if [[ "$processing_long" == "1" ]]; then

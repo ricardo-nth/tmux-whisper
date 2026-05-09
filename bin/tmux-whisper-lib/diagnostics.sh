@@ -1657,9 +1657,30 @@ doctor() {
 
 status() {
   local output_format="text"
-  if [[ "${1:-}" == "--json" ]]; then
-    output_format="json"
-  fi
+  local preset="default"
+  while [[ $# -gt 0 ]]; do
+    case "${1:-}" in
+      --json)
+        output_format="json"
+        ;;
+      --preset)
+        shift
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper status [--json] [--preset compact]"
+        case "${1:-}" in
+          default|compact)
+            preset="${1:-default}"
+            ;;
+          *)
+            die "usage: tmux-whisper status [--json] [--preset compact]"
+            ;;
+        esac
+        ;;
+      *)
+        die "usage: tmux-whisper status [--json] [--preset compact]"
+        ;;
+    esac
+    shift
+  done
 
   load_backend_runtime_cache >/dev/null 2>&1 || true
   local inline_state="$INLINE_STATE_FILE"
@@ -1667,6 +1688,21 @@ status() {
 
   onoff() {
     [[ "${1:-0}" == "1" ]] && echo "ON" || echo "OFF"
+  }
+
+  join_with_separator() {
+    local sep="${1:- | }"
+    shift || true
+    local item out=""
+    for item in "$@"; do
+      [[ -n "$item" ]] || continue
+      if [[ -n "$out" ]]; then
+        out+="$sep$item"
+      else
+        out="$item"
+      fi
+    done
+    printf '%s' "$out"
   }
 
   age_s() {
@@ -1994,6 +2030,50 @@ status() {
     summary_next_action="Use your normal hotkey to start recording."
   fi
 
+  local more_detail_commands=()
+  case "$summary_state" in
+    recording)
+      local record_stream="record"
+      if [[ "$summary_active_flow" == "inline" ]]; then
+        record_stream="inline-record"
+      fi
+      more_detail_commands=(
+        "tmux-whisper stop"
+        "tmux-whisper watch --preset compact"
+        "tmux-whisper logs follow $record_stream"
+      )
+      ;;
+    processing)
+      local transcribe_stream="transcribe"
+      if [[ "$summary_active_flow" == "inline" ]]; then
+        transcribe_stream="inline-transcribe"
+      fi
+      more_detail_commands=(
+        "tmux-whisper watch --preset compact"
+        "tmux-whisper last"
+        "tmux-whisper history sessions 5"
+        "tmux-whisper logs follow $transcribe_stream"
+      )
+      ;;
+    attention|not_ready)
+      more_detail_commands=(
+        "tmux-whisper doctor"
+        "tmux-whisper debug"
+        "tmux-whisper config repair --dry-run"
+      )
+      ;;
+    *)
+      more_detail_commands=(
+        "tmux-whisper watch --preset compact"
+        "tmux-whisper last"
+        "tmux-whisper bench"
+        "tmux-whisper history sessions 5"
+      )
+      ;;
+  esac
+  local more_detail_lines
+  more_detail_lines="$(printf '%s\n' "${more_detail_commands[@]}")"
+
   local override_vars=(
     DICTATE_AUDIO_SOURCE DICTATE_AUDIO_INDEX DICTATE_AUDIO_NAME
     DICTATE_TMUX_MODE
@@ -2100,6 +2180,7 @@ status() {
       JSON_SOUND_CANCEL="${CFG_AUDIO_SOUNDS_CANCEL_ENABLED:-1}" \
       JSON_KEY_STATUS="$key_status" \
       JSON_ENV_OVERRIDES="$env_override_lines" \
+      JSON_MORE_DETAIL="$more_detail_lines" \
       python3 - <<'PYEOF'
 import json
 import os
@@ -2283,11 +2364,45 @@ data = {
         "cerebras_api_key": s("JSON_KEY_STATUS"),
     },
     "active_env_overrides": overrides,
-    "more_detail": ["tmux-whisper debug", "tmux-whisper doctor", "tmux-whisper logs"],
+    "more_detail": [line for line in s("JSON_MORE_DETAIL").splitlines() if line],
 }
 
 print(json.dumps(data, indent=2, sort_keys=True))
 PYEOF
+    return 0
+  fi
+
+  compact_state_brief() {
+    local state="${1:-idle}"
+    local pid="${2:-}"
+    local age="${3:-}"
+    if [[ "$state" == "active" ]]; then
+      local parts=("active")
+      [[ "$pid" =~ ^[0-9]+$ ]] && parts+=("pid=$pid")
+      [[ "$age" =~ ^[0-9]+$ ]] && parts+=("age=${age}s")
+      join_with_separator "," "${parts[@]}"
+      return 0
+    fi
+    if [[ "$state" == "stale" ]]; then
+      if [[ "$age" =~ ^[0-9]+$ ]]; then
+        printf 'stale,age=%ss' "$age"
+      else
+        printf 'stale'
+      fi
+      return 0
+    fi
+    printf '%s' "${state:-idle}"
+  }
+
+  if [[ "$preset" == "compact" ]]; then
+    echo "Tmux Whisper status (compact)"
+    echo ""
+    echo "Summary: state=$summary_state backend=$backend_readiness flow=$summary_active_flow config=${cfg_schema_version}/${cfg_schema_status}"
+    echo "Modes: inline=$(mode_display_name "$mode_inline") [$mode_inline_source], tmux=$(mode_display_name "$mode_tmux")"
+    echo "Runtime: tmux=$(compact_state_brief "$tmux_state" "$tmux_pid" "$tmux_age") inline=$(compact_state_brief "$inline_state_status" "$inline_pid" "$inline_age") proc=${proc_live:-0}/${proc_total:-0} stale=${proc_stale:-0} queue=${tmux_rec:-0}/${tmux_proc:-0}"
+    echo "Headline: $summary_headline"
+    echo "Next: $summary_next_action"
+    echo "More: $(join_with_separator ' | ' "${more_detail_commands[@]}")"
     return 0
   fi
 
@@ -2380,5 +2495,9 @@ PYEOF
   fi
 
   echo ""
-  echo "More detail: tmux-whisper debug   |   tmux-whisper doctor   |   tmux-whisper logs"
+  echo "More detail:"
+  local command
+  for command in "${more_detail_commands[@]}"; do
+    echo "  $command"
+  done
 }

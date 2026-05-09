@@ -61,16 +61,17 @@ Best for testing `main` or pinning a specific release without keeping a local cl
 curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash
 ```
 
-Pinned to the current stable tag:
+Pinned to a release tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.5.2/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.6.0/bootstrap.sh | bash
 ```
 
-Pass install flags through bootstrap:
+Pass bootstrap and install flags explicitly:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force --with-sounds
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --ref v0.6.0 --force
 ```
 
 ### Local clone / development
@@ -109,6 +110,7 @@ Install behavior:
 - Installs SwiftBar plugin to `~/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh`.
 - Installs sample sounds to `~/.local/share/sounds/dictate`.
 - Runs a best-effort backend warm-up after install/update, including a tiny synthetic prime transcription so the next real dictation is closer to warm.
+- Writes an install receipt to `~/.config/dictate/install-receipt.env` with the install source, archive URL when bootstrapped, repo ref/commit when available, and resolved runtime paths.
 - Note: config and sounds paths intentionally remain under `dictate` in this phase (`~/.config/dictate`, `~/.local/share/sounds/dictate`).
 
 Useful install flags:
@@ -120,7 +122,7 @@ Useful install flags:
 ./install.sh --replace-sounds   # overwrite existing sound files with bundled samples
 ```
 
-`bootstrap.sh` downloads a repository archive from GitHub and runs `install.sh` from that archive.
+`bootstrap.sh` downloads a repository archive from GitHub and runs `install.sh` from that archive. Use `--ref <tag-or-commit>` when you want reproducible setup across machines.
 
 ## First Run Checklist
 
@@ -162,6 +164,7 @@ Daily-use upgrade flow depends on channel:
   - `brew upgrade tmux-whisper`
 - Bootstrap:
   - rerun the bootstrap command you used before, typically with `--force`
+  - for reproducible upgrades, include the same `--ref <tag-or-commit>` on every machine
 - Local clone:
   - `git pull`
   - `./install.sh --force`
@@ -194,9 +197,20 @@ tmux-whisper config repair
 - `tmux-whisper vocab dedupe` now creates a timestamped backup before rewriting your vocab file.
 - `tmux-whisper vocab rm "pattern"` now uses safer literal matching by default, with `--regex` available when you truly want regex behavior.
 - `tmux-whisper vocab export <file>` writes a normalized/deduped vocab snapshot you can share or version.
+- `tmux-whisper history list [N] --json` now exposes recent dictation summaries as a machine-readable array for shell scripts and future operator tooling.
+- `tmux-whisper history search <query> [N] [--json]` turns saved dictations into a searchable operator surface without leaving the CLI.
+- `tmux-whisper history export [N|all] [--json]` now exports full history entries for shell pipelines, sharing, and agent/operator replay flows.
+- History JSON keeps transcript, word-count, timing, and audio-artifact metadata for stats/roundups; inline debug WAVs are pruned separately with `history.audio_retention_days` / `DICTATE_HISTORY_AUDIO_RETENTION_DAYS` so audio cannot grow forever.
+- `tmux-whisper logs path|tail|follow|--json` now gives log inspection both snapshot and live-follow workflows instead of one fixed text dump.
+- `tmux-whisper devices --json` now exposes AVFoundation audio devices as structured CLI output for support/debug flows.
+- `tmux-whisper config [--json]`, `config path [--json]`, and `config get <path> [--json]` now give config inspection a real read-only operator surface instead of only repair-oriented guidance.
+- `tmux-whisper bench [N] --json` now exposes timing summaries as structured data, and `tmux-whisper bench export [N|all] [--json]` exports the raw recent rows behind those summaries.
+- `tmux-whisper watch [--interval SECONDS] [--iterations N]` now turns `status` + `last` + `bench` into a text-first live operator overview without committing the project to a TUI.
+- `tmux-whisper status --preset compact` and `watch --preset compact` now provide narrower operator snapshots for tighter terminals, quick checks, and future shell/plugin surfaces.
 - `tmux-whisper bench-matrix [N] [phrase_file]` runs a quick matrix over postprocess/vocab toggles (and LLM models when API key is set) on fixed phrases.
   - Phrase file format: one phrase per line (blank lines and `#` comments ignored). Optional `label<TAB>phrase` is supported.
   - Set `DICTATE_BENCH_MATRIX_PROGRESS=0` for summary-only output (no per-combo progress lines).
+- Stable CLI JSON surfaces are tracked in [`docs/CLI_CONTRACTS.md`](docs/CLI_CONTRACTS.md); prefer those contracts for scripts, agents, SwiftBar/native wrappers, and future UI layers.
 
 ## Troubleshooting
 
@@ -278,6 +292,7 @@ Then test your local command:
 ```bash
 tmux-whisper debug
 tmux-whisper bench 10
+tmux-whisper bench --json
 tmux-whisper bench-matrix 1
 ```
 

@@ -98,6 +98,20 @@ wait_for_file_contains() {
   return 1
 }
 
+wait_for_file_not_contains() {
+  local file="$1"
+  local needle="$2"
+  local tries="${3:-120}"
+  local i
+  for ((i = 0; i < tries; i++)); do
+    if [[ -f "$file" ]] && ! grep -Fq "$needle" "$file"; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
 wait_for_matching_file() {
   local dir="$1"
   local pattern="$2"
@@ -105,6 +119,20 @@ wait_for_matching_file() {
   local i
   for ((i = 0; i < tries; i++)); do
     if find "$dir" -name "$pattern" -type f -print -quit 2>/dev/null | grep -q .; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
+wait_for_no_matching_file() {
+  local dir="$1"
+  local pattern="$2"
+  local tries="${3:-120}"
+  local i
+  for ((i = 0; i < tries; i++)); do
+    if [[ ! -d "$dir" ]] || ! find "$dir" -name "$pattern" -type f | grep -q .; then
       return 0
     fi
     sleep 0.05
@@ -352,7 +380,7 @@ setup_case() {
   mkdir -p "$CASE_DIR/config/modes/base" "$CASE_DIR/config/modes/chat" "$CASE_DIR/config/modes/code" "$CASE_DIR/config/modes/long"
 
   # Keep the stub daemon socket short enough for macOS AF_UNIX limits.
-  socket_tag="$(printf '%s' "$name" | tr -cd '[:alnum:]' | cut -c1-12)"
+  socket_tag="$(printf '%s' "$name" | cksum | cut -d' ' -f1)"
   [[ -n "$socket_tag" ]] || socket_tag="dictatetest"
 
   printf '%s\n' "code" >"$CASE_DIR/config/current-mode"
@@ -387,6 +415,9 @@ setup_case() {
   export DICTATE_LIB_PATH="$ROOT/bin/dictate-lib.sh"
   export DICTATE_STATE_FILE="$CASE_DIR/tmux.state"
   export DICTATE_INLINE_STATE_FILE="$CASE_DIR/inline.state"
+  export DICTATE_PROCESSING_DIR="$CASE_DIR/processing"
+  export DICTATE_PROCESSED_FLAG="$CASE_DIR/processed.flag"
+  export DICTATE_PROCESSING_LONG_FLAG="$CASE_DIR/processing-long.flag"
   export DICTATE_TMPDIR="$CASE_DIR/tmp"
   export DICTATE_RECORD_LOG="$CASE_DIR/logs/record.log"
   export DICTATE_TRANSCRIBE_LOG="$CASE_DIR/logs/transcribe.log"
@@ -395,6 +426,7 @@ setup_case() {
   export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
   export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/${socket_tag}.sock"
   export DICTATE_KEEP_LOGS=1
+  unset DICTATE_HISTORY_AUDIO_RETENTION_DAYS
   export DICTATE_AUDIO_INDEX=0
   export DICTATE_TMUX_AUTOSEND=1
   export DICTATE_TMUX_SEND_DELAY_MS=0
@@ -434,6 +466,8 @@ run_tmux_round() {
   local start_out
   start_out="$("$DICTATE_BIN" toggle)"
   assert_contains "tmux_start_${mode}" "$start_out" "RECORDING"
+  wait_for_file_contains "$DICTATE_TEST_FFMPEG_LOG" "aresample=async=1000:first_pts=0" || fail "tmux_capture_async_resampler_${mode}"
+  pass "tmux_capture_async_resampler_${mode}"
 
   # shellcheck disable=SC1090
   . "$DICTATE_STATE_FILE"
@@ -523,6 +557,8 @@ run_inline_toggle_round() {
   local start_out
   start_out="$("$DICTATE_BIN" inline toggle)"
   assert_contains "inline_toggle_start" "$start_out" "RECORDING"
+  wait_for_file_contains "$DICTATE_TEST_FFMPEG_LOG" "aresample=async=1000:first_pts=0" || fail "inline_toggle_async_resampler"
+  pass "inline_toggle_async_resampler"
 
   [[ -f "$DICTATE_INLINE_STATE_FILE" ]] || fail "inline_toggle_state_created"
   pass "inline_toggle_state_created"
@@ -584,6 +620,68 @@ run_inline_toggle_process_sound_immediate_round() {
   pass "inline_toggle_process_sound_before_grace"
 }
 
+run_inline_processing_marker_until_paste_round() {
+  setup_case "inline-processing-marker-until-paste"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline marker transcript"
+  export DICTATE_TEST_SWIFT_DELAY_SEQUENCE="1.5"
+  export DICTATE_AUTOSEND=1
+
+  local start_out stop_out marker marker_pid swiftbar_out
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_processing_marker_start" "$start_out" "RECORDING"
+
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_processing_marker_stop" "$stop_out" "STOPPED"
+
+  wait_for_matching_file "$DICTATE_PROCESSING_DIR" 'inline-*' || fail "inline_processing_marker_created"
+  marker="$(find "$DICTATE_PROCESSING_DIR" -name 'inline-*' -type f | head -n 1)"
+  assert_file_contains "inline_processing_marker_kind" "$marker" "kind=inline"
+  marker_pid="$(sed -n 's/^pid=//p' "$marker" | head -n 1)"
+  [[ "$marker_pid" =~ ^[0-9]+$ ]] || fail "inline_processing_marker_pid_present"
+  kill -0 "$marker_pid" 2>/dev/null || fail "inline_processing_marker_pid_live"
+  pass "inline_processing_marker_pid_live"
+  swiftbar_out="$(DICTATE_BIN="$DICTATE_BIN" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+  assert_contains "inline_processing_marker_swiftbar_state" "$swiftbar_out" "Processing (1)"
+
+  wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "inline marker transcript" 240 || fail "inline_processing_marker_paste_done"
+  wait_for_no_matching_file "$DICTATE_PROCESSING_DIR" 'inline-*' || fail "inline_processing_marker_removed_after_paste"
+  [[ -f "$DICTATE_PROCESSED_FLAG" ]] || fail "inline_processing_marker_processed_flag"
+  pass "inline_processing_marker_processed_flag"
+}
+
+run_inline_processing_marker_immediate_after_stop_round() {
+  setup_case "inline-processing-marker-immediate"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline immediate marker transcript"
+  export DICTATE_TEST_SWIFT_DELAY_SEQUENCE="0.35"
+  export DICTATE_INLINE_STOP_GRACE_MS=1200
+  export DICTATE_AUTOSEND=1
+
+  local start_out stop_out_file stop_pid marker marker_pid swiftbar_out
+  stop_out_file="$CASE_DIR/logs/stop.out"
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_processing_immediate_start" "$start_out" "RECORDING"
+
+  "$DICTATE_BIN" inline toggle >"$stop_out_file" 2>&1 &
+  stop_pid="$!"
+
+  wait_for_absent "$DICTATE_INLINE_STATE_FILE" || fail "inline_processing_immediate_state_removed"
+  wait_for_matching_file "$DICTATE_PROCESSING_DIR" 'inline-*' || fail "inline_processing_immediate_marker_created"
+  marker="$(find "$DICTATE_PROCESSING_DIR" -name 'inline-*' -type f | head -n 1)"
+  assert_file_contains "inline_processing_immediate_marker_kind" "$marker" "kind=inline"
+  marker_pid="$(sed -n 's/^pid=//p' "$marker" | head -n 1)"
+  [[ "$marker_pid" =~ ^[0-9]+$ ]] || fail "inline_processing_immediate_marker_pid_present"
+  kill -0 "$marker_pid" 2>/dev/null || fail "inline_processing_immediate_marker_pid_live"
+  pass "inline_processing_immediate_marker_pid_live"
+  swiftbar_out="$(DICTATE_BIN="$DICTATE_BIN" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+  assert_contains "inline_processing_immediate_swiftbar_state" "$swiftbar_out" "Processing"
+
+  wait "$stop_pid"
+  assert_file_contains "inline_processing_immediate_stop_output" "$stop_out_file" "STOPPED"
+  wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "inline immediate marker transcript" || fail "inline_processing_immediate_paste_done"
+}
+
 run_inline_audio_cache_note_round() {
   setup_case "inline-audio-cache"
   export DICTATE_TEST_FFMPEG_HOLD=1
@@ -608,6 +706,7 @@ CACHED_AUDIO_MATCH=mac
 CACHED_AUDIO_INDEX=1
 CACHED_AUDIO_AT=2026-03-20T08:47:56Z
 EOF
+  touch -t 202603200847 "$CASE_DIR/config/.cache/audio-index.sh" 2>/dev/null || true
 
   local start_out stop_out inline_record_log
   inline_record_log="$CASE_DIR/tmp/whisper-dictate-inline.record.log"
@@ -654,7 +753,8 @@ EOF
   assert_contains "inline_audio_cache_refresh_start" "$start_out" "RECORDING"
   assert_file_not_contains "inline_audio_cache_refresh_no_stale_note" "$inline_record_log" "stale cache invalidated"
   assert_file_contains "inline_audio_cache_refresh_index" "$cache_file" "CACHED_AUDIO_INDEX=0"
-  assert_file_not_contains "inline_audio_cache_refresh_timestamp_rewritten" "$cache_file" "CACHED_AUDIO_AT=2026-03-20T08:47:56Z"
+  wait_for_file_not_contains "$cache_file" "CACHED_AUDIO_AT=2026-03-20T08:47:56Z" || fail "inline_audio_cache_refresh_timestamp_rewritten"
+  pass "inline_audio_cache_refresh_timestamp_rewritten"
 
   stop_out="$("$DICTATE_BIN" inline toggle)"
   assert_contains "inline_audio_cache_refresh_stop" "$stop_out" "STOPPED"
@@ -689,6 +789,49 @@ run_inline_keep_logs_archive_round() {
   [[ -n "$transcribe_archive" && -f "$transcribe_archive" ]] || fail "inline_archive_transcribe_exists"
   pass "inline_archive_transcribe_exists"
   assert_file_contains "inline_archive_meta_status" "$meta_archive" "status=ok"
+  assert_file_contains "inline_archive_meta_stop_grace" "$meta_archive" "stop_grace_ms="
+  assert_file_contains "inline_archive_meta_capture_bytes" "$meta_archive" "capture_wav_bytes="
+  assert_file_contains "inline_archive_meta_archive_bytes" "$meta_archive" "archive_wav_bytes="
+  assert_file_contains "inline_archive_meta_retention_days" "$meta_archive" "wav_retention_days=2"
+  assert_file_contains "inline_archive_meta_retention_note" "$meta_archive" "retention_note="
+  assert_file_contains "inline_archive_record_snapshot" "${meta_archive%.meta}.record.log" "inline_capture_snapshot:"
+  assert_file_contains "inline_archive_stop_after_grace_logged" "${meta_archive%.meta}.record.log" "after_grace"
+}
+
+run_inline_audio_retention_round() {
+  setup_case "inline-audio-retention"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline retention transcript"
+  export DICTATE_AUTOSEND=1
+  export DICTATE_HISTORY_AUDIO_RETENTION_DAYS=0
+
+  local start_out stop_out archive_dir wav_archive meta_archive history_file
+  archive_dir="$CASE_DIR/config/history/inline-debug"
+
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_audio_retention_start" "$start_out" "RECORDING"
+
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_audio_retention_stop" "$stop_out" "STOPPED"
+
+  wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "inline retention transcript" || fail "inline_audio_retention_complete"
+  wait_for_matching_file "$archive_dir" '*.meta' || fail "inline_audio_retention_meta_ready"
+  wait_for_matching_file "$CASE_DIR/config/history" '*.json' || fail "inline_audio_retention_history_ready"
+
+  wav_archive="$(find "$archive_dir" -name '*.wav' -type f | head -n 1)"
+  [[ -z "$wav_archive" ]] || fail "inline_audio_retention_wav_pruned"
+  pass "inline_audio_retention_wav_pruned"
+
+  meta_archive="$(find "$archive_dir" -name '*.meta' -type f | head -n 1)"
+  assert_file_contains "inline_audio_retention_meta_kept" "$meta_archive" "wav_retention_days=0"
+  assert_file_contains "inline_audio_retention_meta_archive_bytes" "$meta_archive" "archive_wav_bytes="
+
+  history_file="$(find "$CASE_DIR/config/history" -maxdepth 1 -name '*.json' -type f | head -n 1)"
+  wait_for_file_contains "$history_file" "\"audio\": {" || fail "inline_audio_retention_history_audio_ready"
+  pass "inline_audio_retention_history_audio_ready"
+  assert_file_contains "inline_audio_retention_history_audio" "$history_file" "\"audio\": {"
+  assert_file_contains "inline_audio_retention_history_retention" "$history_file" "\"wav_retention_days\": 0"
+  assert_file_contains "inline_audio_retention_history_record_ms" "$history_file" "\"record_ms\":"
 }
 
 run_inline_swift_round() {
@@ -703,6 +846,7 @@ run_inline_swift_round() {
   local copied
   copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
   assert_contains "inline_swift_transcript" "$copied" "swift backend transcript"
+  assert_file_contains "inline_swift_async_resampler" "$DICTATE_TEST_FFMPEG_LOG" "aresample=async=1000:first_pts=0"
   assert_file_contains "inline_swift_tail_pad_ffmpeg" "$DICTATE_TEST_FFMPEG_LOG" "anullsrc=r=16000:cl=mono"
 }
 
@@ -824,9 +968,12 @@ run_inline_auto_mode_round
 run_inline_toggle_round
 run_inline_toggle_grace_override_round
 run_inline_toggle_process_sound_immediate_round
+run_inline_processing_marker_immediate_after_stop_round
+run_inline_processing_marker_until_paste_round
 run_inline_audio_cache_note_round
 run_inline_audio_cache_refresh_round
 run_inline_keep_logs_archive_round
+run_inline_audio_retention_round
 run_inline_swift_round
 run_inline_swift_superseded_round
 run_tmux_audio_cache_note_round

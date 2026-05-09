@@ -31,12 +31,12 @@ RECORDING:
   tmux-whisper inline start       # start background inline recording
   tmux-whisper inline stop        # stop background inline recording
   tmux-whisper inline toggle      # toggle background inline recording
-  tmux-whisper status [--json]    # show runtime + effective settings snapshot
+  tmux-whisper status [--json] [--preset compact]    # show runtime + effective settings snapshot
   tmux-whisper stop               # force stop any recording
   tmux-whisper cancel             # cancel recording (discard, no paste)
 
 AUDIO:
-  tmux-whisper devices            # list macOS audio devices
+  tmux-whisper devices [--json]   # list macOS audio devices
   tmux-whisper device             # show current device + list available
   tmux-whisper device source <auto|external|mac|iphone|name>  # set mic source strategy
   tmux-whisper device external    # prefer plugged-in external mic, then fallback
@@ -52,15 +52,21 @@ AUDIO:
 DIAGNOSTICS:
   tmux-whisper debug [--json]     # show resolved device + relevant env/config
   tmux-whisper doctor [--json]    # quick health summary (state files, markers, logs)
-  tmux-whisper config             # show config path + schema health
-  tmux-whisper config path        # print active config path
+  tmux-whisper config [--json]    # show config path + schema health + key values
+  tmux-whisper config path [--json] # print active config path
+  tmux-whisper config get <path> [--json] # inspect one config value (file/default)
   tmux-whisper config defaults    # print canonical default config TOML
   tmux-whisper config repair [--dry-run] # fill missing defaults + bump schema safely
-  tmux-whisper logs               # show recent logs (record/transcribe)
+  tmux-whisper logs [--json]      # show log paths + recent tails
+  tmux-whisper logs path [stream] [--json] # show log file paths
+  tmux-whisper logs tail [stream] [--lines N] [--json] # tail one or all logs
+  tmux-whisper logs follow [stream] [--lines N] [--json] # follow one or all logs
+  tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N] # live status + latest history + bench overview
   tmux-whisper warmup            # preload the Swift Parakeet daemon/model
   tmux-whisper keep-logs          # show persistent log retention setting
   tmux-whisper keep-logs on|off   # persist log retention in config
-  tmux-whisper bench [N]          # summarize recent stage timings (default: 30 runs)
+  tmux-whisper bench [N|all] [--json] [--flow inline|tmux] [--status STATUS] [--mode MODE] [--slow-startup-audio-ms N] # summarize recent stage timings
+  tmux-whisper bench export [N|all] [--json] [filters] # export raw bench rows (default: 30 recent)
   tmux-whisper bench-matrix [N] [phrase_file] # compare llm_model(post=on) x postprocess x vocab_clean on fixed phrases
   tmux-whisper changelog          # show recent Tmux Whisper changes
 
@@ -159,8 +165,12 @@ REPLAY (re-process text with different mode):
 
 HISTORY (saved transcripts, auto-cleanup after 7 days):
   tmux-whisper history            # list recent dictations (last 20)
+  tmux-whisper history list [N] [--json] # list recent dictations (default: 20)
+  tmux-whisper history search <query> [N] [--json] # find matching dictations
+  tmux-whisper history export [N|all] [--json] # export full recent/history entries
   tmux-whisper history N [--json] # show entry N (1 = most recent)
   tmux-whisper history stats [--json] # summarize saved dictations + operator timings
+  tmux-whisper history sessions [N] [--json] # compact per-dictation session summaries
   tmux-whisper last [--json]      # concise summary of the most recent dictation
   tmux-whisper history reprocess N [mode]  # re-run LLM on raw transcript
   tmux-whisper history clear      # delete all history
@@ -196,6 +206,8 @@ ENV OPTIONS:
   DICTATE_INLINE_STOP_GRACE_MS=1000 # inline/Raycast stop grace before ffmpeg interrupt
   DICTATE_TRANSCRIBE_TAIL_PAD_MS=500 # append a little silence before ASR to preserve final words
   DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
+  DICTATE_HISTORY_RETENTION_DAYS=7 # keep transcript JSON history for stats/search
+  DICTATE_HISTORY_AUDIO_RETENTION_DAYS=2 # keep archived inline debug WAVs; metadata/logs remain
   DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
   DICTATE_BENCH_MATRIX_MODE=code # force mode used by bench-matrix cleanup/postprocess
   DICTATE_BENCH_MATRIX_MODELS=fast,smart,qwen,gpt # LLM list for postprocess-on matrix runs
@@ -209,7 +221,8 @@ CONFIG FILES (kept under ~/.config/dictate/ for now):
   modes/<mode>/apps          # apps that trigger this mode (one per line)
   modes/<mode>/prompt        # mode-specific LLM prompt
   modes/<mode>/vocab         # mode-specific corrections
-  history/                   # saved transcripts (auto-cleaned after 7 days)
+  history/                   # saved transcripts + stats metadata (JSON auto-cleaned after history.retention_days)
+  history/inline-debug/      # keep_logs artifacts; WAVs auto-pruned after history.audio_retention_days
   sounds/                    # sample sounds still install under ~/.local/share/sounds/dictate in this phase
 EOF
 }
@@ -328,6 +341,10 @@ AUDIO_CACHE_DIR="$DICTATE_CONFIG_DIR/.cache"
 AUDIO_INDEX_CACHE="$AUDIO_CACHE_DIR/audio-index.sh"
 BACKEND_RUNTIME_CACHE="$AUDIO_CACHE_DIR/backend-state.sh"
 INLINE_SESSION_CACHE="$AUDIO_CACHE_DIR/inline-session.sh"
+PROCESSING_DIR="${DICTATE_PROCESSING_DIR:-/tmp/dictate-processing}"
+PROCESSED_FLAG="${DICTATE_PROCESSED_FLAG:-/tmp/dictate-just-processed}"
+PROCESSING_LONG_FLAG="${DICTATE_PROCESSING_LONG_FLAG:-/tmp/dictate-inline-processing-long.flag}"
+PROCESSING_MARKER_FILE=""
 DICTATE_LAST_AUDIO_INDEX_SOURCE=""
 DICTATE_LAST_AUDIO_INDEX_MS="0"
 DICTATE_LAST_AUDIO_CACHE_NOTE=""
@@ -369,8 +386,87 @@ write_audio_index_cache() {
   mv -f "$tmp" "$AUDIO_INDEX_CACHE" 2>/dev/null || true
 }
 
+audio_index_cache_file_is_fresh() {
+  local max_age_ms="${DICTATE_AUDIO_CACHE_FAST_MAX_AGE_MS:-21600000}"
+  [[ "$max_age_ms" =~ ^[0-9]+$ ]] || max_age_ms=21600000
+  (( max_age_ms > 0 )) || return 1
+  [[ -f "$AUDIO_INDEX_CACHE" ]] || return 1
+
+  local mtime now max_age_s age_s
+  mtime="$(stat -f '%m' "$AUDIO_INDEX_CACHE" 2>/dev/null || stat -c '%Y' "$AUDIO_INDEX_CACHE" 2>/dev/null || true)"
+  [[ "$mtime" =~ ^[0-9]+$ ]] || return 1
+  now="$(date +%s)"
+  [[ "$now" =~ ^[0-9]+$ ]] || return 1
+
+  max_age_s=$(( (max_age_ms + 999) / 1000 ))
+  age_s=$(( now - mtime ))
+  (( age_s < 0 )) && age_s=0
+  (( age_s <= max_age_s ))
+}
+
+refresh_audio_index_cache_hit() {
+  local key="${1:-}"
+  local idx="${2:-}"
+  local name="${3:-}"
+  local match="${4:-}"
+  local async="${5:-0}"
+  [[ -n "$key" && -n "$idx" ]] || return 0
+
+  if bool_is_on "$async"; then
+    touch "$AUDIO_INDEX_CACHE" 2>/dev/null || true
+    (
+      trap '' HUP
+      write_audio_index_cache "$key" "$idx" "$name" "$match"
+    ) >/dev/null 2>&1 &
+  else
+    write_audio_index_cache "$key" "$idx" "$name" "$match"
+  fi
+}
+
 clear_audio_index_cache() {
   rm -f "$AUDIO_INDEX_CACHE" 2>/dev/null || true
+}
+
+processing_marker_start() {
+  local kind="${1:-inline}"
+  local session_id="${2:-}"
+  local pid_override="${3:-}"
+  PROCESSING_MARKER_FILE=""
+  mkdir -p "$PROCESSING_DIR" 2>/dev/null || return 0
+
+  local marker_pid f
+  marker_pid="$pid_override"
+  [[ -n "$marker_pid" ]] || marker_pid="${BASHPID:-$$}"
+  f="$PROCESSING_DIR/${kind}-${marker_pid}"
+  {
+    printf 'pid=%s\n' "$marker_pid"
+    printf 'kind=%s\n' "$kind"
+    [[ -n "$session_id" ]] && printf 'session_id=%s\n' "$session_id"
+    printf 'started_at=%s\n' "$(date +%s)"
+  } >"$f" 2>/dev/null || return 0
+  PROCESSING_MARKER_FILE="$f"
+}
+
+processing_marker_stop() {
+  local f="${1:-}"
+  [[ -n "$f" ]] && rm -f "$f" 2>/dev/null || true
+}
+
+processing_marker_stop_by_session() {
+  local session_id="${1:-}"
+  [[ -n "$session_id" && -d "$PROCESSING_DIR" ]] || return 0
+
+  local f marker_session
+  for f in "$PROCESSING_DIR"/inline-*; do
+    [[ -f "$f" ]] || continue
+    marker_session="$(sed -n 's/^session_id=//p' "$f" 2>/dev/null | head -n 1)"
+    [[ "$marker_session" == "$session_id" ]] && rm -f "$f" 2>/dev/null || true
+  done
+}
+
+signal_just_processed() {
+  touch "$PROCESSED_FLAG" 2>/dev/null || true
+  rm -f "$PROCESSING_LONG_FLAG" 2>/dev/null || true
 }
 
 generate_inline_session_id() {
@@ -469,6 +565,10 @@ silence_keep_ms = 50
 
 [clean]
 repeats_level = 1
+
+[history]
+retention_days = 7
+audio_retention_days = 2
 
 [swift_parakeet]
 model_path = ""
@@ -604,6 +704,8 @@ out = {
   "CFG_AUDIO_SOUNDS_PROCESS_ENABLED": "1" if b(get("audio.sounds.process_enabled", True), True) else "0",
   "CFG_AUDIO_SOUNDS_ERROR_ENABLED": "1" if b(get("audio.sounds.error_enabled", True), True) else "0",
   "CFG_AUDIO_SOUNDS_CANCEL_ENABLED": "1" if b(get("audio.sounds.cancel_enabled", True), True) else "0",
+  "CFG_HISTORY_RETENTION_DAYS": str(get("history.retention_days", "7")),
+  "CFG_HISTORY_AUDIO_RETENTION_DAYS": str(get("history.audio_retention_days", "2")),
   "CFG_SWIFT_PARAKEET_MODEL_PATH": str(get("swift_parakeet.model_path", "")),
   "CFG_SWIFT_PARAKEET_MODEL_VERSION": str(get("swift_parakeet.model_version", "")),
   "CFG_SWIFT_PARAKEET_SOCKET_PATH": str(get("swift_parakeet.socket_path", "~/.config/dictate/.cache/tmux-whisperd.sock")),
@@ -750,6 +852,23 @@ keep_logs_enabled() {
   [[ "${DICTATE_KEEP_LOGS:-${CFG_DEBUG_KEEP_LOGS:-0}}" == "1" ]]
 }
 
+file_size_bytes() {
+  local path="${1:-}"
+  [[ -n "$path" && -f "$path" ]] || return 0
+  stat -f '%z' "$path" 2>/dev/null || stat -c '%s' "$path" 2>/dev/null || true
+}
+
+audio_duration_ms() {
+  local path="${1:-}"
+  [[ -n "$path" && -f "$path" ]] || return 0
+  command -v ffprobe >/dev/null 2>&1 || return 0
+
+  local duration
+  duration="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$path" 2>/dev/null || true)"
+  [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 0
+  awk -v duration="$duration" 'BEGIN { printf "%.0f\n", duration * 1000 }'
+}
+
 inline_debug_archive_dir() {
   printf "%s\n" "$HISTORY_DIR/inline-debug"
 }
@@ -783,6 +902,15 @@ archive_inline_debug_artifacts() {
   local session_id="${12:-}"
 
   if [[ -n "$prefix" ]]; then
+    local archive_wav_ms archive_wav_bytes
+    archive_wav_ms="$(audio_duration_ms "$wav" 2>/dev/null || true)"
+    archive_wav_bytes="$(file_size_bytes "$wav" 2>/dev/null || true)"
+    INLINE_ARCHIVE_WAV_MS="$archive_wav_ms"
+    INLINE_ARCHIVE_WAV_BYTES="$archive_wav_bytes"
+    INLINE_DEBUG_ARCHIVE_PREFIX="$prefix"
+    INLINE_DEBUG_WAV_RETENTION_DAYS="$(history_audio_retention_days)"
+    INLINE_DEBUG_AUDIO_RETENTION_NOTE="WAV retained for ${INLINE_DEBUG_WAV_RETENTION_DAYS} day(s); JSON history and .meta/.log artifacts remain for stats/roundups."
+
     [[ -f "$wav" ]] && cp -f "$wav" "${prefix}.wav" 2>/dev/null || true
     [[ -f "$record_log" ]] && cp -f "$record_log" "${prefix}.record.log" 2>/dev/null || true
     [[ -f "$transcribe_log" ]] && cp -f "$transcribe_log" "${prefix}.transcribe.log" 2>/dev/null || true
@@ -790,6 +918,15 @@ archive_inline_debug_artifacts() {
       printf 'session_id=%q\n' "$session_id"
       printf 'status=%q\n' "$status"
       printf 'record_ms=%q\n' "$record_ms"
+      printf 'stop_grace_ms=%q\n' "${INLINE_STOP_GRACE_MS:-}"
+      printf 'capture_wav_ms=%q\n' "${INLINE_CAPTURE_WAV_MS:-}"
+      printf 'capture_wav_bytes=%q\n' "${INLINE_CAPTURE_WAV_BYTES:-}"
+      printf 'capture_gap_to_record_ms=%q\n' "${INLINE_CAPTURE_GAP_TO_RECORD_MS:-}"
+      printf 'capture_gap_to_record_plus_grace_ms=%q\n' "${INLINE_CAPTURE_GAP_TO_RECORD_PLUS_GRACE_MS:-}"
+      printf 'archive_wav_ms=%q\n' "$archive_wav_ms"
+      printf 'archive_wav_bytes=%q\n' "$archive_wav_bytes"
+      printf 'wav_retention_days=%q\n' "$INLINE_DEBUG_WAV_RETENTION_DAYS"
+      printf 'retention_note=%q\n' "$INLINE_DEBUG_AUDIO_RETENTION_NOTE"
       printf 'transcribe_ms=%q\n' "$transcribe_ms"
       printf 'clean_ms=%q\n' "$clean_ms"
       printf 'postprocess_ms=%q\n' "$postprocess_ms"
@@ -797,6 +934,7 @@ archive_inline_debug_artifacts() {
       printf 'total_ms=%q\n' "$total_ms"
       printf 'archived_at=%q\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } >"${prefix}.meta" 2>/dev/null || true
+    cleanup_inline_debug_audio "$INLINE_DEBUG_WAV_RETENTION_DAYS"
   fi
 
   rm -f "$wav" 2>/dev/null || true
@@ -817,34 +955,364 @@ resolve_inline_stop_grace_ms() {
 }
 
 logs() {
-  echo "Logs"
+  logs_usage() {
+    die "usage: tmux-whisper logs [--json] | logs path [record|transcribe|inline-record|inline-transcribe|all] [--json] | logs tail [record|transcribe|inline-record|inline-transcribe|all] [--lines N] [--json] | logs follow [record|transcribe|inline-record|inline-transcribe|all] [--lines N] [--json]"
+  }
+
+  logs_stream_keys() {
+    printf '%s\n' "record" "transcribe" "inline-record" "inline-transcribe"
+  }
+
+  logs_inline_record_path() {
+    printf '%s\n' "$TMPDIR/whisper-dictate-inline.record.log"
+  }
+
+  logs_inline_transcribe_path() {
+    printf '%s\n' "$TMPDIR/whisper-dictate-inline.transcribe.log"
+  }
+
+  logs_stream_path() {
+    case "${1:-}" in
+      record) printf '%s\n' "$RECORD_LOG" ;;
+      transcribe) printf '%s\n' "$TRANSCRIBE_LOG" ;;
+      inline-record) logs_inline_record_path ;;
+      inline-transcribe) logs_inline_transcribe_path ;;
+      *) return 1 ;;
+    esac
+  }
+
+  logs_stream_label() {
+    case "${1:-}" in
+      record) printf '%s\n' "record" ;;
+      transcribe) printf '%s\n' "transcribe" ;;
+      inline-record) printf '%s\n' "inline record" ;;
+      inline-transcribe) printf '%s\n' "inline transcribe" ;;
+      *) return 1 ;;
+    esac
+  }
+
+  logs_stream_default_lines() {
+    case "${1:-}" in
+      record|inline-record) printf '%s\n' "40" ;;
+      transcribe|inline-transcribe) printf '%s\n' "80" ;;
+      *) return 1 ;;
+    esac
+  }
+
+  logs_canonical_stream() {
+    case "${1:-}" in
+      all|"") printf '%s\n' "all" ;;
+      record) printf '%s\n' "record" ;;
+      transcribe) printf '%s\n' "transcribe" ;;
+      inline-record|inline_record|inline-rec|inline_record_log) printf '%s\n' "inline-record" ;;
+      inline-transcribe|inline_transcribe|inline-trn|inline_transcribe_log) printf '%s\n' "inline-transcribe" ;;
+      *) return 1 ;;
+    esac
+  }
+
+  logs_selected_streams() {
+    local spec="${1:-all}"
+    local canonical
+    canonical="$(logs_canonical_stream "$spec")" || die "unknown log stream: $spec (use: record, transcribe, inline-record, inline-transcribe, all)"
+    if [[ "$canonical" == "all" ]]; then
+      logs_stream_keys
+    else
+      printf '%s\n' "$canonical"
+    fi
+  }
+
+  logs_json() {
+    local subcmd="$1"
+    local rows_input=""
+    rows_input="$(cat)"
+    LOG_ROWS="$rows_input" python3 - "$subcmd" <<'PYEOF'
+import json
+import os
+import sys
+from collections import deque
+
+subcmd = sys.argv[1]
+streams = []
+
+for raw_line in os.environ.get("LOG_ROWS", "").splitlines():
+    if not raw_line:
+        continue
+    key, label, path, tail_lines = raw_line.split("\t", 3)
+    path = os.path.expanduser(path)
+    tail_n = int(tail_lines)
+    exists = os.path.exists(path)
+    item = {
+        "key": key,
+        "label": label,
+        "path": path,
+        "exists": exists,
+        "tail_lines_requested": tail_n,
+    }
+    if subcmd in ("show", "tail"):
+        lines = []
+        if exists:
+          try:
+              with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                  lines = list(deque((line.rstrip("\n") for line in fh), maxlen=tail_n))
+          except Exception as exc:
+              item["read_error"] = str(exc)
+        item["line_count"] = len(lines)
+        item["lines"] = lines
+    streams.append(item)
+
+print(json.dumps({
+    "command": "logs",
+    "subcommand": subcmd,
+    "streams": streams,
+    "next_commands": [
+        "tmux-whisper status --preset compact",
+        "tmux-whisper history sessions 5",
+        "tmux-whisper bench 10",
+    ],
+}, indent=2, sort_keys=True))
+PYEOF
+  }
+
+  logs_follow_output() {
+    local rows_input="$1"
+    local json_output="$2"
+    LOG_ROWS="$rows_input" python3 -u - "$json_output" <<'PYEOF'
+import json
+import os
+import sys
+import time
+
+json_output = sys.argv[1] == "1"
+poll_ms_raw = os.environ.get("DICTATE_LOGS_FOLLOW_POLL_MS", "1000").strip()
+iterations_raw = os.environ.get("DICTATE_LOGS_FOLLOW_ITERATIONS", "").strip()
+
+try:
+    poll_ms = int(poll_ms_raw)
+except Exception:
+    poll_ms = 1000
+if poll_ms <= 0:
+    poll_ms = 1000
+
+iterations = None
+if iterations_raw:
+    try:
+        parsed_iterations = int(iterations_raw)
+    except Exception:
+        parsed_iterations = 0
+    if parsed_iterations > 0:
+        iterations = parsed_iterations
+
+streams = []
+for raw_line in os.environ.get("LOG_ROWS", "").splitlines():
+    if not raw_line:
+        continue
+    key, label, path, tail_lines = raw_line.split("\t", 3)
+    streams.append(
+        {
+            "key": key,
+            "label": label,
+            "path": os.path.expanduser(path),
+            "tail_lines_requested": int(tail_lines),
+            "seen_lines": 0,
+        }
+    )
+
+multi_stream = len(streams) > 1
+
+def emit_text(line: str = ""):
+    print(line, flush=True)
+
+def emit_json(payload):
+    print(json.dumps(payload, sort_keys=True), flush=True)
+
+def emit_line(stream, line, initial):
+    if json_output:
+        emit_json(
+            {
+                "command": "logs",
+                "subcommand": "follow",
+                "event": "line",
+                "stream": stream["key"],
+                "label": stream["label"],
+                "path": stream["path"],
+                "line": line,
+                "initial": initial,
+            }
+        )
+    else:
+        if multi_stream:
+            emit_text(f"[{stream['key']}] {line}")
+        else:
+            emit_text(line)
+
+def read_lines(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return [line.rstrip("\n") for line in fh]
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return []
+
+if json_output:
+    for stream in streams:
+        exists = os.path.exists(stream["path"])
+        emit_json(
+            {
+                "command": "logs",
+                "subcommand": "follow",
+                "event": "start",
+                "stream": stream["key"],
+                "label": stream["label"],
+                "path": stream["path"],
+                "exists": exists,
+                "tail_lines_requested": stream["tail_lines_requested"],
+                "poll_ms": poll_ms,
+            }
+        )
+else:
+    emit_text(f"Following logs (poll {poll_ms}ms). Press Ctrl-C to stop.")
+    for stream in streams:
+        emit_text("")
+        emit_text(f"--- {stream['label']} (follow tail {stream['tail_lines_requested']}) ---")
+
+for stream in streams:
+    current_lines = read_lines(stream["path"])
+    if current_lines is None:
+        if not json_output:
+            emit_text(f"No {stream['label']} log yet at: {stream['path']}")
+        stream["seen_lines"] = 0
+        continue
+
+    stream["seen_lines"] = len(current_lines)
+    initial_lines = current_lines[-stream["tail_lines_requested"] :]
+    for line in initial_lines:
+        emit_line(stream, line, True)
+
+poll_count = 0
+while iterations is None or poll_count < iterations:
+    time.sleep(poll_ms / 1000.0)
+    poll_count += 1
+    for stream in streams:
+        current_lines = read_lines(stream["path"])
+        if current_lines is None:
+            stream["seen_lines"] = 0
+            continue
+        if len(current_lines) < stream["seen_lines"]:
+            stream["seen_lines"] = 0
+        new_lines = current_lines[stream["seen_lines"] :]
+        stream["seen_lines"] = len(current_lines)
+        for line in new_lines:
+            emit_line(stream, line, False)
+PYEOF
+  }
+
+  local subcmd="show"
+  case "${1:-}" in
+    show|path|tail|follow)
+      subcmd="$1"
+      shift
+      ;;
+  esac
+
+  local json_output="0"
+  local stream_spec="all"
+  local lines_override=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json)
+        json_output="1"
+        ;;
+      --lines)
+        shift
+        [[ $# -gt 0 ]] || logs_usage
+        lines_override="$1"
+        ;;
+      record|transcribe|inline-record|inline_record|inline-rec|inline_record_log|inline-transcribe|inline_transcribe|inline-trn|inline_transcribe_log|all)
+        [[ "$stream_spec" == "all" ]] || logs_usage
+        stream_spec="$1"
+        ;;
+      *)
+        logs_usage
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -n "$lines_override" && ! "$lines_override" =~ ^[0-9]+$ ]]; then
+    die "logs --lines expects an integer"
+  fi
+  if [[ "$subcmd" == "path" && -n "$lines_override" ]]; then
+    die "logs path does not accept --lines"
+  fi
+
+  local selected rows=""
+  while IFS= read -r selected; do
+    [[ -n "$selected" ]] || continue
+    local path label tail_lines
+    path="$(logs_stream_path "$selected")"
+    label="$(logs_stream_label "$selected")"
+    tail_lines="${lines_override:-$(logs_stream_default_lines "$selected")}"
+    if [[ -n "$rows" ]]; then
+      rows+=$'\n'
+    fi
+    rows+="${selected}"$'\t'"${label}"$'\t'"${path}"$'\t'"${tail_lines}"
+  done < <(logs_selected_streams "$stream_spec")
+
+  if [[ "$subcmd" == "follow" ]]; then
+    logs_follow_output "$rows" "$json_output"
+    return 0
+  fi
+
+  if [[ "$json_output" == "1" ]]; then
+    printf '%s\n' "$rows" | logs_json "$subcmd"
+    return 0
+  fi
+
+  case "$subcmd" in
+    show|path)
+      echo "Log paths"
+      echo ""
+      while IFS=$'\t' read -r selected label path tail_lines; do
+        [[ -n "$selected" ]] || continue
+        local status="missing"
+        [[ -f "$path" ]] && status="present"
+        printf "  %-16s %s (%s)\n" "${selected}:" "$path" "$status"
+      done <<< "$rows"
+      ;;
+  esac
+
+  case "$subcmd" in
+    path)
+      ;;
+    show|tail)
+      local first_block="1"
+      while IFS=$'\t' read -r selected label path tail_lines; do
+        [[ -n "$selected" ]] || continue
+        if [[ "$first_block" == "1" ]]; then
+          echo ""
+          first_block="0"
+        else
+          echo ""
+        fi
+        echo "--- ${label} (tail ${tail_lines}) ---"
+        if [[ -f "$path" ]]; then
+          tail -n "$tail_lines" "$path" || true
+        else
+          echo "No ${label} log yet at: $path"
+        fi
+      done <<< "$rows"
+      ;;
+    *)
+      logs_usage
+      ;;
+  esac
+
   echo ""
-  echo "  record:     $RECORD_LOG"
-  echo "  transcribe: $TRANSCRIBE_LOG"
-  echo "  inline rec: $TMPDIR/whisper-dictate-inline.record.log"
-  echo "  inline trn: $TMPDIR/whisper-dictate-inline.transcribe.log"
-  echo ""
-  if [[ -f "$RECORD_LOG" ]]; then
-    echo "--- record (tail) ---"
-    tail -n 40 "$RECORD_LOG" || true
-    echo ""
-  fi
-  if [[ -f "$TRANSCRIBE_LOG" ]]; then
-    echo "--- transcribe (tail) ---"
-    tail -n 80 "$TRANSCRIBE_LOG" || true
-  fi
-  local inline_record="$TMPDIR/whisper-dictate-inline.record.log"
-  local inline_transcribe="$TMPDIR/whisper-dictate-inline.transcribe.log"
-  if [[ -f "$inline_record" ]]; then
-    echo ""
-    echo "--- inline record (tail) ---"
-    tail -n 40 "$inline_record" || true
-  fi
-  if [[ -f "$inline_transcribe" ]]; then
-    echo ""
-    echo "--- inline transcribe (tail) ---"
-    tail -n 80 "$inline_transcribe" || true
-  fi
+  echo "Next:"
+  echo "  tmux-whisper status --preset compact"
+  echo "  tmux-whisper history sessions 5"
+  echo "  tmux-whisper bench 10"
 }
 
 changelog() {
@@ -938,6 +1406,7 @@ preferred_table_order = [
   "audio",
   "audio.sounds",
   "clean",
+  "history",
   "whisper",
   "swift_parakeet",
   "postprocess",
@@ -956,6 +1425,7 @@ preferred_key_order = {
   "audio": ["source", "device_name", "mac_name", "iphone_name", "device_index", "silence_trim", "silence_trim_mode", "silence_threshold_db", "silence_min_ms", "silence_keep_ms"],
   "audio.sounds": ["cancel", "cancel_enabled", "enabled", "error", "error_enabled", "process", "process_enabled", "start", "start_enabled", "stop", "stop_enabled"],
   "clean": ["repeats_level"],
+  "history": ["retention_days", "audio_retention_days"],
   "whisper": ["models_dir", "backend", "model", "threads", "beam_size", "best_of", "vad", "vad_model", "vad_threshold", "vad_min_speech_ms", "vad_min_silence_ms", "vad_speech_pad_ms"],
   "swift_parakeet": ["model_path", "model_version", "socket_path"],
   "postprocess": ["enabled", "llm", "max_tokens", "chunk_words", "budget_long_words_threshold"],
@@ -1076,6 +1546,392 @@ print(f"parse_error\t{parse_error}")
 PYEOF
 }
 
+config_snapshot_rows() {
+  need python3
+  local default_cfg_text
+  default_cfg_text="$(default_config_toml)"
+  DEFAULT_CONFIG_TOML="$default_cfg_text" python3 - "$DICTATE_CONFIG_FILE" "$DICTATE_CONFIG_SCHEMA_VERSION" <<'PYEOF'
+import os
+import sys
+import tomllib
+
+path = os.path.expanduser(sys.argv[1])
+expected = int(sys.argv[2])
+default_cfg = tomllib.loads(os.environ["DEFAULT_CONFIG_TOML"])
+exists = os.path.isfile(path)
+cfg = {}
+parse_error = ""
+MISSING = object()
+
+if exists:
+    try:
+        with open(path, "rb") as f:
+            cfg = tomllib.load(f) or {}
+    except tomllib.TOMLDecodeError as exc:
+        parse_error = str(exc).replace("\n", " ")
+
+def get(tree, dotted_path, default=MISSING):
+    cur = tree
+    for part in dotted_path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+def get_effective(dotted_path):
+    value = get(cfg, dotted_path, MISSING)
+    if value is not MISSING:
+        return value
+    value = get(default_cfg, dotted_path, MISSING)
+    if value is not MISSING:
+        return value
+    return None
+
+raw_version = get(cfg, "meta.config_version", MISSING)
+if parse_error:
+    label = "invalid"
+    status = "invalid"
+elif exists:
+    if isinstance(raw_version, int):
+        label = f"v{raw_version}"
+        status = "ok" if raw_version == expected else "mismatch"
+    else:
+        label = "unset"
+        status = "mismatch"
+else:
+    label = "missing"
+    status = "missing"
+
+def fmt(value):
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    return str(value)
+
+rows = [
+    ("path", path),
+    ("exists", "1" if exists else "0"),
+    ("schema_label", label),
+    ("schema_status", status),
+    ("parse_error", parse_error),
+    ("audio_source", get_effective("audio.source")),
+    ("audio_device_name", get_effective("audio.device_name")),
+    ("audio_mac_name", get_effective("audio.mac_name")),
+    ("audio_iphone_name", get_effective("audio.iphone_name")),
+    ("audio_device_index", get_effective("audio.device_index")),
+    ("swift_parakeet_model_path", get_effective("swift_parakeet.model_path")),
+    ("swift_parakeet_socket_path", get_effective("swift_parakeet.socket_path")),
+    ("postprocess_enabled", get_effective("postprocess.enabled")),
+    ("postprocess_llm", get_effective("postprocess.llm")),
+    ("history_retention_days", get_effective("history.retention_days")),
+    ("history_audio_retention_days", get_effective("history.audio_retention_days")),
+    ("inline_autosend", get_effective("inline.autosend")),
+    ("inline_process_sound", get_effective("inline.process_sound")),
+    ("tmux_mode", get_effective("tmux.mode")),
+    ("debug_keep_logs", get_effective("debug.keep_logs")),
+]
+
+for key, value in rows:
+    print(f"{key}\t{fmt(value)}")
+PYEOF
+}
+
+config_show_text() {
+  local rows_input path exists label status parse_error
+  local audio_source audio_device_name audio_mac_name audio_iphone_name audio_device_index
+  local model_path socket_path postprocess_enabled postprocess_llm history_retention_days history_audio_retention_days inline_autosend inline_process_sound tmux_mode debug_keep_logs
+  rows_input="$(config_snapshot_rows)"
+
+  while IFS=$'\t' read -r key value; do
+    case "$key" in
+      path) path="$value" ;;
+      exists) exists="$value" ;;
+      schema_label) label="$value" ;;
+      schema_status) status="$value" ;;
+      parse_error) parse_error="$value" ;;
+      audio_source) audio_source="$value" ;;
+      audio_device_name) audio_device_name="$value" ;;
+      audio_mac_name) audio_mac_name="$value" ;;
+      audio_iphone_name) audio_iphone_name="$value" ;;
+      audio_device_index) audio_device_index="$value" ;;
+      swift_parakeet_model_path) model_path="$value" ;;
+      swift_parakeet_socket_path) socket_path="$value" ;;
+      postprocess_enabled) postprocess_enabled="$value" ;;
+      postprocess_llm) postprocess_llm="$value" ;;
+      history_retention_days) history_retention_days="$value" ;;
+      history_audio_retention_days) history_audio_retention_days="$value" ;;
+      inline_autosend) inline_autosend="$value" ;;
+      inline_process_sound) inline_process_sound="$value" ;;
+      tmux_mode) tmux_mode="$value" ;;
+      debug_keep_logs) debug_keep_logs="$value" ;;
+    esac
+  done <<<"$rows_input"
+
+  config_show_text_value() {
+    local value="${1:-}"
+    if [[ -z "$value" ]]; then
+      printf '%s\n' "<unset>"
+    else
+      printf '%s\n' "$value"
+    fi
+  }
+
+  config_show_text_bool() {
+    if bool_is_on "${1:-0}"; then
+      printf '%s\n' "on"
+    else
+      printf '%s\n' "off"
+    fi
+  }
+
+  echo "Config path: $path $([[ "$exists" == "1" ]] && echo '(present)' || echo '(missing)')"
+  echo "Config schema: $label (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=$status)"
+  [[ -n "$parse_error" ]] && echo "Parse error: $parse_error"
+  echo ""
+  echo "Current values:"
+  echo "  audio.source: $(config_show_text_value "$audio_source")"
+  echo "  audio.device_name: $(config_show_text_value "$audio_device_name")"
+  echo "  audio.mac_name: $(config_show_text_value "$audio_mac_name")"
+  echo "  audio.iphone_name: $(config_show_text_value "$audio_iphone_name")"
+  echo "  audio.device_index: $(config_show_text_value "$audio_device_index")"
+  echo "  swift_parakeet.model_path: $(config_show_text_value "$model_path")"
+  echo "  swift_parakeet.socket_path: $(config_show_text_value "$socket_path")"
+  echo "  postprocess.enabled: $(config_show_text_bool "$postprocess_enabled")"
+  echo "  postprocess.llm: $(config_show_text_value "$postprocess_llm")"
+  echo "  history.retention_days: $(config_show_text_value "$history_retention_days")"
+  echo "  history.audio_retention_days: $(config_show_text_value "$history_audio_retention_days")"
+  echo "  inline.autosend: $(config_show_text_bool "$inline_autosend")"
+  echo "  inline.process_sound: $(config_show_text_bool "$inline_process_sound")"
+  echo "  tmux.mode: $(config_show_text_value "$tmux_mode")"
+  echo "  debug.keep_logs: $(config_show_text_bool "$debug_keep_logs")"
+  echo ""
+  echo "Commands:"
+  echo "  tmux-whisper config path"
+  echo "  tmux-whisper config get audio.source"
+  echo "  tmux-whisper config defaults"
+  echo "  tmux-whisper config repair --dry-run"
+  echo "  tmux-whisper config repair"
+}
+
+config_show_json() {
+  local rows_input
+  rows_input="$(config_snapshot_rows)"
+  CONFIG_SNAPSHOT_ROWS="$rows_input" python3 - "$DICTATE_CONFIG_SCHEMA_VERSION" <<'PYEOF'
+import json
+import os
+import sys
+
+rows = {}
+for raw_line in os.environ.get("CONFIG_SNAPSHOT_ROWS", "").splitlines():
+    if not raw_line:
+        continue
+    key, value = raw_line.split("\t", 1)
+    rows[key] = value
+
+def bool_value(key):
+    return rows.get(key, "0") == "1"
+
+def nullable(key):
+    value = rows.get(key, "")
+    return value if value != "" else None
+
+print(json.dumps({
+    "command": "config",
+    "subcommand": "show",
+    "config_path": rows.get("path", ""),
+    "config_exists": bool_value("exists"),
+    "schema": {
+        "expected": f"v{sys.argv[1]}",
+        "label": rows.get("schema_label", "missing"),
+        "status": rows.get("schema_status", "missing"),
+    },
+    "parse_error": rows.get("parse_error", ""),
+    "effective": {
+        "audio": {
+            "source": nullable("audio_source"),
+            "device_name": nullable("audio_device_name"),
+            "mac_name": nullable("audio_mac_name"),
+            "iphone_name": nullable("audio_iphone_name"),
+            "device_index": int(rows["audio_device_index"]) if rows.get("audio_device_index", "") else None,
+        },
+        "swift_parakeet": {
+            "model_path": nullable("swift_parakeet_model_path"),
+            "socket_path": nullable("swift_parakeet_socket_path"),
+        },
+        "postprocess": {
+            "enabled": bool_value("postprocess_enabled"),
+            "llm": nullable("postprocess_llm"),
+        },
+        "history": {
+            "retention_days": int(rows["history_retention_days"]) if rows.get("history_retention_days", "") else None,
+            "audio_retention_days": int(rows["history_audio_retention_days"]) if rows.get("history_audio_retention_days", "") else None,
+        },
+        "inline": {
+            "autosend": bool_value("inline_autosend"),
+            "process_sound": bool_value("inline_process_sound"),
+        },
+        "tmux": {
+            "mode": nullable("tmux_mode"),
+        },
+        "debug": {
+            "keep_logs": bool_value("debug_keep_logs"),
+        },
+    },
+}, indent=2, sort_keys=True))
+PYEOF
+}
+
+config_path_json() {
+  local rows_input
+  rows_input="$(config_snapshot_rows)"
+  CONFIG_SNAPSHOT_ROWS="$rows_input" python3 - <<'PYEOF'
+import json
+import os
+
+rows = {}
+for raw_line in os.environ.get("CONFIG_SNAPSHOT_ROWS", "").splitlines():
+    if not raw_line:
+        continue
+    key, value = raw_line.split("\t", 1)
+    rows[key] = value
+
+print(json.dumps({
+    "command": "config",
+    "subcommand": "path",
+    "config_path": rows.get("path", ""),
+    "config_exists": rows.get("exists", "0") == "1",
+}, indent=2, sort_keys=True))
+PYEOF
+}
+
+config_get_emit() {
+  local query_path="${1:-}"
+  local render="${2:-text}"
+  [[ -n "$query_path" ]] || die "usage: tmux-whisper config get <path> [--json]"
+  need python3
+
+  local default_cfg_text
+  default_cfg_text="$(default_config_toml)"
+  DEFAULT_CONFIG_TOML="$default_cfg_text" python3 - "$DICTATE_CONFIG_FILE" "$DICTATE_CONFIG_SCHEMA_VERSION" "$query_path" "$render" <<'PYEOF'
+import json
+import os
+import sys
+import tomllib
+
+path = os.path.expanduser(sys.argv[1])
+expected = int(sys.argv[2])
+query_path = sys.argv[3]
+render = sys.argv[4]
+default_cfg = tomllib.loads(os.environ["DEFAULT_CONFIG_TOML"])
+exists = os.path.isfile(path)
+cfg = {}
+parse_error = ""
+MISSING = object()
+
+if exists:
+    try:
+        with open(path, "rb") as f:
+            cfg = tomllib.load(f) or {}
+    except tomllib.TOMLDecodeError as exc:
+        parse_error = str(exc).replace("\n", " ")
+
+def get(tree, dotted_path, default=MISSING):
+    cur = tree
+    for part in dotted_path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+raw_version = get(cfg, "meta.config_version", MISSING)
+if parse_error:
+    label = "invalid"
+    status = "invalid"
+elif exists:
+    if isinstance(raw_version, int):
+        label = f"v{raw_version}"
+        status = "ok" if raw_version == expected else "mismatch"
+    else:
+        label = "unset"
+        status = "mismatch"
+else:
+    label = "missing"
+    status = "missing"
+
+file_value = get(cfg, query_path, MISSING)
+default_value = get(default_cfg, query_path, MISSING)
+
+if file_value is not MISSING:
+    source = "file"
+    found = True
+    value = file_value
+elif default_value is not MISSING:
+    source = "default"
+    found = True
+    value = default_value
+else:
+    source = "unset"
+    found = False
+    value = None
+
+def value_type(input_value):
+    if input_value is None:
+        return "null"
+    if isinstance(input_value, bool):
+        return "boolean"
+    if isinstance(input_value, int):
+        return "integer"
+    if isinstance(input_value, float):
+        return "number"
+    if isinstance(input_value, str):
+        return "string"
+    if isinstance(input_value, list):
+        return "array"
+    if isinstance(input_value, dict):
+        return "object"
+    return type(input_value).__name__
+
+payload = {
+    "command": "config",
+    "subcommand": "get",
+    "path": query_path,
+    "config_path": path,
+    "config_exists": exists,
+    "schema": {
+        "expected": f"v{expected}",
+        "label": label,
+        "status": status,
+    },
+    "parse_error": parse_error,
+    "found": found,
+    "source": source,
+    "value_type": value_type(value),
+    "value": value,
+}
+
+if render == "json":
+    print(json.dumps(payload, indent=2, sort_keys=True))
+else:
+    if found:
+        print(f"{query_path} = {json.dumps(value, ensure_ascii=False)}")
+    else:
+        print(f"{query_path} = <unset>")
+    print(f"source: {source}")
+    print(f"config path: {path}")
+    if parse_error:
+        print(f"parse error: {parse_error}")
+PYEOF
+}
+
+config_get_text() {
+  config_get_emit "${1:-}" "text"
+}
+
+config_get_json() {
+  config_get_emit "${1:-}" "json"
+}
+
 config_repair() {
   local dry_run=0
   if [[ "${1:-}" == "--dry-run" ]]; then
@@ -1174,6 +2030,7 @@ preferred_table_order = [
   "audio",
   "audio.sounds",
   "clean",
+  "history",
   "whisper",
   "swift_parakeet",
   "postprocess",
@@ -1192,6 +2049,7 @@ preferred_key_order = {
   "audio": ["source", "device_name", "mac_name", "iphone_name", "device_index", "silence_trim", "silence_trim_mode", "silence_threshold_db", "silence_min_ms", "silence_keep_ms"],
   "audio.sounds": ["cancel", "cancel_enabled", "enabled", "error", "error_enabled", "process", "process_enabled", "start", "start_enabled", "stop", "stop_enabled"],
   "clean": ["repeats_level"],
+  "history": ["retention_days", "audio_retention_days"],
   "whisper": ["models_dir", "backend", "model", "threads", "beam_size", "best_of", "vad", "vad_model", "vad_threshold", "vad_min_speech_ms", "vad_min_silence_ms", "vad_speech_pad_ms"],
   "swift_parakeet": ["model_path", "model_version", "socket_path"],
   "postprocess": ["enabled", "llm", "max_tokens", "chunk_words", "budget_long_words_threshold"],
@@ -1381,35 +2239,55 @@ PYEOF
 }
 
 manage_config() {
-  local action="${1:-show}"
+  local json_output="0"
+  local args=()
+  local arg
+
+  for arg in "$@"; do
+    if [[ "$arg" == "--json" ]]; then
+      json_output="1"
+    else
+      args+=("$arg")
+    fi
+  done
+
+  local action="${args[0]:-show}"
   case "$action" in
     ""|show|status)
-      local inspect exists label status parse_error
-      inspect="$(config_inspect_raw)"
-      exists="$(printf "%s\n" "$inspect" | sed -n 's/^exists\t//p')"
-      label="$(printf "%s\n" "$inspect" | sed -n 's/^schema_label\t//p')"
-      status="$(printf "%s\n" "$inspect" | sed -n 's/^schema_status\t//p')"
-      parse_error="$(printf "%s\n" "$inspect" | sed -n 's/^parse_error\t//p')"
-      echo "Config path: $DICTATE_CONFIG_FILE $([[ "$exists" == "1" ]] && echo '(present)' || echo '(missing)')"
-      echo "Config schema: $label (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=$status)"
-      [[ -n "$parse_error" ]] && echo "Parse error: $parse_error"
-      echo ""
-      echo "Commands:"
-      echo "  tmux-whisper config defaults"
-      echo "  tmux-whisper config repair --dry-run"
-      echo "  tmux-whisper config repair"
+      [[ "${#args[@]}" -le 1 ]] || die "usage: tmux-whisper config [show|path|get <path>|defaults|repair [--dry-run]] [--json]"
+      if [[ "$json_output" == "1" ]]; then
+        config_show_json
+      else
+        config_show_text
+      fi
       ;;
     path)
-      echo "$DICTATE_CONFIG_FILE"
+      [[ "${#args[@]}" -eq 1 ]] || die "usage: tmux-whisper config path [--json]"
+      if [[ "$json_output" == "1" ]]; then
+        config_path_json
+      else
+        echo "$DICTATE_CONFIG_FILE"
+      fi
+      ;;
+    get)
+      [[ "${#args[@]}" -eq 2 ]] || die "usage: tmux-whisper config get <path> [--json]"
+      if [[ "$json_output" == "1" ]]; then
+        config_get_json "${args[1]}"
+      else
+        config_get_text "${args[1]}"
+      fi
       ;;
     defaults|default)
+      [[ "$json_output" == "0" ]] || die "config defaults does not accept --json"
+      [[ "${#args[@]}" -eq 1 ]] || die "usage: tmux-whisper config defaults"
       default_config_toml
       ;;
     repair)
-      config_repair "${@:2}"
+      [[ "$json_output" == "0" ]] || die "config repair does not accept --json"
+      config_repair "${args[@]:1}"
       ;;
     *)
-      die "usage: tmux-whisper config [show|path|defaults|repair [--dry-run]]"
+      die "usage: tmux-whisper config [show|path|get <path>|defaults|repair [--dry-run]] [--json]"
       ;;
   esac
 }
@@ -2455,85 +3333,252 @@ append_bench_entry() {
 }
 
 bench() {
-  local arg="${1:-}"
-  local limit="30"
+  local json_output="0"
+  local args=()
+  local filter_args=()
+  local arg
+  local usage="usage: tmux-whisper bench [N|all] [--json] [--flow inline|tmux] [--status STATUS] [--mode MODE] [--model MODEL] [--slow-startup-ms N] [--slow-startup-audio-ms N] [--slow-startup-ffmpeg-ms N] [--slow-total-ms N] | bench export [N|all] [--json] [filters] | bench clear"
 
-  case "$arg" in
-    "" ) ;;
+  while [[ $# -gt 0 ]]; do
+    arg="${1:-}"
+    case "$arg" in
+      --json)
+        json_output="1"
+        ;;
+      --flow|--status|--mode|--model)
+        shift
+        [[ $# -gt 0 && -n "${1:-}" ]] || die "$usage"
+        filter_args+=("${arg#--}=${1:-}")
+        ;;
+      --flow=*|--status=*|--mode=*|--model=*)
+        filter_args+=("${arg#--}")
+        ;;
+      --slow-startup-ms|--slow-startup-total-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_total_ms=${1:-}")
+        ;;
+      --slow-startup-ms=*|--slow-startup-total-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_total_ms=${arg#*=}")
+        ;;
+      --slow-startup-audio-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_audio_ms=${1:-}")
+        ;;
+      --slow-startup-audio-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_audio_ms=${arg#*=}")
+        ;;
+      --slow-startup-ffmpeg-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_ffmpeg_live_ms=${1:-}")
+        ;;
+      --slow-startup-ffmpeg-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_ffmpeg_live_ms=${arg#*=}")
+        ;;
+      --slow-startup-target-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_target_ms=${1:-}")
+        ;;
+      --slow-startup-target-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_target_ms=${arg#*=}")
+        ;;
+      --slow-total-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_total_ms=${1:-}")
+        ;;
+      --slow-total-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_total_ms=${arg#*=}")
+        ;;
+      --slow-transcribe-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_transcribe_ms=${1:-}")
+        ;;
+      --slow-transcribe-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_transcribe_ms=${arg#*=}")
+        ;;
+      --slow-paste-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_paste_ms=${1:-}")
+        ;;
+      --slow-paste-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_paste_ms=${arg#*=}")
+        ;;
+      --*)
+        die "$usage"
+        ;;
+      *)
+        args+=("$arg")
+        ;;
+    esac
+    shift
+  done
+
+  local subcmd="show"
+  local spec="30"
+  case "${args[0]:-}" in
+    "")
+      ;;
     clear)
+      [[ "$json_output" == "0" ]] || die "bench clear does not accept --json"
+      [[ "${#filter_args[@]}" -eq 0 ]] || die "$usage"
+      [[ "${#args[@]}" -eq 1 ]] || die "$usage"
       rm -f "$BENCH_FILE" 2>/dev/null || true
       echo "Bench data cleared."
       return 0
       ;;
+    export)
+      subcmd="export"
+      [[ "${#args[@]}" -le 2 ]] || die "$usage"
+      spec="${args[1]:-30}"
+      if [[ "$spec" != "all" ]]; then
+        [[ "$spec" =~ ^[0-9]+$ ]] || die "$usage"
+        (( spec > 0 )) || die "$usage"
+      fi
+      ;;
     *)
-      [[ "$arg" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper bench [N|clear]"
-      limit="$arg"
+      [[ "${#args[@]}" -eq 1 ]] || die "$usage"
+      if [[ "${args[0]}" != "all" ]]; then
+        [[ "${args[0]}" =~ ^[0-9]+$ ]] || die "$usage"
+        (( ${args[0]} > 0 )) || die "$usage"
+      fi
+      spec="${args[0]}"
       ;;
   esac
 
-  if [[ ! -f "$BENCH_FILE" ]]; then
-    echo "No bench data yet."
-    echo "Run a dictation first, then: tmux-whisper bench"
-    return 0
-  fi
-
   need python3
-  python3 - "$BENCH_FILE" "$limit" <<'PYEOF'
-import collections, statistics, sys
+  python3 - "$BENCH_FILE" "$subcmd" "$spec" "$json_output" ${filter_args[@]+"${filter_args[@]}"} <<'PYEOF'
+import collections
+import json
+import os
+import statistics
+import sys
 
-path = sys.argv[1]
-limit = int(sys.argv[2]) if len(sys.argv) > 2 else 30
+path = os.path.expanduser(sys.argv[1])
+subcmd = sys.argv[2]
+spec = sys.argv[3]
+json_output = sys.argv[4] == "1"
+filter_args = sys.argv[5:]
+
+FILTER_LABELS = {
+    "flow": "flow",
+    "status": "status",
+    "mode": "mode",
+    "model": "model",
+    "min_record_ms": "record_ms",
+    "min_transcribe_ms": "transcribe_ms",
+    "min_paste_ms": "paste_ms",
+    "min_total_ms": "total_ms",
+    "min_startup_total_ms": "startup_total_ms",
+    "min_startup_audio_ms": "startup_audio_ms",
+    "min_startup_ffmpeg_live_ms": "startup_ffmpeg_live_ms",
+    "min_startup_target_ms": "startup_target_ms",
+}
+
+filters = {
+    "flow": None,
+    "status": None,
+    "mode": None,
+    "model": None,
+    "minimums": {},
+}
+for item in filter_args:
+    if "=" not in item:
+        continue
+    key, value = item.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+    if key in {"flow", "status", "mode", "model"}:
+        filters[key] = value
+    elif key in FILTER_LABELS:
+        try:
+            filters["minimums"][FILTER_LABELS[key]] = int(value)
+        except Exception:
+            raise SystemExit(f"invalid bench filter: {key}={value}")
+
+active_filters = {
+    key: value
+    for key, value in filters.items()
+    if (isinstance(value, dict) and value) or (not isinstance(value, dict) and value is not None)
+}
 
 records = []
-with open(path, "r", encoding="utf-8", errors="replace") as fh:
-    for line in fh:
-        parts = line.rstrip("\n").split("\t")
-        if len(parts) < 14:
+if os.path.isfile(path):
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for line_number, line in enumerate(fh, start=1):
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 14:
+                continue
+            ts, flow, status, model, mode, post, rawc, outc, rec, trn, cln, pps, pst, tot = parts[:14]
+            startup_total = parts[14] if len(parts) > 14 else "0"
+            startup_audio = parts[15] if len(parts) > 15 else "0"
+            startup_live = parts[16] if len(parts) > 16 else "0"
+            startup_target = parts[17] if len(parts) > 17 else "0"
+            startup_source = parts[18] if len(parts) > 18 else ""
+
+            def to_int(v: str) -> int:
+                try:
+                    return int(v)
+                except Exception:
+                    return 0
+
+            records.append(
+                {
+                    "line_number": line_number,
+                    "timestamp": ts,
+                    "flow": flow,
+                    "status": status,
+                    "model": model,
+                    "mode": mode,
+                    "postprocess_enabled": post in {"1", "true", "on", "yes"},
+                    "raw_chars": to_int(rawc),
+                    "out_chars": to_int(outc),
+                    "record_ms": to_int(rec),
+                    "transcribe_ms": to_int(trn),
+                    "clean_ms": to_int(cln),
+                    "postprocess_ms": to_int(pps),
+                    "paste_ms": to_int(pst),
+                    "total_ms": to_int(tot),
+                    "startup_total_ms": to_int(startup_total),
+                    "startup_audio_ms": to_int(startup_audio),
+                    "startup_ffmpeg_live_ms": to_int(startup_live),
+                    "startup_target_ms": to_int(startup_target),
+                    "startup_audio_source": startup_source,
+                }
+            )
+
+def select_subset(rows, raw_spec):
+    if raw_spec == "all":
+        return list(rows)
+    limit = int(raw_spec)
+    if limit <= 0:
+        limit = 1
+    return rows[-limit:]
+
+def matches_filters(row):
+    for key in ("flow", "status", "mode", "model"):
+        raw_value = filters.get(key)
+        if raw_value is None:
             continue
-        ts, flow, status, model, mode, post, rawc, outc, rec, trn, cln, pps, pst, tot = parts[:14]
-        startup_total = parts[14] if len(parts) > 14 else "0"
-        startup_audio = parts[15] if len(parts) > 15 else "0"
-        startup_live = parts[16] if len(parts) > 16 else "0"
-        startup_target = parts[17] if len(parts) > 17 else "0"
-        startup_source = parts[18] if len(parts) > 18 else ""
-
-        def to_int(v: str) -> int:
-            try:
-                return int(v)
-            except Exception:
-                return 0
-
-        records.append(
-            {
-                "ts": ts,
-                "flow": flow,
-                "status": status,
-                "model": model,
-                "mode": mode,
-                "post": post in {"1", "true", "on", "yes"},
-                "raw_chars": to_int(rawc),
-                "out_chars": to_int(outc),
-                "record_ms": to_int(rec),
-                "transcribe_ms": to_int(trn),
-                "clean_ms": to_int(cln),
-                "postprocess_ms": to_int(pps),
-                "paste_ms": to_int(pst),
-                "total_ms": to_int(tot),
-                "startup_total_ms": to_int(startup_total),
-                "startup_audio_ms": to_int(startup_audio),
-                "startup_ffmpeg_live_ms": to_int(startup_live),
-                "startup_target_ms": to_int(startup_target),
-                "startup_audio_source": startup_source,
-            }
-        )
-
-if not records:
-    print("No bench data yet.")
-    raise SystemExit(0)
-
-if limit <= 0:
-    limit = 1
-subset = records[-limit:]
+        accepted = {part.strip() for part in raw_value.split(",") if part.strip()}
+        if accepted and str(row.get(key, "")) not in accepted:
+            return False
+    for key, minimum in filters["minimums"].items():
+        if int(row.get(key, 0) or 0) < minimum:
+            return False
+    return True
 
 def percentile(values, pct):
     if not values:
@@ -2547,23 +3592,153 @@ def percentile(values, pct):
     frac = pos - lo
     return int(round(vals[lo] * (1 - frac) + vals[hi] * frac))
 
-def fmt_stage(name, values):
+def metric_summary(values):
     if not values:
+        return {"n": 0, "median": 0, "p90": 0, "max": 0}
+    return {
+        "n": len(values),
+        "median": int(statistics.median(values)),
+        "p90": percentile(values, 0.90),
+        "max": max(values),
+    }
+
+def fmt_stage(name, values):
+    metric = metric_summary(values)
+    if metric["n"] == 0:
         return f"{name}: n=0"
-    return (
-        f"{name}: n={len(values)} median={int(statistics.median(values))}ms "
-        f"p90={percentile(values, 0.90)}ms max={max(values)}ms"
-    )
+    return f"{name}: n={metric['n']} median={metric['median']}ms p90={metric['p90']}ms max={metric['max']}ms"
+
+def export_entries(rows):
+    newest_first = list(reversed(rows))
+    entries = []
+    for idx, row in enumerate(newest_first, start=1):
+        item = dict(row)
+        item["index"] = idx
+        entries.append(item)
+    return entries
+
+matching_records = [row for row in records if matches_filters(row)]
+subset = select_subset(matching_records, spec)
+exported = export_entries(subset)
+
+if subcmd == "export":
+    if json_output:
+        print(json.dumps(exported, indent=2, sort_keys=True))
+        raise SystemExit(0)
+    if not exported:
+        print("No bench data yet.")
+        raise SystemExit(0)
+    for entry in exported:
+        print(f"=== Bench {entry['index']} ===")
+        print(f"Timestamp: {entry['timestamp']}")
+        print(f"Flow: {entry['flow']}")
+        print(f"Status: {entry['status']}")
+        print(f"Model: {entry['model']}")
+        print(f"Mode: {entry['mode']}")
+        print(f"Postprocess: {'on' if entry['postprocess_enabled'] else 'off'}")
+        print("")
+        print("Metrics:")
+        for key in (
+            "record_ms",
+            "transcribe_ms",
+            "clean_ms",
+            "postprocess_ms",
+            "paste_ms",
+            "total_ms",
+            "raw_chars",
+            "out_chars",
+        ):
+            print(f"  {key}: {entry[key]}")
+        if (
+            entry["startup_total_ms"] > 0
+            or entry["startup_audio_ms"] > 0
+            or entry["startup_ffmpeg_live_ms"] > 0
+            or entry["startup_target_ms"] > 0
+            or entry["startup_audio_source"]
+        ):
+            print("")
+            print("Startup:")
+            print(f"  startup_total_ms: {entry['startup_total_ms']}")
+            print(f"  startup_audio_ms: {entry['startup_audio_ms']}")
+            print(f"  startup_ffmpeg_live_ms: {entry['startup_ffmpeg_live_ms']}")
+            print(f"  startup_target_ms: {entry['startup_target_ms']}")
+            if entry["startup_audio_source"]:
+                print(f"  startup_audio_source: {entry['startup_audio_source']}")
+        print("")
+    raise SystemExit(0)
 
 flow_counts = collections.Counter(r["flow"] for r in subset)
 status_counts = collections.Counter(r["status"] for r in subset)
+latest = subset[-1] if subset else None
 
-print(f"Tmux Whisper bench (last {len(subset)} of {len(records)} runs)")
+payload = {
+    "command": "bench",
+    "subcommand": "show",
+    "source": path,
+    "total_records": len(records),
+    "filtered_records": len(matching_records),
+    "subset_records": len(subset),
+    "filters": active_filters,
+    "counts": {
+        "flows": {k: flow_counts[k] for k in sorted(flow_counts)},
+        "statuses": {k: status_counts[k] for k in sorted(status_counts)},
+    },
+    "stages": {
+        "record_ms": metric_summary([r["record_ms"] for r in subset if r["record_ms"] > 0]),
+        "transcribe_ms": metric_summary([r["transcribe_ms"] for r in subset if r["transcribe_ms"] >= 0]),
+        "clean_ms": metric_summary([r["clean_ms"] for r in subset if r["clean_ms"] >= 0]),
+        "postprocess_ms": metric_summary([r["postprocess_ms"] for r in subset if r["postprocess_ms"] > 0]),
+        "paste_ms": metric_summary([r["paste_ms"] for r in subset if r["paste_ms"] > 0]),
+        "total_ms": metric_summary([r["total_ms"] for r in subset if r["total_ms"] > 0]),
+    },
+    "startup": {
+        "available": any(
+            r["startup_total_ms"] > 0
+            or r["startup_audio_ms"] > 0
+            or r["startup_ffmpeg_live_ms"] > 0
+            or r["startup_target_ms"] > 0
+            for r in subset
+        ),
+        "total_ms": metric_summary([r["startup_total_ms"] for r in subset if r["startup_total_ms"] > 0]),
+        "audio_ms": metric_summary([r["startup_audio_ms"] for r in subset if r["startup_audio_ms"] > 0]),
+        "ffmpeg_live_ms": metric_summary([r["startup_ffmpeg_live_ms"] for r in subset if r["startup_ffmpeg_live_ms"] > 0]),
+        "target_ms": metric_summary([r["startup_target_ms"] for r in subset if r["startup_target_ms"] > 0]),
+    },
+    "latest": latest,
+    "next_commands": [
+        "tmux-whisper history sessions 5",
+        "tmux-whisper logs tail transcribe --lines 40",
+        "tmux-whisper status --preset compact",
+    ],
+}
+
+if json_output:
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    raise SystemExit(0)
+
+if not records:
+    print("No bench data yet.")
+    print("Run a dictation first, then: tmux-whisper bench")
+    raise SystemExit(0)
+
+if active_filters:
+    print(f"Tmux Whisper bench (last {len(subset)} of {len(matching_records)} matching runs; total {len(records)})")
+else:
+    print(f"Tmux Whisper bench (last {len(subset)} of {len(records)} runs)")
 print(f"Source: {path}")
+if active_filters:
+    print("Filters:")
+    for key in ("flow", "status", "mode", "model"):
+        if filters.get(key) is not None:
+            print(f"  {key}: {filters[key]}")
+    for key, minimum in sorted(filters["minimums"].items()):
+        print(f"  {key}: >= {minimum}ms")
 print("")
 print("Counts:")
-print("  by flow: " + ", ".join(f"{k}={v}" for k, v in sorted(flow_counts.items())))
-print("  by status: " + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())))
+flow_counts_text = ", ".join(f"{k}={v}" for k, v in sorted(flow_counts.items())) if flow_counts else "<none>"
+status_counts_text = ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())) if status_counts else "<none>"
+print("  by flow: " + flow_counts_text)
+print("  by status: " + status_counts_text)
 
 print("")
 print("Stages:")
@@ -2586,32 +3761,488 @@ if startup_total_vals or startup_audio_vals or startup_live_vals or startup_targ
     print("  " + fmt_stage("startup.ffmpeg_livecheck", startup_live_vals))
     print("  " + fmt_stage("startup.target_capture", startup_target_vals))
 
-latest = subset[-1]
-print("")
-print("Latest:")
-print(
-    "  "
-    + f"{latest['ts']} flow={latest['flow']} status={latest['status']} "
-    + f"model={latest['model']} mode={latest['mode']} postprocess={'on' if latest['post'] else 'off'}"
-)
-print(
-    (
+if latest is not None:
+    print("")
+    print("Latest:")
+    print(
         "  "
-        + "record={record_ms}ms transcribe={transcribe_ms}ms clean={clean_ms}ms "
-        + "postprocess={postprocess_ms}ms paste={paste_ms}ms total={total_ms}ms "
-        + "raw_chars={raw_chars} out_chars={out_chars}"
-    ).format(**latest)
-)
-if latest.get("startup_total_ms", 0) > 0:
+        + f"{latest['timestamp']} flow={latest['flow']} status={latest['status']} "
+        + f"model={latest['model']} mode={latest['mode']} postprocess={'on' if latest['postprocess_enabled'] else 'off'}"
+    )
     print(
         (
             "  "
-            + "startup_total={startup_total_ms}ms startup_audio={startup_audio_ms}ms "
-            + "startup_ffmpeg_live={startup_ffmpeg_live_ms}ms startup_target={startup_target_ms}ms "
-            + "audio_source={startup_audio_source}"
+            + "record={record_ms}ms transcribe={transcribe_ms}ms clean={clean_ms}ms "
+            + "postprocess={postprocess_ms}ms paste={paste_ms}ms total={total_ms}ms "
+            + "raw_chars={raw_chars} out_chars={out_chars}"
         ).format(**latest)
     )
+    if latest.get("startup_total_ms", 0) > 0:
+        print(
+            (
+                "  "
+                + "startup_total={startup_total_ms}ms startup_audio={startup_audio_ms}ms "
+                + "startup_ffmpeg_live={startup_ffmpeg_live_ms}ms startup_target={startup_target_ms}ms "
+                + "audio_source={startup_audio_source}"
+            ).format(**latest)
+        )
+
+print("")
+print("Next:")
+print("  tmux-whisper history sessions 5")
+print("  tmux-whisper logs tail transcribe --lines 40")
+print("  tmux-whisper status --preset compact")
 PYEOF
+}
+
+watch() {
+  need python3
+
+  local interval="2"
+  local iterations=""
+  local preset="default"
+
+  while [[ $# -gt 0 ]]; do
+    case "${1:-}" in
+      --preset)
+        shift
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
+        case "${1:-}" in
+          default|compact)
+            preset="${1:-default}"
+            ;;
+          *)
+            die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
+            ;;
+        esac
+        ;;
+      --interval)
+        shift
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
+        interval="${1:-}"
+        ;;
+      --iterations)
+        shift
+        [[ $# -gt 0 ]] || die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
+        iterations="${1:-}"
+        ;;
+      *)
+        die "usage: tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"
+        ;;
+    esac
+    shift
+  done
+
+  WATCH_INTERVAL="$interval" python3 - <<'PYEOF' >/dev/null || die "watch --interval expects a non-negative number of seconds"
+import os
+import sys
+
+raw = os.environ.get("WATCH_INTERVAL", "").strip()
+try:
+    value = float(raw)
+except Exception:
+    raise SystemExit(1)
+
+raise SystemExit(0 if value >= 0 else 1)
+PYEOF
+
+  if [[ -n "$iterations" ]]; then
+    [[ "$iterations" =~ ^[0-9]+$ ]] || die "watch --iterations expects a positive integer"
+    (( iterations > 0 )) || die "watch --iterations expects a positive integer"
+  fi
+
+  local interactive="0"
+  [[ -t 1 ]] && interactive="1"
+
+  local iteration=0
+  while :; do
+    iteration=$((iteration + 1))
+
+    local status_json bench_json last_json history_file
+    status_json="$(status --json 2>/dev/null || true)"
+    bench_json="$(bench --json 2>/dev/null || true)"
+    last_json=""
+    history_file="$(history_entry_file_by_index 1 2>/dev/null || true)"
+    if [[ -n "$history_file" && -f "$history_file" ]]; then
+      last_json="$(show_last_history json 2>/dev/null || true)"
+    fi
+
+    WATCH_STATUS_JSON="$status_json" \
+    WATCH_BENCH_JSON="$bench_json" \
+    WATCH_LAST_JSON="$last_json" \
+    WATCH_INTERVAL="$interval" \
+    WATCH_ITERATION="$iteration" \
+    WATCH_ITERATIONS="$iterations" \
+    WATCH_INTERACTIVE="$interactive" \
+    WATCH_PRESET="$preset" \
+    python3 - <<'PYEOF'
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+
+def load_json_env(name: str):
+    raw = os.environ.get(name, "")
+    if not raw.strip():
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def bool_flag(name: str) -> bool:
+    return os.environ.get(name, "0") == "1"
+
+
+def compact_text(value: str, limit: int = 120) -> str:
+    text = re.sub(r"\s+", " ", value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
+
+
+def format_ms_short(value) -> str:
+    try:
+        ms = int(value)
+    except Exception:
+        return "?"
+    if ms < 1000:
+        return f"{ms}ms"
+    seconds = ms / 1000.0
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = int(seconds // 60)
+    rem = seconds - (minutes * 60)
+    if minutes < 60:
+        return f"{minutes}m {rem:04.1f}s"
+    hours = int(minutes // 60)
+    minutes = minutes % 60
+    return f"{hours}h {minutes:02d}m"
+
+
+def word_count(text: str) -> int:
+    return len(re.findall(r"\b\w+\b", text or ""))
+
+
+def fmt_counts(mapping) -> str:
+    if not isinstance(mapping, dict) or not mapping:
+        return "<none>"
+    return ", ".join(f"{key}={mapping[key]}" for key in sorted(mapping))
+
+
+def print_section(title: str):
+    print(title)
+
+
+def compact_runtime_label(payload) -> str:
+    if not isinstance(payload, dict):
+        return "idle"
+    state = payload.get("state") or "idle"
+    if state == "active":
+        parts = ["active"]
+        if payload.get("pid") is not None:
+            parts.append(f"pid={payload['pid']}")
+        if payload.get("age_seconds") is not None:
+            parts.append(f"age={payload['age_seconds']}s")
+        return ",".join(parts)
+    if state == "stale":
+        if payload.get("age_seconds") is not None:
+            return f"stale,age={payload['age_seconds']}s"
+        return "stale"
+    return state
+
+
+def build_more_detail_commands(summary_state, active_flow, last_entry, status_more_detail):
+    if isinstance(status_more_detail, list):
+        normalized = []
+        for item in status_more_detail:
+            text = str(item or "").strip()
+            if text:
+                normalized.append(text)
+        if normalized:
+            return normalized
+
+    if summary_state == "recording":
+        record_stream = "inline-record" if active_flow == "inline" else "record"
+        return [
+            "tmux-whisper stop",
+            f"tmux-whisper logs follow {record_stream}",
+            "tmux-whisper status --json",
+        ]
+    if summary_state == "processing":
+        transcribe_stream = "inline-transcribe" if active_flow == "inline" else "transcribe"
+        return [
+            f"tmux-whisper logs follow {transcribe_stream}",
+            "tmux-whisper last",
+            "tmux-whisper bench",
+            "tmux-whisper history sessions 5",
+        ]
+    if summary_state in {"attention", "not_ready"}:
+        return [
+            "tmux-whisper doctor",
+            "tmux-whisper debug",
+            "tmux-whisper config repair --dry-run",
+        ]
+    return [
+        "tmux-whisper last" if isinstance(last_entry, dict) else "tmux-whisper history list 5",
+        "tmux-whisper bench",
+        "tmux-whisper logs tail transcribe --lines 20",
+        "tmux-whisper history sessions 5",
+    ]
+
+
+status = load_json_env("WATCH_STATUS_JSON") or {}
+bench = load_json_env("WATCH_BENCH_JSON") or {}
+last_payload = load_json_env("WATCH_LAST_JSON")
+
+summary = status.get("summary") if isinstance(status, dict) else {}
+runtime = status.get("runtime") if isinstance(status, dict) else {}
+effective = status.get("effective_settings") if isinstance(status, dict) else {}
+
+iteration = os.environ.get("WATCH_ITERATION", "1").strip() or "1"
+iterations = os.environ.get("WATCH_ITERATIONS", "").strip()
+interactive = bool_flag("WATCH_INTERACTIVE")
+interval = os.environ.get("WATCH_INTERVAL", "2").strip() or "2"
+preset = os.environ.get("WATCH_PRESET", "default").strip() or "default"
+snapshot_label = f"{iteration}/{iterations}" if iterations else iteration
+
+if interactive:
+    sys.stdout.write("\033[H\033[2J")
+    sys.stdout.flush()
+    print("Tmux Whisper watch")
+else:
+    print(f"=== Tmux Whisper watch snapshot {snapshot_label} ===")
+
+updated = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+print(f"Updated: {updated}")
+print(f"Refresh: every {interval}s")
+print(f"Snapshot: {snapshot_label}")
+if preset != "default":
+    print(f"Preset: {preset}")
+if interactive:
+    print("Press Ctrl-C to stop.")
+print("")
+
+backend_name = effective.get("backend") if isinstance(effective, dict) else None
+backend_readiness = summary.get("backend_readiness") if isinstance(summary, dict) else None
+inline_mode = (((effective.get("mode") or {}).get("inline") or {}).get("display_name")) if isinstance(effective, dict) else None
+inline_mode_source = (((effective.get("mode") or {}).get("inline") or {}).get("source")) if isinstance(effective, dict) else None
+tmux_mode = (((effective.get("mode") or {}).get("tmux") or {}).get("display_name")) if isinstance(effective, dict) else None
+config_schema = (summary.get("config_schema") or {}) if isinstance(summary, dict) else {}
+config_version = config_schema.get("version") or "unknown"
+config_status = config_schema.get("status") or "unknown"
+processing = runtime.get("processing_markers") if isinstance(runtime, dict) else {}
+tmux_queue = runtime.get("tmux_queue") if isinstance(runtime, dict) else {}
+last_entry = (last_payload or {}).get("entry") if isinstance(last_payload, dict) else None
+active_flow = summary.get("active_flow")
+commands = build_more_detail_commands(summary.get("state"), active_flow, last_entry, None)
+
+if preset == "compact":
+    print(
+        "Summary: state={state} backend={backend} flow={flow} config={version}/{status}".format(
+            state=summary.get("state", "unknown"),
+            backend=backend_readiness or "unknown",
+            flow=active_flow or "none",
+            version=config_version,
+            status=config_status,
+        )
+    )
+    print(
+        "Modes: inline={inline} [{source}], tmux={tmux}".format(
+            inline=inline_mode or "?",
+            source=inline_mode_source or "unknown",
+            tmux=tmux_mode or "?",
+        )
+    )
+    print(
+        "Runtime: tmux={tmux} inline={inline} proc={live}/{total} stale={stale} queue={recording}/{processing}".format(
+            tmux=compact_runtime_label(runtime.get("tmux")),
+            inline=compact_runtime_label(runtime.get("inline")),
+            live=(processing or {}).get("live", 0),
+            total=(processing or {}).get("total", 0),
+            stale=(processing or {}).get("stale", 0),
+            recording=(tmux_queue or {}).get("recording", 0),
+            processing=(tmux_queue or {}).get("processing", 0),
+        )
+    )
+    print(f"Headline: {summary.get('headline', 'Status unavailable.')}")
+    if isinstance(last_entry, dict):
+        compact_last = [
+            f"{last_entry.get('mode', '?')} @ {last_entry.get('app', '?')}",
+        ]
+        if last_entry.get("timestamp"):
+            compact_last.append(str(last_entry["timestamp"]))
+        metrics = last_entry.get("metrics") if isinstance(last_entry.get("metrics"), dict) else {}
+        if metrics.get("total_ms") is not None:
+            compact_last.append(f"total={format_ms_short(metrics.get('total_ms'))}")
+        if metrics.get("transcribe_ms") is not None:
+            compact_last.append(f"transcribe={format_ms_short(metrics.get('transcribe_ms'))}")
+        compact_last.append(f"preview={compact_text(str(last_entry.get('processed') or last_entry.get('raw') or ''), 80) or '<empty>'}")
+        print("Last: " + " ".join(compact_last))
+    else:
+        print("Last: none")
+    total_records = bench.get("total_records", 0) if isinstance(bench, dict) else 0
+    subset_records = bench.get("subset_records", 0) if isinstance(bench, dict) else 0
+    if not total_records:
+        print("Bench: none")
+    else:
+        latest = bench.get("latest") if isinstance(bench, dict) else {}
+        bench_bits = [f"window={subset_records}/{total_records}"]
+        if isinstance(latest, dict) and latest:
+            latest_bits = [str(latest.get("flow", "?")), str(latest.get("status", "?"))]
+            if latest.get("mode"):
+                latest_bits.append(f"mode={latest['mode']}")
+            latest_bits.append(f"total={format_ms_short(latest.get('total_ms', 0))}")
+            latest_bits.append(f"transcribe={format_ms_short(latest.get('transcribe_ms', 0))}")
+            if latest.get("paste_ms") is not None:
+                latest_bits.append(f"paste={format_ms_short(latest.get('paste_ms', 0))}")
+            bench_bits.append("latest=" + " ".join(latest_bits))
+        print("Bench: " + " ".join(bench_bits))
+    print("More: " + " | ".join(commands))
+    raise SystemExit(0)
+
+print_section("Summary")
+print(f"  state: {summary.get('state', 'unknown')}")
+print(f"  headline: {summary.get('headline', 'Status unavailable.')}")
+if backend_name or backend_readiness:
+    print(f"  backend: {(backend_name or 'unknown')} ({backend_readiness or 'unknown'})")
+print(
+    "  modes: inline={inline} [{source}], tmux={tmux}".format(
+        inline=inline_mode or "?",
+        source=inline_mode_source or "unknown",
+        tmux=tmux_mode or "?",
+    )
+)
+print(f"  config: {config_version} ({config_status})")
+active_flow = summary.get("active_flow")
+print(f"  active_flow: {active_flow or 'none'}")
+print(f"  next_action: {summary.get('next_action', 'n/a')}")
+print("")
+
+
+def render_runtime_line(label: str, payload):
+    if not isinstance(payload, dict):
+        print(f"  {label}: unavailable")
+        return
+    state = payload.get("state") or "idle"
+    pieces = [state]
+    if payload.get("pid") is not None:
+        pieces.append(f"pid={payload['pid']}")
+    if payload.get("age_seconds") is not None:
+        pieces.append(f"age={payload['age_seconds']}s")
+    if payload.get("display_target"):
+        pieces.append(f"target={payload['display_target']}")
+    if payload.get("model"):
+        pieces.append(f"model={payload['model']}")
+    print(f"  {label}: " + " ".join(pieces))
+
+
+print_section("Runtime")
+render_runtime_line("tmux", runtime.get("tmux"))
+render_runtime_line("inline", runtime.get("inline"))
+print(
+    "  processing: live={live} stale={stale}".format(
+        live=(processing or {}).get("live", 0),
+        stale=(processing or {}).get("stale", 0),
+    )
+)
+print(
+    "  tmux_queue: recording={recording} processing={processing}".format(
+        recording=(tmux_queue or {}).get("recording", 0),
+        processing=(tmux_queue or {}).get("processing", 0),
+    )
+)
+print("")
+
+print_section("Latest dictation")
+if not isinstance(last_entry, dict):
+    print("  No history entries yet.")
+else:
+    raw = str(last_entry.get("raw", "") or "")
+    processed = str(last_entry.get("processed", "") or "")
+    metrics = last_entry.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+    print(
+        "  mode/app: {mode} @ {app}".format(
+            mode=last_entry.get("mode", "?") or "?",
+            app=last_entry.get("app", "?") or "?",
+        )
+    )
+    if last_entry.get("timestamp"):
+        print(f"  timestamp: {last_entry['timestamp']}")
+    print(f"  words: raw={word_count(raw)} processed={word_count(processed)}")
+    metric_bits = []
+    if metrics.get("record_ms") is not None:
+        metric_bits.append(f"capture={format_ms_short(metrics.get('record_ms'))}")
+    if metrics.get("total_ms") is not None:
+        metric_bits.append(f"total={format_ms_short(metrics.get('total_ms'))}")
+    if metrics.get("transcribe_ms") is not None:
+        metric_bits.append(f"transcribe={format_ms_short(metrics.get('transcribe_ms'))}")
+    if metrics.get("paste_ms") is not None:
+        metric_bits.append(f"paste={format_ms_short(metrics.get('paste_ms'))}")
+    if metric_bits:
+        print("  timings: " + " ".join(metric_bits))
+    preview = compact_text(processed or raw)
+    print(f"  preview: {preview or '<empty>'}")
+print("")
+
+print_section("Bench")
+total_records = bench.get("total_records", 0) if isinstance(bench, dict) else 0
+subset_records = bench.get("subset_records", 0) if isinstance(bench, dict) else 0
+if not total_records:
+    print("  No bench data yet.")
+else:
+    print(f"  window: last {subset_records} of {total_records}")
+    latest = bench.get("latest") if isinstance(bench, dict) else {}
+    if isinstance(latest, dict) and latest:
+        latest_parts = [
+            latest.get("flow", "?"),
+            latest.get("status", "?"),
+            f"total={format_ms_short(latest.get('total_ms', 0))}",
+            f"transcribe={format_ms_short(latest.get('transcribe_ms', 0))}",
+            f"paste={format_ms_short(latest.get('paste_ms', 0))}",
+        ]
+        if latest.get("mode"):
+            latest_parts.insert(2, f"mode={latest['mode']}")
+        print("  latest: " + " ".join(str(part) for part in latest_parts if part))
+    stages = bench.get("stages") if isinstance(bench, dict) else {}
+    startup = bench.get("startup") if isinstance(bench, dict) else {}
+    median_parts = []
+    startup_total = (startup.get("total_ms") or {}).get("median") if isinstance(startup, dict) else None
+    if startup_total:
+        median_parts.append(f"startup={format_ms_short(startup_total)}")
+    transcribe_median = (stages.get("transcribe_ms") or {}).get("median") if isinstance(stages, dict) else None
+    if transcribe_median is not None and (stages.get("transcribe_ms") or {}).get("n", 0) > 0:
+        median_parts.append(f"transcribe={format_ms_short(transcribe_median)}")
+    total_median = (stages.get("total_ms") or {}).get("median") if isinstance(stages, dict) else None
+    if total_median is not None and (stages.get("total_ms") or {}).get("n", 0) > 0:
+        median_parts.append(f"total={format_ms_short(total_median)}")
+    if median_parts:
+        print("  medians: " + " ".join(median_parts))
+    counts = bench.get("counts") if isinstance(bench, dict) else {}
+    print(
+        "  counts: flows[{flows}] statuses[{statuses}]".format(
+            flows=fmt_counts((counts or {}).get("flows")),
+            statuses=fmt_counts((counts or {}).get("statuses")),
+        )
+    )
+print("")
+
+print_section("More detail")
+for command in commands:
+    print(f"  {command}")
+PYEOF
+
+    if [[ -n "$iterations" && "$iteration" -ge "$iterations" ]]; then
+      break
+    fi
+
+    sleep "$interval"
+  done
 }
 
 bench_matrix() {
@@ -3397,7 +5028,7 @@ PYEOF
     detected_name="${CACHED_AUDIO_NAME:-}"
     detected_match="${cached_match:-cache}"
     local allow_fast_cache="0"
-    if bool_is_on "$skip_cache_validate" && audio_cache_entry_is_fresh "$cached_at"; then
+    if bool_is_on "$skip_cache_validate" && audio_index_cache_file_is_fresh; then
       allow_fast_cache="1"
     fi
     if [[ -n "$detected_idx" ]] && ( [[ "$allow_fast_cache" == "1" ]] || cached_audio_entry_is_valid "$detected_idx" "$detected_name" ); then
@@ -3406,7 +5037,7 @@ PYEOF
       DICTATE_LAST_AUDIO_INDEX="$detected_idx"
       # Keep the cache age sliding forward on successful hits so the fast path
       # stays warm during normal use instead of aging into repeated revalidation.
-      write_audio_index_cache "$cache_key" "$detected_idx" "$detected_name" "$detected_match"
+      refresh_audio_index_cache_hit "$cache_key" "$detected_idx" "$detected_name" "$detected_match" "$allow_fast_cache"
       printf '%s\t%s\t%s\t%s\n' "$detected_idx" "$DICTATE_LAST_AUDIO_INDEX_SOURCE" "$DICTATE_LAST_AUDIO_INDEX_MS" "${DICTATE_LAST_AUDIO_CACHE_NOTE:-}"
       return 0
     fi
@@ -3477,11 +5108,62 @@ sys.exit(1)
 
 devices() {
   need ffmpeg
+  local json_output="0"
+  case "${1:-}" in
+    "") ;;
+    --json) json_output="1" ;;
+    *) die "usage: tmux-whisper devices [--json]" ;;
+  esac
+
   # ffmpeg prints an expected "Error opening input" after listing devices; hide that noise.
   # On some macOS setups, device enumeration can fail entirely (e.g., missing Microphone permission).
   local out trimmed
   out="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
   trimmed="$(printf "%s\n" "$out" | awk '/Error opening input/ { exit } { print }' || true)"
+
+  if [[ "$json_output" == "1" ]]; then
+    DEVICES_LISTING_RAW="$trimmed" DEVICES_FULL_RAW="$out" python3 - <<'PYEOF'
+import json
+import os
+import re
+
+listing = os.environ.get("DEVICES_LISTING_RAW", "")
+full_raw = os.environ.get("DEVICES_FULL_RAW", "")
+devices = []
+in_audio = False
+
+for line in listing.splitlines():
+    if "AVFoundation audio devices:" in line:
+        in_audio = True
+        continue
+    if "AVFoundation video devices:" in line:
+        in_audio = False
+        continue
+    if not in_audio:
+        continue
+    match = re.search(r"\[(\d+)\]\s+(.*)$", line)
+    if not match:
+        continue
+    devices.append({
+        "index": int(match.group(1)),
+        "name": match.group(2),
+    })
+
+hint = None
+if not devices and "Input/output error" in full_raw:
+    hint = "On macOS, grant Microphone permission to your terminal app (System Settings -> Privacy & Security -> Microphone), then rerun: tmux-whisper devices"
+
+print(json.dumps({
+    "command": "devices",
+    "platform": "macos",
+    "count": len(devices),
+    "devices": devices,
+    "permission_hint": hint,
+}, indent=2, sort_keys=True))
+PYEOF
+    return 0
+  fi
+
   printf "%s\n" "$trimmed"
 
   # If no indices were printed, show a hint for the common macOS failure mode.
@@ -3822,8 +5504,9 @@ start() {
 
   while :; do
     ffmpeg \
-      -hide_banner -loglevel error \
+      -hide_banner -nostdin -loglevel error \
       -f avfoundation -i ":${audio_index}" \
+      -af "aresample=async=1000:first_pts=0" \
       -ac 1 -ar 16000 -c:a pcm_s16le \
       "$wav" >>"$RECORD_LOG" 2>&1 &
     pid="$!"
@@ -4097,35 +5780,75 @@ terminate_recording_pid() {
   local stop_grace_ms
   local int_wait_attempts="60"
   local term_wait_attempts="40"
+  local stop_begin_ms alive_before_grace alive_after_grace signal_sent_ms exit_ms
   [[ -n "$target_pid" && "$target_pid" =~ ^[0-9]+$ ]] || return 0
   stop_grace_ms="$(resolve_stop_grace_ms "$requested_stop_grace_ms" "700")"
+  stop_begin_ms="$(now_ms)"
+  alive_before_grace="0"
+  kill -0 "$target_pid" 2>/dev/null && alive_before_grace="1"
 
   if keep_logs_enabled; then
-    printf "[%s] stop_recording: pid=%s grace_ms=%s int_wait_ms=%s term_wait_ms=%s\n" \
+    printf "[%s] stop_recording: pid=%s grace_ms=%s int_wait_ms=%s term_wait_ms=%s stop_begin_ms=%s alive_before_grace=%s\n" \
       "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$stop_grace_ms" \
-      "$(( int_wait_attempts * 50 ))" "$(( term_wait_attempts * 50 ))" \
+      "$(( int_wait_attempts * 50 ))" "$(( term_wait_attempts * 50 ))" "$stop_begin_ms" "$alive_before_grace" \
       >>"$record_log_path" 2>/dev/null || true
   fi
 
-  # A small grace window makes hotkey stop feel less "hard cut" when the user
+  # This grace window makes hotkey stop feel less "hard cut" when the user
   # finishes the last word right as they trigger stop.
   sleep_ms "$stop_grace_ms"
+
+  alive_after_grace="0"
+  kill -0 "$target_pid" 2>/dev/null && alive_after_grace="1"
+  if keep_logs_enabled; then
+    printf "[%s] stop_recording: after_grace pid=%s alive_after_grace=%s elapsed_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$alive_after_grace" "$(( $(now_ms) - stop_begin_ms ))" \
+      >>"$record_log_path" 2>/dev/null || true
+  fi
+  if [[ "$alive_after_grace" != "1" ]]; then
+    return 0
+  fi
+
   kill -INT "$target_pid" 2>/dev/null || true
+  signal_sent_ms="$(now_ms)"
   for ((attempt=1; attempt<=int_wait_attempts; attempt++)); do
     if ! kill -0 "$target_pid" 2>/dev/null; then
+      if keep_logs_enabled; then
+        exit_ms="$(now_ms)"
+        printf "[%s] stop_recording: exit_after_int pid=%s wait_ms=%s total_ms=%s\n" \
+          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( exit_ms - signal_sent_ms ))" "$(( exit_ms - stop_begin_ms ))" \
+          >>"$record_log_path" 2>/dev/null || true
+      fi
       return 0
     fi
     sleep 0.05
   done
 
   kill -TERM "$target_pid" 2>/dev/null || true
+  signal_sent_ms="$(now_ms)"
+  if keep_logs_enabled; then
+    printf "[%s] stop_recording: term_after_int_timeout pid=%s elapsed_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( signal_sent_ms - stop_begin_ms ))" \
+      >>"$record_log_path" 2>/dev/null || true
+  fi
   for ((attempt=1; attempt<=term_wait_attempts; attempt++)); do
     if ! kill -0 "$target_pid" 2>/dev/null; then
+      if keep_logs_enabled; then
+        exit_ms="$(now_ms)"
+        printf "[%s] stop_recording: exit_after_term pid=%s wait_ms=%s total_ms=%s\n" \
+          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( exit_ms - signal_sent_ms ))" "$(( exit_ms - stop_begin_ms ))" \
+          >>"$record_log_path" 2>/dev/null || true
+      fi
       return 0
     fi
     sleep 0.05
   done
 
+  if keep_logs_enabled; then
+    printf "[%s] stop_recording: kill_after_term_timeout pid=%s elapsed_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( $(now_ms) - stop_begin_ms ))" \
+      >>"$record_log_path" 2>/dev/null || true
+  fi
   kill -KILL "$target_pid" 2>/dev/null || true
 }
 
@@ -4212,8 +5935,19 @@ process_inline_recording() {
   local startup_target_ms="${8:-0}"
   local startup_audio_source="${9:-}"
   local inline_session_id="${10:-}"
+  local stop_grace_ms="${11:-}"
+  local processing_marker_owner="${12:-self}"
 
   need ffmpeg
+
+  local inline_proc_file=""
+  if [[ "$processing_marker_owner" == "external" && -n "$inline_session_id" ]]; then
+    trap 'processing_marker_stop_by_session "$inline_session_id"; trap - RETURN' RETURN
+  else
+    processing_marker_start "inline" "$inline_session_id" 2>/dev/null || true
+    inline_proc_file="$PROCESSING_MARKER_FILE"
+    trap 'processing_marker_stop "$inline_proc_file"; trap - RETURN' RETURN
+  fi
 
   local do_postprocess="${DICTATE_POSTPROCESS:-}"
   [[ -z "$do_postprocess" ]] && do_postprocess="${CFG_POSTPROCESS_ENABLED:-0}"
@@ -4234,6 +5968,34 @@ process_inline_recording() {
   transcribe_log="$TMPDIR/whisper-dictate-inline.transcribe.log"
   local archive_prefix=""
   archive_prefix="$(inline_archive_prefix "$inline_session_id" 2>/dev/null || true)"
+  local capture_wav_ms capture_wav_bytes capture_gap_to_record_ms capture_gap_to_record_plus_grace_ms
+  capture_wav_ms=""
+  capture_wav_bytes=""
+  capture_gap_to_record_ms=""
+  capture_gap_to_record_plus_grace_ms=""
+  if [[ -s "$wav" ]]; then
+    capture_wav_ms="$(audio_duration_ms "$wav" 2>/dev/null || true)"
+    capture_wav_bytes="$(file_size_bytes "$wav" 2>/dev/null || true)"
+    if [[ "$capture_wav_ms" =~ ^[0-9]+$ && "$record_ms" =~ ^[0-9]+$ ]]; then
+      capture_gap_to_record_ms=$(( capture_wav_ms - record_ms ))
+      if [[ "$stop_grace_ms" =~ ^[0-9]+$ ]]; then
+        capture_gap_to_record_plus_grace_ms=$(( capture_wav_ms - record_ms - stop_grace_ms ))
+      fi
+    fi
+  fi
+  INLINE_STOP_GRACE_MS="$stop_grace_ms"
+  INLINE_CAPTURE_WAV_MS="$capture_wav_ms"
+  INLINE_CAPTURE_WAV_BYTES="$capture_wav_bytes"
+  INLINE_CAPTURE_GAP_TO_RECORD_MS="$capture_gap_to_record_ms"
+  INLINE_CAPTURE_GAP_TO_RECORD_PLUS_GRACE_MS="$capture_gap_to_record_plus_grace_ms"
+
+  if keep_logs_enabled; then
+    printf "[%s] inline_capture_snapshot: record_ms=%s stop_grace_ms=%s capture_wav_ms=%s capture_wav_bytes=%s gap_to_record_ms=%s gap_to_record_plus_grace_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$record_ms" "$stop_grace_ms" "${capture_wav_ms:-unknown}" "${capture_wav_bytes:-unknown}" \
+      "${capture_gap_to_record_ms:-unknown}" "${capture_gap_to_record_plus_grace_ms:-unknown}" \
+      >>"$record_log" 2>/dev/null || true
+  fi
+
   local now_ms_value
   now_ms_value="$(now_ms)"
   flow_started_ms=$(( now_ms_value - record_ms ))
@@ -4342,12 +6104,7 @@ process_inline_recording() {
   if [[ "$do_postprocess" == "1" ]]; then
     stage_started_ms="$(now_ms)"
     echo "🤖 Post-processing ($detected_mode mode)..."
-    
-    # Signal processing for SwiftBar
-    local proc_file="/tmp/dictate-processing/inline-$$"
-    mkdir -p /tmp/dictate-processing
-    printf "pid=%s\nkind=inline\n" "$$" >"$proc_file" 2>/dev/null || true
-    
+
     local inline_postprocess_obs_file=""
     inline_postprocess_obs_file="$(mktemp "${TMPDIR:-/tmp}/dictate-inline-postprocess-obs.XXXXXX" 2>/dev/null || true)"
     if [[ -n "$inline_postprocess_obs_file" ]]; then
@@ -4357,9 +6114,6 @@ process_inline_recording() {
     else
       txt="$(DICTATE_FORCE_MODE="$detected_mode" postprocess_llm "$txt" "$target_app")"
     fi
-    rm -f "$proc_file"
-    # Signal "just processed" for SwiftBar
-    touch /tmp/dictate-just-processed
     postprocess_ms=$(( $(now_ms) - stage_started_ms ))
   elif bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
     txt="$(printf "%s" "$txt" | apply_vocab_corrections "$detected_mode")"
@@ -4477,6 +6231,7 @@ process_inline_recording() {
   append_bench_entry "inline" "ok" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
 
+  signal_just_processed
   play_sound stop
 
   archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "ok" \
@@ -4574,8 +6329,9 @@ inline_start() {
   fi
 
   while :; do
-    ffmpeg -hide_banner -loglevel error \
+    ffmpeg -hide_banner -nostdin -loglevel error \
       -f avfoundation -i ":${audio_selector}" \
+      -af "aresample=async=1000:first_pts=0" \
       -ac 1 -ar 16000 -c:a pcm_s16le \
       "$wav" >>"$record_log" 2>&1 &
     pid=$!
@@ -4594,6 +6350,11 @@ inline_start() {
     startup_ffmpeg_live_ms=$(( $(now_ms) - ffmpeg_started_ms ))
 
     if [[ "$live_ok" == "1" ]]; then
+      if keep_logs_enabled; then
+        printf "[%s] inline_start: pid=%s record_started_ms=%s startup_ffmpeg_live_ms=%s selector=%s audio_source=%s wav=%q\n" \
+          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$pid" "$record_started_ms" "$startup_ffmpeg_live_ms" \
+          "$audio_selector_kind" "$startup_audio_source" "$wav" >>"$record_log" 2>/dev/null || true
+      fi
       break
     fi
 
@@ -4651,7 +6412,6 @@ inline_stop() {
   local startup_audio_source="${startup_audio_source:-}"
   local stop_requested_ms
   stop_requested_ms="$(now_ms)"
-  rm -f "$INLINE_STATE_FILE"
 
   [[ -n "${pid:-}" && -n "${wav:-}" ]] || die "state file invalid; try: tmux-whisper inline start"
   local record_ms="0"
@@ -4660,9 +6420,21 @@ inline_stop() {
     (( record_ms < 0 )) && record_ms=0
   fi
 
+  local inline_pending_proc_file=""
+  processing_marker_start "inline" "${inline_session_id:-}" "$$" 2>/dev/null || true
+  inline_pending_proc_file="$PROCESSING_MARKER_FILE"
+  rm -f "$INLINE_STATE_FILE"
+
   local inline_record_log inline_process_sound
   inline_record_log="$TMPDIR/whisper-dictate-inline.record.log"
   inline_process_sound="${DICTATE_INLINE_PROCESS_SOUND:-${CFG_INLINE_PROCESS_SOUND:-1}}"
+  local inline_stop_grace_ms
+  inline_stop_grace_ms="$(resolve_inline_stop_grace_ms)"
+  if keep_logs_enabled; then
+    printf "[%s] inline_stop_request: pid=%s record_ms=%s stop_grace_ms=%s wav=%q\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$pid" "$record_ms" "$inline_stop_grace_ms" "$wav" \
+      >>"$inline_record_log" 2>/dev/null || true
+  fi
   if [[ "$inline_process_sound" == "1" ]]; then
     if keep_logs_enabled; then
       printf "[%s] inline_process_sound: immediate_on_stop\n" \
@@ -4671,14 +6443,18 @@ inline_stop() {
     play_sound process
   fi
 
-  terminate_recording_pid "$pid" "$(resolve_inline_stop_grace_ms)" "$inline_record_log"
+  terminate_recording_pid "$pid" "$inline_stop_grace_ms" "$inline_record_log"
 
+  local inline_bg_pid
   (
     trap '' HUP
     set -euo pipefail
     process_inline_recording "$wav" "${target_app:-}" "$model_id" "$record_ms" \
-      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}"
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}" "$inline_stop_grace_ms" "external"
   ) >"$TMPDIR/whisper-dictate-inline.transcribe.log" 2>&1 &
+  inline_bg_pid="$!"
+  processing_marker_start "inline" "${inline_session_id:-}" "$inline_bg_pid" 2>/dev/null || true
+  processing_marker_stop "$inline_pending_proc_file"
 
   echo "⏹️ STOPPED → transcribing → inline"
 }
@@ -4759,8 +6535,9 @@ inline() {
   inline_stop_grace_ms="$(resolve_inline_stop_grace_ms)"
   : >"$record_log" 2>/dev/null || true
   log_audio_cache_note_if_any "${audio_cache_note:-}" "$record_log"
-  ffmpeg -hide_banner -loglevel error \
+  ffmpeg -hide_banner -nostdin -loglevel error \
     -f avfoundation -i ":${audio_index}" \
+    -af "aresample=async=1000:first_pts=0" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
     "$wav" >>"$record_log" 2>&1 &
   ffmpeg_pid="$!"
@@ -4773,7 +6550,7 @@ inline() {
   (( record_ms < 0 )) && record_ms=0
 
   process_inline_recording "$wav" "$target_app" "$model_id" "$record_ms" \
-    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "$inline_session_id"
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "$inline_session_id" "$inline_stop_grace_ms"
 }
 
 toggle() {
@@ -6313,13 +8090,14 @@ manage_sounds() {
 
 case "$cmd" in
   -h|--help|help) usage ;;
-  devices) devices ;;
+  devices) devices "${@:2}" ;;
   device) set_device "${@:2}" ;;
   debug) debug "${@:2}" ;;
   doctor) doctor "${@:2}" ;;
-  logs) logs ;;
+  logs) logs "${@:2}" ;;
+  watch) watch "${@:2}" ;;
   warmup) warmup_backend "${@:2}" ;;
-  bench) bench "${2:-}" ;;
+  bench) bench "${@:2}" ;;
   bench-matrix|bench_matrix) bench_matrix "${2:-}" "${3:-}" ;;
   changelog) changelog ;;
   config) manage_config "${2:-}" "${@:3}" ;;

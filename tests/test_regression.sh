@@ -219,6 +219,13 @@ assert_json_equals "status_json_backend" "$backend_status_json" "effective_setti
 assert_json_equals "status_json_model_version" "$backend_status_json" "effective_settings.swift_parakeet.model.version" "v3"
 assert_json_equals "status_json_inline_process_sound" "$backend_status_json" "effective_settings.inline.process_sound" "true"
 assert_json_equals "status_json_tmux_queue_total" "$backend_status_json" "runtime.tmux_queue.total" "0"
+backend_status_compact="$(HOME="$BACKEND_HOME" PATH="$BACKEND_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BACKEND_CFG" DICTATE_CONFIG_FILE="$BACKEND_CFG/config.toml" DICTATE_STATE_FILE="$BACKEND_STATE_FILE" DICTATE_INLINE_STATE_FILE="$BACKEND_INLINE_STATE_FILE" DICTATE_PROCESSING_DIR="$BACKEND_PROCESSING_DIR" DICTATE_TMUX_JOBS_DIR="$BACKEND_TMUX_JOBS_DIR" tmux-whisper status --preset compact)"
+assert_contains "status_compact_header" "$backend_status_compact" "Tmux Whisper status (compact)"
+assert_contains "status_compact_summary" "$backend_status_compact" "Summary: state=ready backend=cold flow=none config=v1/ok"
+assert_contains "status_compact_modes" "$backend_status_compact" "Modes: inline=code [auto], tmux=code"
+assert_contains "status_compact_runtime" "$backend_status_compact" "Runtime: tmux=idle inline=idle proc=0/0 stale=0 queue=0/0"
+assert_contains "status_compact_next" "$backend_status_compact" "Next: Use your normal hotkey, or run tmux-whisper warmup to pre-load the daemon."
+assert_contains "status_compact_more" "$backend_status_compact" "More: tmux-whisper watch --preset compact | tmux-whisper last | tmux-whisper bench"
 
 # --- Regression 4: doctor should fail on schema mismatch. ---
 MISMATCH_HOME="$TMP_ROOT/home-mismatch"
@@ -566,6 +573,12 @@ assert_not_contains "swiftbar_inline_silence_trim_removed" "$swiftbar_modes_out"
 assert_contains "swiftbar_inline_repeats_present" "$swiftbar_modes_out" "Repeats level"
 assert_contains "swiftbar_inline_repeats_action" "$swiftbar_modes_out" "param1=repeats param2=1"
 assert_not_contains "swiftbar_inline_backend_removed" "$swiftbar_modes_out" "Backend:"
+
+mkdir -p "$SWIFTBAR_MODES_HOME/dictate-processing"
+printf 'pid=%s\nkind=inline\n' "$$" >"$SWIFTBAR_MODES_HOME/dictate-processing/inline-test"
+swiftbar_processing_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail DICTATE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_MODES_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_MODES_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_MODES_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_MODES_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_inline_processing_marker_state" "$swiftbar_processing_out" "Processing (1)"
+rm -f "$SWIFTBAR_MODES_HOME/dictate-processing/inline-test"
 assert_contains "swiftbar_tmux_target_present" "$swiftbar_modes_out" "param1=tmux param2=target"
 
 # --- Regression 12: budget profile auto-selection is based on transcript length, not mode name. ---
@@ -738,6 +751,17 @@ cat >"$HISTOBS_HISTORY/2026-02-22T17-05-00.json" <<'EOF'
     "chunk_words": 1000,
     "chunk_count": 2,
     "llm": "gpt-oss-120b"
+  },
+  "audio": {
+    "capture_wav_ms": 18120,
+    "capture_wav_bytes": 580000,
+    "capture_gap_to_record_ms": 120,
+    "capture_gap_to_record_plus_grace_ms": 1120,
+    "archive_wav_ms": 18040,
+    "archive_wav_bytes": 577000,
+    "wav_retention_days": 2,
+    "debug_archive_prefix": "2026-02-22T17-05-00-inline",
+    "retention_note": "debug wav retained"
   }
 }
 EOF
@@ -756,6 +780,19 @@ assert_contains "history_stats_typing_delta" "$histobs_stats" "typing_delta.tota
 assert_contains "history_stats_dictation_overall" "$histobs_stats" "dictation_wpm.overall: 92"
 assert_contains "history_stats_mode_breakdown" "$histobs_stats" "code: entries=2 processed_words=40 raw_words=40"
 assert_contains "history_stats_app_breakdown" "$histobs_stats" "Ghostty: entries=1 processed_words=30 raw_words=30"
+histobs_sessions="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history sessions 2)"
+assert_contains "history_sessions_header" "$histobs_sessions" "Recent dictation sessions (newest first):"
+assert_contains "history_sessions_latest" "$histobs_sessions" "mode=code app=Ghostty words=30 record=18.0s"
+assert_contains "history_sessions_audio" "$histobs_sessions" "audio: capture_wav=18.1s archive_wav=18.0s capture_bytes=580000 archive_bytes=577000"
+assert_contains "history_sessions_debug" "$histobs_sessions" "debug: debug_archive_prefix=2026-02-22T17-05-00-inline; retention_note=debug wav retained"
+assert_contains "history_sessions_next" "$histobs_sessions" "  tmux-whisper logs tail transcribe --lines 40"
+histobs_sessions_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history sessions 2 --json)"
+assert_json_equals "history_sessions_json_command" "$histobs_sessions_json" "command" "history"
+assert_json_equals "history_sessions_json_subcommand" "$histobs_sessions_json" "subcommand" "sessions"
+assert_json_equals "history_sessions_json_first_app" "$histobs_sessions_json" "sessions.0.app" "Ghostty"
+assert_json_equals "history_sessions_json_first_debug" "$histobs_sessions_json" "sessions.0.audio.debug_archive_prefix" "2026-02-22T17-05-00-inline"
+assert_json_equals "history_sessions_json_first_note" "$histobs_sessions_json" "sessions.0.debug_notes.0" "debug_archive_prefix=2026-02-22T17-05-00-inline"
+assert_json_equals "history_sessions_json_next" "$histobs_sessions_json" "next_commands.1" "tmux-whisper bench 10"
 histobs_show_latest="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history 1)"
 assert_contains "history_show_metrics_section" "$histobs_show_latest" "--- Metrics ---"
 assert_contains "history_show_metrics_postprocess_ms" "$histobs_show_latest" "postprocess_ms : 620"
@@ -767,6 +804,39 @@ histobs_show_latest_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bi
 assert_json_equals "history_show_json_index" "$histobs_show_latest_json" "index" "1"
 assert_json_equals "history_show_json_mode" "$histobs_show_latest_json" "entry.mode" "code"
 assert_json_equals "history_show_json_budget_profile" "$histobs_show_latest_json" "entry.postprocess_budget.profile" "long"
+histobs_list_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history list 2 --json)"
+assert_json_equals "history_list_json_first_index" "$histobs_list_json" "0.index" "1"
+assert_json_equals "history_list_json_first_filename" "$histobs_list_json" "0.filename" "2026-02-22T17-05-00.json"
+assert_json_equals "history_list_json_first_mode" "$histobs_list_json" "0.mode" "code"
+assert_json_equals "history_list_json_first_app" "$histobs_list_json" "0.app" "Ghostty"
+assert_json_equals "history_list_json_first_processed_words" "$histobs_list_json" "0.processed_words" "30"
+assert_json_equals "history_list_json_first_budget_profile" "$histobs_list_json" "0.postprocess_budget.profile" "long"
+assert_json_equals "history_list_json_second_filename" "$histobs_list_json" "1.filename" "2026-02-22T17-00-00.json"
+assert_json_equals "history_list_json_second_budget_profile" "$histobs_list_json" "1.postprocess_budget.profile" "short"
+assert_contains "history_list_json_preview" "$histobs_list_json" "\"preview\": \"one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"
+histobs_search_app="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history search Ghostty)"
+assert_contains "history_search_header" "$histobs_search_app" "History search: \"Ghostty\""
+assert_contains "history_search_app_match" "$histobs_search_app" "(code @ Ghostty) [app]"
+histobs_search_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history search tmux 5 --json)"
+assert_json_equals "history_search_json_index" "$histobs_search_json" "0.index" "2"
+assert_json_equals "history_search_json_filename" "$histobs_search_json" "0.filename" "2026-02-22T17-00-00.json"
+assert_json_equals "history_search_json_app" "$histobs_search_json" "0.app" "tmux"
+assert_json_equals "history_search_json_match_field" "$histobs_search_json" "0.match_fields.0" "app"
+histobs_search_none="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history search nope)"
+assert_contains "history_search_none" "$histobs_search_none" "No history entries matched: nope"
+histobs_export="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history export 2)"
+assert_contains "history_export_entry_one" "$histobs_export" "=== Entry 1 ==="
+assert_contains "history_export_entry_one_file" "$histobs_export" "File: 2026-02-22T17-05-00.json"
+assert_contains "history_export_entry_two" "$histobs_export" "=== Entry 2 ==="
+assert_contains "history_export_entry_two_file" "$histobs_export" "File: 2026-02-22T17-00-00.json"
+assert_contains "history_export_processed_block" "$histobs_export" "--- Processed ---"
+histobs_export_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history export all --json)"
+assert_json_equals "history_export_json_first_index" "$histobs_export_json" "0.index" "1"
+assert_json_equals "history_export_json_first_filename" "$histobs_export_json" "0.filename" "2026-02-22T17-05-00.json"
+assert_json_equals "history_export_json_first_app" "$histobs_export_json" "0.app" "Ghostty"
+assert_json_equals "history_export_json_first_processed_words" "$histobs_export_json" "0.processed_words" "30"
+assert_json_equals "history_export_json_second_filename" "$histobs_export_json" "1.filename" "2026-02-22T17-00-00.json"
+assert_json_equals "history_export_json_second_mode" "$histobs_export_json" "1.mode" "code"
 histobs_stats_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" DICTATE_HISTORY_STATS_NOW=2026-02-22T18:00:00Z tmux-whisper history stats --json)"
 assert_json_equals "history_stats_json_entries" "$histobs_stats_json" "entries" "2"
 assert_json_equals "history_stats_json_budget_entries" "$histobs_stats_json" "postprocess_budget.entries" "2"
@@ -787,6 +857,174 @@ assert_contains "history_last_typing_delta" "$histobs_last" "typing_delta: +26.1
 histobs_last_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper last --json)"
 assert_json_equals "history_last_json_app" "$histobs_last_json" "entry.app" "Ghostty"
 assert_json_equals "history_last_json_budget_profile" "$histobs_last_json" "entry.postprocess_budget.profile" "long"
+
+# --- Regression 12b: logs command should expose paths, tail views, and JSON output cleanly. ---
+LOGS_HOME="$TMP_ROOT/home-logs"
+LOGS_BIN="$LOGS_HOME/.local/bin"
+LOGS_CFG="$LOGS_HOME/.config/dictate"
+LOGS_TMP="$LOGS_HOME/logs-tmp"
+mkdir -p "$LOGS_BIN" "$LOGS_CFG" "$LOGS_TMP"
+install_test_runtime "$LOGS_BIN"
+cat >"$LOGS_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+EOF
+LOGS_RECORD="$LOGS_TMP/record.log"
+LOGS_TRANSCRIBE="$LOGS_TMP/transcribe.log"
+LOGS_INLINE_RECORD="$LOGS_TMP/whisper-dictate-inline.record.log"
+LOGS_INLINE_TRANSCRIBE="$LOGS_TMP/whisper-dictate-inline.transcribe.log"
+cat >"$LOGS_RECORD" <<'EOF'
+record line 1
+record line 2
+EOF
+cat >"$LOGS_TRANSCRIBE" <<'EOF'
+transcribe line 1
+transcribe line 2
+EOF
+cat >"$LOGS_INLINE_RECORD" <<'EOF'
+inline record line 1
+inline record line 2
+EOF
+cat >"$LOGS_INLINE_TRANSCRIBE" <<'EOF'
+inline transcribe line 1
+inline transcribe line 2
+EOF
+logs_path_out="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" tmux-whisper logs path)"
+assert_contains "logs_path_header" "$logs_path_out" "Log paths"
+assert_contains "logs_path_record" "$logs_path_out" "record:"
+assert_contains "logs_path_inline_transcribe" "$logs_path_out" "inline-transcribe:"
+assert_contains "logs_path_next" "$logs_path_out" "  tmux-whisper history sessions 5"
+logs_tail_out="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" tmux-whisper logs tail record --lines 1)"
+assert_contains "logs_tail_header" "$logs_tail_out" "--- record (tail 1) ---"
+assert_contains "logs_tail_last_line" "$logs_tail_out" "record line 2"
+assert_not_contains "logs_tail_old_line_hidden" "$logs_tail_out" "record line 1"
+logs_path_json="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" tmux-whisper logs path inline-record --json)"
+assert_json_equals "logs_path_json_command" "$logs_path_json" "command" "logs"
+assert_json_equals "logs_path_json_subcommand" "$logs_path_json" "subcommand" "path"
+assert_json_equals "logs_path_json_stream_key" "$logs_path_json" "streams.0.key" "inline-record"
+assert_json_equals "logs_path_json_exists" "$logs_path_json" "streams.0.exists" "true"
+assert_json_equals "logs_path_json_path" "$logs_path_json" "streams.0.path" "$LOGS_INLINE_RECORD"
+logs_show_json="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" tmux-whisper logs --json)"
+assert_json_equals "logs_show_json_subcommand" "$logs_show_json" "subcommand" "show"
+assert_json_equals "logs_show_json_first_stream" "$logs_show_json" "streams.0.key" "record"
+assert_json_equals "logs_show_json_first_line_count" "$logs_show_json" "streams.0.line_count" "2"
+assert_json_equals "logs_show_json_first_line" "$logs_show_json" "streams.0.lines.0" "record line 1"
+assert_json_equals "logs_show_json_next" "$logs_show_json" "next_commands.1" "tmux-whisper history sessions 5"
+logs_tail_json="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" tmux-whisper logs tail transcribe --lines 1 --json)"
+assert_json_equals "logs_tail_json_subcommand" "$logs_tail_json" "subcommand" "tail"
+assert_json_equals "logs_tail_json_stream_key" "$logs_tail_json" "streams.0.key" "transcribe"
+assert_json_equals "logs_tail_json_requested_lines" "$logs_tail_json" "streams.0.tail_lines_requested" "1"
+assert_json_equals "logs_tail_json_line" "$logs_tail_json" "streams.0.lines.0" "transcribe line 2"
+( sleep 0.2; printf '%s\n' 'record line 3' >>"$LOGS_RECORD" ) &
+logs_follow_out="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" DICTATE_LOGS_FOLLOW_POLL_MS=50 DICTATE_LOGS_FOLLOW_ITERATIONS=8 tmux-whisper logs follow record --lines 1)"
+assert_contains "logs_follow_header" "$logs_follow_out" "Following logs (poll 50ms). Press Ctrl-C to stop."
+assert_contains "logs_follow_block_header" "$logs_follow_out" "--- record (follow tail 1) ---"
+assert_contains "logs_follow_initial_line" "$logs_follow_out" "record line 2"
+assert_contains "logs_follow_new_line" "$logs_follow_out" "record line 3"
+assert_not_contains "logs_follow_old_line_hidden" "$logs_follow_out" "record line 1"
+( sleep 0.2; printf '%s\n' 'transcribe line 3' >>"$LOGS_TRANSCRIBE" ) &
+logs_follow_json="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" DICTATE_LOGS_FOLLOW_POLL_MS=50 DICTATE_LOGS_FOLLOW_ITERATIONS=8 tmux-whisper logs follow transcribe --lines 1 --json)"
+logs_follow_json_last="$(printf '%s\n' "$logs_follow_json" | tail -n 1)"
+assert_json_equals "logs_follow_json_event" "$logs_follow_json_last" "event" "line"
+assert_json_equals "logs_follow_json_subcommand" "$logs_follow_json_last" "subcommand" "follow"
+assert_json_equals "logs_follow_json_stream" "$logs_follow_json_last" "stream" "transcribe"
+assert_json_equals "logs_follow_json_initial" "$logs_follow_json_last" "initial" "false"
+assert_json_equals "logs_follow_json_line" "$logs_follow_json_last" "line" "transcribe line 3"
+
+# --- Regression 12c: devices JSON output should enumerate AVFoundation audio devices cleanly. ---
+DEVICES_HOME="$TMP_ROOT/home-devices"
+DEVICES_BIN="$DEVICES_HOME/.local/bin"
+mkdir -p "$DEVICES_BIN"
+install_test_runtime "$DEVICES_BIN"
+cat >"$DEVICES_BIN/ffmpeg" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >&2 <<'OUT'
+ffmpeg version test
+[AVFoundation indev @ 0x0] AVFoundation audio devices:
+[AVFoundation indev @ 0x0] [0] MacBook Air Microphone
+[AVFoundation indev @ 0x0] [1] External USB Mic
+[AVFoundation indev @ 0x0] AVFoundation video devices:
+[AVFoundation indev @ 0x0] [0] FaceTime HD Camera
+Error opening input files: Input/output error
+OUT
+exit 1
+EOF
+chmod +x "$DEVICES_BIN/ffmpeg"
+devices_json="$(HOME="$DEVICES_HOME" PATH="$DEVICES_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= tmux-whisper devices --json)"
+assert_json_equals "devices_json_command" "$devices_json" "command" "devices"
+assert_json_equals "devices_json_platform" "$devices_json" "platform" "macos"
+assert_json_equals "devices_json_count" "$devices_json" "count" "2"
+assert_json_equals "devices_json_first_index" "$devices_json" "devices.0.index" "0"
+assert_json_equals "devices_json_first_name" "$devices_json" "devices.0.name" "MacBook Air Microphone"
+assert_json_equals "devices_json_second_name" "$devices_json" "devices.1.name" "External USB Mic"
+assert_json_equals "devices_json_permission_hint" "$devices_json" "permission_hint" "null"
+
+# --- Regression 12d: config inspection should expose JSON and per-key lookup surfaces. ---
+CONFIGOBS_HOME="$TMP_ROOT/home-configobs"
+CONFIGOBS_BIN="$CONFIGOBS_HOME/.local/bin"
+CONFIGOBS_CFG="$CONFIGOBS_HOME/.config/dictate"
+CONFIGOBS_MODEL="$TMP_ROOT/configobs-model"
+CONFIGOBS_SOCKET="$TMP_ROOT/configobs.sock"
+mkdir -p "$CONFIGOBS_BIN" "$CONFIGOBS_CFG" "$CONFIGOBS_MODEL"
+install_test_runtime "$CONFIGOBS_BIN"
+cat >"$CONFIGOBS_CFG/config.toml" <<EOF
+[meta]
+config_version = 1
+
+[audio]
+source = "external"
+device_name = "Studio Mic"
+
+[swift_parakeet]
+model_path = "$CONFIGOBS_MODEL"
+socket_path = "$CONFIGOBS_SOCKET"
+
+[postprocess]
+enabled = true
+llm = "qwen-3-32b"
+
+[inline]
+autosend = false
+process_sound = true
+
+[tmux]
+mode = "chat"
+
+[debug]
+keep_logs = true
+EOF
+configobs_show="$(HOME="$CONFIGOBS_HOME" PATH="$CONFIGOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIGOBS_CFG" DICTATE_CONFIG_FILE="$CONFIGOBS_CFG/config.toml" tmux-whisper config)"
+assert_contains "config_show_path" "$configobs_show" "Config path: $CONFIGOBS_CFG/config.toml (present)"
+assert_contains "config_show_audio_source" "$configobs_show" "audio.source: external"
+assert_contains "config_show_postprocess" "$configobs_show" "postprocess.enabled: on"
+assert_contains "config_show_tmux_mode" "$configobs_show" "tmux.mode: chat"
+configobs_show_json="$(HOME="$CONFIGOBS_HOME" PATH="$CONFIGOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIGOBS_CFG" DICTATE_CONFIG_FILE="$CONFIGOBS_CFG/config.toml" tmux-whisper config --json)"
+assert_json_equals "config_show_json_command" "$configobs_show_json" "command" "config"
+assert_json_equals "config_show_json_subcommand" "$configobs_show_json" "subcommand" "show"
+assert_json_equals "config_show_json_exists" "$configobs_show_json" "config_exists" "true"
+assert_json_equals "config_show_json_schema_status" "$configobs_show_json" "schema.status" "ok"
+assert_json_equals "config_show_json_audio_source" "$configobs_show_json" "effective.audio.source" "external"
+assert_json_equals "config_show_json_inline_autosend" "$configobs_show_json" "effective.inline.autosend" "false"
+assert_json_equals "config_show_json_postprocess_llm" "$configobs_show_json" "effective.postprocess.llm" "qwen-3-32b"
+assert_json_equals "config_show_json_keep_logs" "$configobs_show_json" "effective.debug.keep_logs" "true"
+configobs_path_json="$(HOME="$CONFIGOBS_HOME" PATH="$CONFIGOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIGOBS_CFG" DICTATE_CONFIG_FILE="$CONFIGOBS_CFG/config.toml" tmux-whisper config path --json)"
+assert_json_equals "config_path_json_subcommand" "$configobs_path_json" "subcommand" "path"
+assert_json_equals "config_path_json_path" "$configobs_path_json" "config_path" "$CONFIGOBS_CFG/config.toml"
+configobs_get_text="$(HOME="$CONFIGOBS_HOME" PATH="$CONFIGOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIGOBS_CFG" DICTATE_CONFIG_FILE="$CONFIGOBS_CFG/config.toml" tmux-whisper config get audio.source)"
+assert_contains "config_get_text_value" "$configobs_get_text" "audio.source = \"external\""
+assert_contains "config_get_text_source" "$configobs_get_text" "source: file"
+configobs_get_default_json="$(HOME="$CONFIGOBS_HOME" PATH="$CONFIGOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIGOBS_CFG" DICTATE_CONFIG_FILE="$CONFIGOBS_CFG/config.toml" tmux-whisper config get audio.silence_trim --json)"
+assert_json_equals "config_get_default_found" "$configobs_get_default_json" "found" "true"
+assert_json_equals "config_get_default_source" "$configobs_get_default_json" "source" "default"
+assert_json_equals "config_get_default_value" "$configobs_get_default_json" "value" "false"
+configobs_get_unset_json="$(HOME="$CONFIGOBS_HOME" PATH="$CONFIGOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$CONFIGOBS_CFG" DICTATE_CONFIG_FILE="$CONFIGOBS_CFG/config.toml" tmux-whisper config get made.up.path --json)"
+assert_json_equals "config_get_unset_found" "$configobs_get_unset_json" "found" "false"
+assert_json_equals "config_get_unset_source" "$configobs_get_unset_json" "source" "unset"
+assert_json_equals "config_get_unset_value" "$configobs_get_unset_json" "value" "null"
 
 # --- Regression 13: vocab import/export/dedupe safety behavior remains stable. ---
 VOCAB_HOME="$TMP_ROOT/home-vocab"
@@ -861,12 +1099,74 @@ regex_invalid_out="$(HOME="$VOCAB_HOME" PATH="$VOCAB_BIN:/usr/bin:/bin" DICTATE_
 assert_contains "vocab_rm_regex_invalid_message" "$regex_invalid_out" "invalid regex pattern: ["
 assert_file_contains "vocab_rm_regex_invalid_no_mutation" "$VOCAB_CFG/vocab" "axb → Regex casualty"
 
-# --- Regression 14: bench-matrix UX checks are stable. ---
+# --- Regression 14: bench summary/export surfaces are stable. ---
 BENCH_HOME="$TMP_ROOT/home-bench"
 BENCH_BIN="$BENCH_HOME/.local/bin"
 BENCH_CFG="$BENCH_HOME/.config/dictate"
-mkdir -p "$BENCH_BIN" "$BENCH_CFG"
+BENCH_HISTORY="$BENCH_CFG/history"
+mkdir -p "$BENCH_BIN" "$BENCH_CFG" "$BENCH_HISTORY"
 install_test_runtime "$BENCH_BIN"
+cat >"$BENCH_HISTORY/bench.tsv" <<'EOF'
+2026-04-22T09:00:00Z	inline	ok	gpt-oss-120b	chat	1	100	120	1800	220	15	620	45	2700	150	35	20	10	detect:source(external)
+2026-04-22T09:01:00Z	tmux	no_speech	swift_parakeet	code	0	0	0	900	110	10	0	0	1020	0	0	0	0
+2026-04-22T09:02:00Z	inline	ok	gpt-oss-120b	email	1	80	90	1500	200	12	500	30	2242	120	30	15	5	detect:source(mac)
+EOF
+
+bench_summary_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench 2)"
+assert_contains "bench_summary_header" "$bench_summary_out" "Tmux Whisper bench (last 2 of 3 runs)"
+assert_contains "bench_summary_flow_counts" "$bench_summary_out" "by flow: inline=1, tmux=1"
+assert_contains "bench_summary_status_counts" "$bench_summary_out" "by status: no_speech=1, ok=1"
+assert_contains "bench_summary_startup_section" "$bench_summary_out" "Startup readiness:"
+assert_contains "bench_summary_latest_line" "$bench_summary_out" "2026-04-22T09:02:00Z flow=inline status=ok"
+assert_contains "bench_summary_next" "$bench_summary_out" "  tmux-whisper history sessions 5"
+
+bench_summary_json="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench 2 --json)"
+assert_json_equals "bench_json_command" "$bench_summary_json" "command" "bench"
+assert_json_equals "bench_json_subcommand" "$bench_summary_json" "subcommand" "show"
+assert_json_equals "bench_json_total_records" "$bench_summary_json" "total_records" "3"
+assert_json_equals "bench_json_filtered_records" "$bench_summary_json" "filtered_records" "3"
+assert_json_equals "bench_json_subset_records" "$bench_summary_json" "subset_records" "2"
+assert_json_equals "bench_json_flow_inline" "$bench_summary_json" "counts.flows.inline" "1"
+assert_json_equals "bench_json_status_ok" "$bench_summary_json" "counts.statuses.ok" "1"
+assert_json_equals "bench_json_total_stage_n" "$bench_summary_json" "stages.total_ms.n" "2"
+assert_json_equals "bench_json_latest_timestamp" "$bench_summary_json" "latest.timestamp" "2026-04-22T09:02:00Z"
+assert_json_equals "bench_json_latest_mode" "$bench_summary_json" "latest.mode" "email"
+assert_json_equals "bench_json_latest_postprocess" "$bench_summary_json" "latest.postprocess_enabled" "true"
+assert_json_equals "bench_json_next" "$bench_summary_json" "next_commands.0" "tmux-whisper history sessions 5"
+
+bench_filtered_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench all --flow inline)"
+assert_contains "bench_filter_header" "$bench_filtered_out" "Tmux Whisper bench (last 2 of 2 matching runs; total 3)"
+assert_contains "bench_filter_flow_line" "$bench_filtered_out" "flow: inline"
+assert_contains "bench_filter_flow_counts" "$bench_filtered_out" "by flow: inline=2"
+assert_contains "bench_filter_latest_line" "$bench_filtered_out" "2026-04-22T09:02:00Z flow=inline status=ok"
+
+bench_filtered_json="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench all --flow inline --slow-startup-audio-ms 31 --json)"
+assert_json_equals "bench_filter_json_total_records" "$bench_filtered_json" "total_records" "3"
+assert_json_equals "bench_filter_json_filtered_records" "$bench_filtered_json" "filtered_records" "1"
+assert_json_equals "bench_filter_json_subset_records" "$bench_filtered_json" "subset_records" "1"
+assert_json_equals "bench_filter_json_filter_flow" "$bench_filtered_json" "filters.flow" "inline"
+assert_json_equals "bench_filter_json_filter_audio_min" "$bench_filtered_json" "filters.minimums.startup_audio_ms" "31"
+assert_json_equals "bench_filter_json_latest_timestamp" "$bench_filtered_json" "latest.timestamp" "2026-04-22T09:00:00Z"
+
+bench_filtered_export_json="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench export all --slow-startup-ffmpeg-ms 16 --json)"
+assert_json_equals "bench_filter_export_json_count" "$bench_filtered_export_json" "0.timestamp" "2026-04-22T09:00:00Z"
+
+bench_export_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench export 2)"
+assert_contains "bench_export_first_entry" "$bench_export_out" "=== Bench 1 ==="
+assert_contains "bench_export_first_timestamp" "$bench_export_out" "Timestamp: 2026-04-22T09:02:00Z"
+assert_contains "bench_export_second_entry" "$bench_export_out" "=== Bench 2 ==="
+assert_contains "bench_export_second_timestamp" "$bench_export_out" "Timestamp: 2026-04-22T09:01:00Z"
+assert_contains "bench_export_metrics_block" "$bench_export_out" "Metrics:"
+
+bench_export_json="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench export all --json)"
+assert_json_equals "bench_export_json_first_index" "$bench_export_json" "0.index" "1"
+assert_json_equals "bench_export_json_first_timestamp" "$bench_export_json" "0.timestamp" "2026-04-22T09:02:00Z"
+assert_json_equals "bench_export_json_first_flow" "$bench_export_json" "0.flow" "inline"
+assert_json_equals "bench_export_json_second_timestamp" "$bench_export_json" "1.timestamp" "2026-04-22T09:01:00Z"
+assert_json_equals "bench_export_json_third_timestamp" "$bench_export_json" "2.timestamp" "2026-04-22T09:00:00Z"
+assert_json_equals "bench_export_json_third_audio_source" "$bench_export_json" "2.startup_audio_source" "detect:source(external)"
+
+# --- Regression 15: bench-matrix UX checks are stable. ---
 
 bench_bad_n_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" CEREBRAS_API_KEY= tmux-whisper bench-matrix nope 2>&1 || true)"
 assert_contains "bench_matrix_invalid_n_usage" "$bench_bad_n_out" "usage: tmux-whisper bench-matrix [N] [phrase_file]"
@@ -896,7 +1196,176 @@ assert_contains "bench_matrix_budget_obs_profiles" "$bench_matrix_obs_out" "prof
 assert_contains "bench_matrix_budget_obs_max_tokens" "$bench_matrix_obs_out" "max_tokens: n="
 assert_contains "bench_matrix_budget_obs_chunk_count" "$bench_matrix_obs_out" "chunk_count: n="
 
-# --- Regression 15: stale cached audio indices should be ignored when ffmpeg devices change. ---
+# --- Regression 16: watch provides a text-first live operator overview. ---
+WATCH_HOME="$TMP_ROOT/home-watch"
+WATCH_BIN="$WATCH_HOME/.local/bin"
+WATCH_CFG="$WATCH_HOME/.config/dictate"
+WATCH_HISTORY="$WATCH_CFG/history"
+WATCH_MODEL="$WATCH_HOME/models/parakeet-watch"
+WATCH_RUNTIME="$WATCH_HOME/runtime"
+mkdir -p "$WATCH_BIN" "$WATCH_CFG" "$WATCH_HISTORY" "$WATCH_MODEL" "$WATCH_RUNTIME"
+install_test_runtime "$WATCH_BIN"
+cat >"$WATCH_CFG/config.toml" <<EOF
+[meta]
+config_version = 1
+
+[audio]
+source = "mac"
+mac_name = "MacBook Air Microphone"
+
+[swift_parakeet]
+model_path = "$WATCH_MODEL"
+EOF
+cat >"$WATCH_BIN/ffmpeg" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >&2 <<'OUT'
+ffmpeg version test
+[AVFoundation indev @ 0x0] AVFoundation audio devices:
+[AVFoundation indev @ 0x0] [0] MacBook Air Microphone
+[AVFoundation indev @ 0x0] AVFoundation video devices:
+[AVFoundation indev @ 0x0] [0] FaceTime HD Camera
+Error opening input files: Input/output error
+OUT
+exit 1
+EOF
+chmod +x "$WATCH_BIN/ffmpeg"
+cat >"$WATCH_HISTORY/2026-04-22T09-05-00.json" <<'EOF'
+{
+  "timestamp": "2026-04-22T09:05:00Z",
+  "mode": "code",
+  "app": "Ghostty",
+  "raw": "hello there friend",
+  "processed": "Hello there, friend.",
+  "metrics": {
+    "record_ms": 2500,
+    "transcribe_ms": 300,
+    "clean_ms": 15,
+    "postprocess_ms": 0,
+    "paste_ms": 120,
+    "total_ms": 2935
+  }
+}
+EOF
+cat >"$WATCH_HISTORY/bench.tsv" <<'EOF'
+2026-04-22T09:04:00Z	inline	ok	parakeet-watch	base	0	10	10	1800	260	10	0	100	2170	65	20	12	0	cache:source(mac)
+2026-04-22T09:05:00Z	inline	ok	parakeet-watch	code	0	18	20	2500	300	15	0	120	2935	70	25	15	0	cache:source(mac)
+EOF
+
+watch_out="$(HOME="$WATCH_HOME" PATH="$WATCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$WATCH_CFG" DICTATE_CONFIG_FILE="$WATCH_CFG/config.toml" DICTATE_STATE_FILE="$WATCH_RUNTIME/tmux.state" DICTATE_INLINE_STATE_FILE="$WATCH_RUNTIME/inline.state" DICTATE_TMUX_JOBS_DIR="$WATCH_RUNTIME/tmux-jobs" DICTATE_PROCESSING_DIR="$WATCH_RUNTIME/processing" tmux-whisper watch --interval 0.01 --iterations 1)"
+assert_contains "watch_header" "$watch_out" "=== Tmux Whisper watch snapshot 1/1 ==="
+assert_contains "watch_summary_state" "$watch_out" "  state: ready"
+assert_contains "watch_summary_backend" "$watch_out" "  backend: swift_parakeet (cold)"
+assert_contains "watch_latest_mode_app" "$watch_out" "  mode/app: code @ Ghostty"
+assert_contains "watch_latest_preview" "$watch_out" "  preview: Hello there, friend."
+assert_contains "watch_bench_window" "$watch_out" "  window: last 2 of 2"
+assert_contains "watch_bench_latest" "$watch_out" "  latest: inline ok mode=code total=2.9s transcribe=300ms paste=120ms"
+assert_contains "watch_more_detail" "$watch_out" "  tmux-whisper last"
+
+watch_compact_out="$(HOME="$WATCH_HOME" PATH="$WATCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$WATCH_CFG" DICTATE_CONFIG_FILE="$WATCH_CFG/config.toml" DICTATE_STATE_FILE="$WATCH_RUNTIME/tmux.state" DICTATE_INLINE_STATE_FILE="$WATCH_RUNTIME/inline.state" DICTATE_TMUX_JOBS_DIR="$WATCH_RUNTIME/tmux-jobs" DICTATE_PROCESSING_DIR="$WATCH_RUNTIME/processing" tmux-whisper watch --preset compact --interval 0.01 --iterations 1)"
+assert_contains "watch_compact_header" "$watch_compact_out" "=== Tmux Whisper watch snapshot 1/1 ==="
+assert_contains "watch_compact_preset" "$watch_compact_out" "Preset: compact"
+assert_contains "watch_compact_summary" "$watch_compact_out" "Summary: state=ready backend=cold flow=none config=v1/ok"
+assert_contains "watch_compact_modes" "$watch_compact_out" "Modes: inline=code [auto], tmux=code"
+assert_contains "watch_compact_runtime" "$watch_compact_out" "Runtime: tmux=idle inline=idle proc=0/0 stale=0 queue=0/0"
+assert_contains "watch_compact_last" "$watch_compact_out" "Last: code @ Ghostty 2026-04-22T09:05:00Z total=2.9s transcribe=300ms preview=Hello there, friend."
+assert_contains "watch_compact_bench" "$watch_compact_out" "Bench: window=2/2 latest=inline ok mode=code total=2.9s transcribe=300ms paste=120ms"
+assert_contains "watch_compact_more" "$watch_compact_out" "More: tmux-whisper last | tmux-whisper bench | tmux-whisper logs tail transcribe --lines 20"
+
+WATCH_REFRESH_HOME="$TMP_ROOT/home-watch-refresh"
+WATCH_REFRESH_BIN="$WATCH_REFRESH_HOME/.local/bin"
+WATCH_REFRESH_CFG="$WATCH_REFRESH_HOME/.config/dictate"
+WATCH_REFRESH_HISTORY="$WATCH_REFRESH_CFG/history"
+WATCH_REFRESH_MODEL="$WATCH_REFRESH_HOME/models/parakeet-watch"
+WATCH_REFRESH_RUNTIME="$WATCH_REFRESH_HOME/runtime"
+WATCH_REFRESH_SIGNAL="$TMP_ROOT/watch-refresh.signal"
+mkdir -p "$WATCH_REFRESH_BIN" "$WATCH_REFRESH_CFG" "$WATCH_REFRESH_HISTORY" "$WATCH_REFRESH_MODEL" "$WATCH_REFRESH_RUNTIME"
+install_test_runtime "$WATCH_REFRESH_BIN"
+cat >"$WATCH_REFRESH_CFG/config.toml" <<EOF
+[meta]
+config_version = 1
+
+[audio]
+source = "mac"
+mac_name = "MacBook Air Microphone"
+
+[swift_parakeet]
+model_path = "$WATCH_REFRESH_MODEL"
+EOF
+cat >"$WATCH_REFRESH_BIN/ffmpeg" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >&2 <<'OUT'
+ffmpeg version test
+[AVFoundation indev @ 0x0] AVFoundation audio devices:
+[AVFoundation indev @ 0x0] [0] MacBook Air Microphone
+[AVFoundation indev @ 0x0] AVFoundation video devices:
+[AVFoundation indev @ 0x0] [0] FaceTime HD Camera
+Error opening input files: Input/output error
+OUT
+exit 1
+EOF
+chmod +x "$WATCH_REFRESH_BIN/ffmpeg"
+cat >"$WATCH_REFRESH_HISTORY/2026-04-22T09-08-00.json" <<'EOF'
+{
+  "timestamp": "2026-04-22T09:08:00Z",
+  "mode": "code",
+  "app": "Ghostty",
+  "raw": "show me the first snapshot state",
+  "processed": "Show me the first snapshot state.",
+  "metrics": {
+    "record_ms": 2200,
+    "transcribe_ms": 280,
+    "clean_ms": 16,
+    "postprocess_ms": 0,
+    "paste_ms": 100,
+    "total_ms": 2596
+  }
+}
+EOF
+
+watch_refresh_out="$(
+  (
+    while [[ ! -f "$WATCH_REFRESH_SIGNAL" ]]; do
+      sleep 0.05
+    done
+    cat >"$WATCH_REFRESH_HISTORY/2026-04-22T09-10-00.json" <<'EOF'
+{
+  "timestamp": "2026-04-22T09:10:00Z",
+  "mode": "base",
+  "app": "WezTerm",
+  "raw": "check the second snapshot please",
+  "processed": "Check the second snapshot, please.",
+  "metrics": {
+    "record_ms": 1800,
+    "transcribe_ms": 210,
+    "clean_ms": 12,
+    "postprocess_ms": 0,
+    "paste_ms": 90,
+    "total_ms": 2112
+  }
+}
+EOF
+  ) &
+  watch_refresh_writer_pid=$!
+  HOME="$WATCH_REFRESH_HOME" PATH="$WATCH_REFRESH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$WATCH_REFRESH_CFG" DICTATE_CONFIG_FILE="$WATCH_REFRESH_CFG/config.toml" DICTATE_STATE_FILE="$WATCH_REFRESH_RUNTIME/tmux.state" DICTATE_INLINE_STATE_FILE="$WATCH_REFRESH_RUNTIME/inline.state" DICTATE_TMUX_JOBS_DIR="$WATCH_REFRESH_RUNTIME/tmux-jobs" DICTATE_PROCESSING_DIR="$WATCH_REFRESH_RUNTIME/processing" tmux-whisper watch --interval 0.2 --iterations 3 | WATCH_REFRESH_SIGNAL="$WATCH_REFRESH_SIGNAL" python3 -c 'import os, pathlib, sys
+signal = pathlib.Path(os.environ["WATCH_REFRESH_SIGNAL"])
+for line in sys.stdin:
+    sys.stdout.write(line)
+    sys.stdout.flush()
+    if line.startswith("=== Tmux Whisper watch snapshot 1/3 ==="):
+        signal.touch(exist_ok=True)
+'
+  wait "$watch_refresh_writer_pid"
+)"
+assert_contains "watch_refresh_first_snapshot" "$watch_refresh_out" "=== Tmux Whisper watch snapshot 1/3 ==="
+assert_contains "watch_refresh_final_snapshot" "$watch_refresh_out" "=== Tmux Whisper watch snapshot 3/3 ==="
+assert_contains "watch_refresh_initial_history" "$watch_refresh_out" "  mode/app: code @ Ghostty"
+assert_contains "watch_refresh_initial_preview" "$watch_refresh_out" "  preview: Show me the first snapshot state."
+assert_contains "watch_refresh_new_history" "$watch_refresh_out" "  mode/app: base @ WezTerm"
+assert_contains "watch_refresh_new_preview" "$watch_refresh_out" "  preview: Check the second snapshot, please."
+
+# --- Regression 17: stale cached audio indices should be ignored when ffmpeg devices change. ---
 AUDIOCACHE_HOME="$TMP_ROOT/home-audiocache"
 AUDIOCACHE_BIN="$AUDIOCACHE_HOME/.local/bin"
 AUDIOCACHE_CFG="$AUDIOCACHE_HOME/.config/dictate"

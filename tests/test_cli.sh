@@ -46,12 +46,80 @@ if [[ "$output" != *"tmux-whisper last [--json]"* ]]; then
   echo "Expected help output to document the last command" >&2
   exit 1
 fi
+if [[ "$output" != *"tmux-whisper status [--json] [--preset compact]"* ]]; then
+  echo "Expected help output to document compact status preset" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper history list [N] [--json]"* ]]; then
+  echo "Expected help output to document history list JSON output" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper history search <query> [N] [--json]"* ]]; then
+  echo "Expected help output to document history search" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper history export [N|all] [--json]"* ]]; then
+  echo "Expected help output to document history export" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper history sessions [N] [--json]"* ]]; then
+  echo "Expected help output to document history sessions" >&2
+  exit 1
+fi
+if [[ "$output" != *"DICTATE_HISTORY_RETENTION_DAYS=7"* ]]; then
+  echo "Expected help output to document history JSON retention" >&2
+  exit 1
+fi
+if [[ "$output" != *"DICTATE_HISTORY_AUDIO_RETENTION_DAYS=2"* ]]; then
+  echo "Expected help output to document history audio retention" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper devices [--json]"* ]]; then
+  echo "Expected help output to document devices JSON output" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper logs path [stream] [--json]"* ]]; then
+  echo "Expected help output to document logs path" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper logs tail [stream] [--lines N] [--json]"* ]]; then
+  echo "Expected help output to document logs tail" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper logs follow [stream] [--lines N] [--json]"* ]]; then
+  echo "Expected help output to document logs follow" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper watch [--preset compact] [--interval SECONDS] [--iterations N]"* ]]; then
+  echo "Expected help output to document watch" >&2
+  exit 1
+fi
 if [[ "$output" != *"tmux-whisper config defaults"* ]]; then
   echo "Expected help output to document config defaults" >&2
   exit 1
 fi
+if [[ "$output" != *"tmux-whisper config [--json]"* ]]; then
+  echo "Expected help output to document config JSON output" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper config path [--json]"* ]]; then
+  echo "Expected help output to document config path JSON output" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper config get <path> [--json]"* ]]; then
+  echo "Expected help output to document config get" >&2
+  exit 1
+fi
 if [[ "$output" != *"tmux-whisper config repair [--dry-run]"* ]]; then
   echo "Expected help output to document config repair" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper bench [N|all] [--json]"* ]]; then
+  echo "Expected help output to document bench JSON output" >&2
+  exit 1
+fi
+if [[ "$output" != *"tmux-whisper bench export [N|all] [--json]"* ]]; then
+  echo "Expected help output to document bench export" >&2
   exit 1
 fi
 if [[ "$output" != *"tmux-whisper vocab import [--dry-run] <file>"* ]]; then
