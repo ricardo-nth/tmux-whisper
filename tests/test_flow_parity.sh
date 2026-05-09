@@ -466,6 +466,8 @@ run_tmux_round() {
   local start_out
   start_out="$("$DICTATE_BIN" toggle)"
   assert_contains "tmux_start_${mode}" "$start_out" "RECORDING"
+  wait_for_file_contains "$DICTATE_TEST_FFMPEG_LOG" "aresample=async=1000:first_pts=0" || fail "tmux_capture_async_resampler_${mode}"
+  pass "tmux_capture_async_resampler_${mode}"
 
   # shellcheck disable=SC1090
   . "$DICTATE_STATE_FILE"
@@ -555,6 +557,8 @@ run_inline_toggle_round() {
   local start_out
   start_out="$("$DICTATE_BIN" inline toggle)"
   assert_contains "inline_toggle_start" "$start_out" "RECORDING"
+  wait_for_file_contains "$DICTATE_TEST_FFMPEG_LOG" "aresample=async=1000:first_pts=0" || fail "inline_toggle_async_resampler"
+  pass "inline_toggle_async_resampler"
 
   [[ -f "$DICTATE_INLINE_STATE_FILE" ]] || fail "inline_toggle_state_created"
   pass "inline_toggle_state_created"
@@ -842,6 +846,7 @@ run_inline_swift_round() {
   local copied
   copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
   assert_contains "inline_swift_transcript" "$copied" "swift backend transcript"
+  assert_file_contains "inline_swift_async_resampler" "$DICTATE_TEST_FFMPEG_LOG" "aresample=async=1000:first_pts=0"
   assert_file_contains "inline_swift_tail_pad_ffmpeg" "$DICTATE_TEST_FFMPEG_LOG" "anullsrc=r=16000:cl=mono"
 }
 

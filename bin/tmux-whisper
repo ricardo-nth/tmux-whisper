@@ -202,7 +202,7 @@ ENV OPTIONS:
   DICTATE_AUDIO_INDEX=N      # audio device index
   DICTATE_AUDIO_NAME="X"     # preferred device name substring (more stable than index)
   DICTATE_STOP_GRACE_MS=700 # shared stop grace (tmux; inline falls back here if unset)
-  DICTATE_INLINE_STOP_GRACE_MS=1250 # inline/Raycast stop grace before ffmpeg interrupt
+  DICTATE_INLINE_STOP_GRACE_MS=1000 # inline/Raycast stop grace before ffmpeg interrupt
   DICTATE_TRANSCRIBE_TAIL_PAD_MS=500 # append a little silence before ASR to preserve final words
   DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
   DICTATE_HISTORY_RETENTION_DAYS=7 # keep transcript JSON history for stats/search
@@ -950,7 +950,7 @@ resolve_stop_grace_ms() {
 }
 
 resolve_inline_stop_grace_ms() {
-  resolve_stop_grace_ms "${DICTATE_INLINE_STOP_GRACE_MS:-${DICTATE_STOP_GRACE_MS:-}}" "1250"
+  resolve_stop_grace_ms "${DICTATE_INLINE_STOP_GRACE_MS:-${DICTATE_STOP_GRACE_MS:-}}" "1000"
 }
 
 logs() {
@@ -5324,6 +5324,7 @@ start() {
     ffmpeg \
       -hide_banner -nostdin -loglevel error \
       -f avfoundation -i ":${audio_index}" \
+      -af "aresample=async=1000:first_pts=0" \
       -ac 1 -ar 16000 -c:a pcm_s16le \
       "$wav" >>"$RECORD_LOG" 2>&1 &
     pid="$!"
@@ -6148,6 +6149,7 @@ inline_start() {
   while :; do
     ffmpeg -hide_banner -nostdin -loglevel error \
       -f avfoundation -i ":${audio_selector}" \
+      -af "aresample=async=1000:first_pts=0" \
       -ac 1 -ar 16000 -c:a pcm_s16le \
       "$wav" >>"$record_log" 2>&1 &
     pid=$!
@@ -6353,6 +6355,7 @@ inline() {
   log_audio_cache_note_if_any "${audio_cache_note:-}" "$record_log"
   ffmpeg -hide_banner -nostdin -loglevel error \
     -f avfoundation -i ":${audio_index}" \
+    -af "aresample=async=1000:first_pts=0" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
     "$wav" >>"$record_log" 2>&1 &
   ffmpeg_pid="$!"

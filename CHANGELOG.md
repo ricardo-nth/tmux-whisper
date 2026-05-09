@@ -5,8 +5,10 @@
 - **Stable release**: `v0.5.2` (tagged on 2026-04-19)
 - **Maintenance track**: `v0.5.x` (stress-test the latest hardening and keep the release path calm)
 - **Next expansion target**: `v0.6.x` (CLI-first operator platform)
+- **Completed**: FFmpeg AVFoundation capture now uses async resampling so WAV duration tracks wall-clock recording time instead of drifting short
+- **Completed**: inline/Raycast stop-grace retuned back down to `1000ms` after capture-layer drift was isolated upstream of stop timing
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
-- **Completed**: inline/Raycast stop-grace retuned to `1250ms` as a diagnostic clipping probe, plus inline stop breadcrumbs when `keep_logs` is enabled
+- **Completed**: inline/Raycast stop breadcrumbs when `keep_logs` is enabled
 - **Completed**: FFmpeg capture/shutdown diagnostics now archive WAV duration, byte counts, grace timing, and SIGINT/TERM exit timing for clipped-run forensics
 - **Completed**: inline/Raycast processing cue now plays immediately on stop, before the grace window finishes recording
 - **Completed**: inline `keep_logs` now archives per-run WAV + record/transcribe logs under `history/inline-debug` for clipped-run forensics
@@ -39,7 +41,7 @@
 
 ### Planned next (v0.5 maintenance queue)
 
-- clipped-run hardening follow-up: use the new archived inline artifacts to compare true tail cuts vs stop timing, then decide whether the next step is adaptive stop logic rather than another fixed grace bump
+- clipped-run hardening follow-up: use the archived inline artifacts to confirm async-resampled WAV duration stays close to wall-clock capture time during daily use
 - keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
 
 ### Planned next (v0.6 CLI-first queue)
@@ -51,6 +53,14 @@
 - keep refining compact operator views and cross-links so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
 - known polish: SwiftBar's polling/render loop can still leave a tiny stop-to-processing visual delay; future work should explore an event-driven refresh/signal path for the stop hotkey, and longer-term a very light native macOS menu bar companion for push-style state updates
 - treat any future dashboard/TUI as an optional layer on top of stable CLI contracts, not as the next milestone itself
+
+## 2026-05-09
+
+- **Inline/Raycast clipping hardening**:
+  - Added async FFmpeg resampling (`aresample=async=1000:first_pts=0`) to tmux and inline capture so AVFoundation sample-clock drift does not produce short WAVs before transcription.
+  - Retuned the inline stop grace window back down to `1000ms` now that the observed clipping source is upstream in FFmpeg/AVFoundation capture rather than only stop timing.
+- **Validation**:
+  - Ran `bash -n`, `./tests/test_cli.sh`, `./tests/test_regression.sh`, `./tests/test_flow_parity.sh`, `./tests/ci.sh`, `./install.sh --force`, and a fixed-duration FFmpeg probe that produced a `15.000s` WAV from a `15s` capture.
 
 ## 2026-04-19
 
