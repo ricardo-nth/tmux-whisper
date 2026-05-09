@@ -110,7 +110,7 @@ if [[ "$output" != *"tmux-whisper config repair [--dry-run]"* ]]; then
   echo "Expected help output to document config repair" >&2
   exit 1
 fi
-if [[ "$output" != *"tmux-whisper bench [N] [--json]"* ]]; then
+if [[ "$output" != *"tmux-whisper bench [N|all] [--json]"* ]]; then
   echo "Expected help output to document bench JSON output" >&2
   exit 1
 fi

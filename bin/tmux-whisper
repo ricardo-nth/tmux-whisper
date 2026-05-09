@@ -65,8 +65,8 @@ DIAGNOSTICS:
   tmux-whisper warmup            # preload the Swift Parakeet daemon/model
   tmux-whisper keep-logs          # show persistent log retention setting
   tmux-whisper keep-logs on|off   # persist log retention in config
-  tmux-whisper bench [N] [--json] # summarize recent stage timings (default: 30 runs)
-  tmux-whisper bench export [N|all] [--json] # export raw bench rows (default: 30 recent)
+  tmux-whisper bench [N|all] [--json] [--flow inline|tmux] [--status STATUS] [--mode MODE] [--slow-startup-audio-ms N] # summarize recent stage timings
+  tmux-whisper bench export [N|all] [--json] [filters] # export raw bench rows (default: 30 recent)
   tmux-whisper bench-matrix [N] [phrase_file] # compare llm_model(post=on) x postprocess x vocab_clean on fixed phrases
   tmux-whisper changelog          # show recent Tmux Whisper changes
 
@@ -3319,14 +3319,95 @@ append_bench_entry() {
 bench() {
   local json_output="0"
   local args=()
+  local filter_args=()
   local arg
+  local usage="usage: tmux-whisper bench [N|all] [--json] [--flow inline|tmux] [--status STATUS] [--mode MODE] [--model MODEL] [--slow-startup-ms N] [--slow-startup-audio-ms N] [--slow-startup-ffmpeg-ms N] [--slow-total-ms N] | bench export [N|all] [--json] [filters] | bench clear"
 
-  for arg in "$@"; do
-    if [[ "$arg" == "--json" ]]; then
-      json_output="1"
-    else
-      args+=("$arg")
-    fi
+  while [[ $# -gt 0 ]]; do
+    arg="${1:-}"
+    case "$arg" in
+      --json)
+        json_output="1"
+        ;;
+      --flow|--status|--mode|--model)
+        shift
+        [[ $# -gt 0 && -n "${1:-}" ]] || die "$usage"
+        filter_args+=("${arg#--}=${1:-}")
+        ;;
+      --flow=*|--status=*|--mode=*|--model=*)
+        filter_args+=("${arg#--}")
+        ;;
+      --slow-startup-ms|--slow-startup-total-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_total_ms=${1:-}")
+        ;;
+      --slow-startup-ms=*|--slow-startup-total-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_total_ms=${arg#*=}")
+        ;;
+      --slow-startup-audio-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_audio_ms=${1:-}")
+        ;;
+      --slow-startup-audio-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_audio_ms=${arg#*=}")
+        ;;
+      --slow-startup-ffmpeg-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_ffmpeg_live_ms=${1:-}")
+        ;;
+      --slow-startup-ffmpeg-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_ffmpeg_live_ms=${arg#*=}")
+        ;;
+      --slow-startup-target-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_target_ms=${1:-}")
+        ;;
+      --slow-startup-target-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_startup_target_ms=${arg#*=}")
+        ;;
+      --slow-total-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_total_ms=${1:-}")
+        ;;
+      --slow-total-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_total_ms=${arg#*=}")
+        ;;
+      --slow-transcribe-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_transcribe_ms=${1:-}")
+        ;;
+      --slow-transcribe-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_transcribe_ms=${arg#*=}")
+        ;;
+      --slow-paste-ms)
+        shift
+        [[ $# -gt 0 && "${1:-}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_paste_ms=${1:-}")
+        ;;
+      --slow-paste-ms=*)
+        [[ "${arg#*=}" =~ ^[0-9]+$ ]] || die "$usage"
+        filter_args+=("min_paste_ms=${arg#*=}")
+        ;;
+      --*)
+        die "$usage"
+        ;;
+      *)
+        args+=("$arg")
+        ;;
+    esac
+    shift
   done
 
   local subcmd="show"
@@ -3336,30 +3417,33 @@ bench() {
       ;;
     clear)
       [[ "$json_output" == "0" ]] || die "bench clear does not accept --json"
-      [[ "${#args[@]}" -eq 1 ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+      [[ "${#filter_args[@]}" -eq 0 ]] || die "$usage"
+      [[ "${#args[@]}" -eq 1 ]] || die "$usage"
       rm -f "$BENCH_FILE" 2>/dev/null || true
       echo "Bench data cleared."
       return 0
       ;;
     export)
       subcmd="export"
-      [[ "${#args[@]}" -le 2 ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+      [[ "${#args[@]}" -le 2 ]] || die "$usage"
       spec="${args[1]:-30}"
       if [[ "$spec" != "all" ]]; then
-        [[ "$spec" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
-        (( spec > 0 )) || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+        [[ "$spec" =~ ^[0-9]+$ ]] || die "$usage"
+        (( spec > 0 )) || die "$usage"
       fi
       ;;
     *)
-      [[ "${#args[@]}" -eq 1 ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
-      [[ "${args[0]}" =~ ^[0-9]+$ ]] || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
-      (( ${args[0]} > 0 )) || die "usage: tmux-whisper bench [N] [--json] | bench export [N|all] [--json] | bench clear"
+      [[ "${#args[@]}" -eq 1 ]] || die "$usage"
+      if [[ "${args[0]}" != "all" ]]; then
+        [[ "${args[0]}" =~ ^[0-9]+$ ]] || die "$usage"
+        (( ${args[0]} > 0 )) || die "$usage"
+      fi
       spec="${args[0]}"
       ;;
   esac
 
   need python3
-  python3 - "$BENCH_FILE" "$subcmd" "$spec" "$json_output" <<'PYEOF'
+  python3 - "$BENCH_FILE" "$subcmd" "$spec" "$json_output" ${filter_args[@]+"${filter_args[@]}"} <<'PYEOF'
 import collections
 import json
 import os
@@ -3370,6 +3454,49 @@ path = os.path.expanduser(sys.argv[1])
 subcmd = sys.argv[2]
 spec = sys.argv[3]
 json_output = sys.argv[4] == "1"
+filter_args = sys.argv[5:]
+
+FILTER_LABELS = {
+    "flow": "flow",
+    "status": "status",
+    "mode": "mode",
+    "model": "model",
+    "min_record_ms": "record_ms",
+    "min_transcribe_ms": "transcribe_ms",
+    "min_paste_ms": "paste_ms",
+    "min_total_ms": "total_ms",
+    "min_startup_total_ms": "startup_total_ms",
+    "min_startup_audio_ms": "startup_audio_ms",
+    "min_startup_ffmpeg_live_ms": "startup_ffmpeg_live_ms",
+    "min_startup_target_ms": "startup_target_ms",
+}
+
+filters = {
+    "flow": None,
+    "status": None,
+    "mode": None,
+    "model": None,
+    "minimums": {},
+}
+for item in filter_args:
+    if "=" not in item:
+        continue
+    key, value = item.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+    if key in {"flow", "status", "mode", "model"}:
+        filters[key] = value
+    elif key in FILTER_LABELS:
+        try:
+            filters["minimums"][FILTER_LABELS[key]] = int(value)
+        except Exception:
+            raise SystemExit(f"invalid bench filter: {key}={value}")
+
+active_filters = {
+    key: value
+    for key, value in filters.items()
+    if (isinstance(value, dict) and value) or (not isinstance(value, dict) and value is not None)
+}
 
 records = []
 if os.path.isfile(path):
@@ -3424,6 +3551,19 @@ def select_subset(rows, raw_spec):
         limit = 1
     return rows[-limit:]
 
+def matches_filters(row):
+    for key in ("flow", "status", "mode", "model"):
+        raw_value = filters.get(key)
+        if raw_value is None:
+            continue
+        accepted = {part.strip() for part in raw_value.split(",") if part.strip()}
+        if accepted and str(row.get(key, "")) not in accepted:
+            return False
+    for key, minimum in filters["minimums"].items():
+        if int(row.get(key, 0) or 0) < minimum:
+            return False
+    return True
+
 def percentile(values, pct):
     if not values:
         return 0
@@ -3461,7 +3601,8 @@ def export_entries(rows):
         entries.append(item)
     return entries
 
-subset = select_subset(records, spec)
+matching_records = [row for row in records if matches_filters(row)]
+subset = select_subset(matching_records, spec)
 exported = export_entries(subset)
 
 if subcmd == "export":
@@ -3519,7 +3660,9 @@ payload = {
     "subcommand": "show",
     "source": path,
     "total_records": len(records),
+    "filtered_records": len(matching_records),
     "subset_records": len(subset),
+    "filters": active_filters,
     "counts": {
         "flows": {k: flow_counts[k] for k in sorted(flow_counts)},
         "statuses": {k: status_counts[k] for k in sorted(status_counts)},
@@ -3557,8 +3700,18 @@ if not records:
     print("Run a dictation first, then: tmux-whisper bench")
     raise SystemExit(0)
 
-print(f"Tmux Whisper bench (last {len(subset)} of {len(records)} runs)")
+if active_filters:
+    print(f"Tmux Whisper bench (last {len(subset)} of {len(matching_records)} matching runs; total {len(records)})")
+else:
+    print(f"Tmux Whisper bench (last {len(subset)} of {len(records)} runs)")
 print(f"Source: {path}")
+if active_filters:
+    print("Filters:")
+    for key in ("flow", "status", "mode", "model"):
+        if filters.get(key) is not None:
+            print(f"  {key}: {filters[key]}")
+    for key, minimum in sorted(filters["minimums"].items()):
+        print(f"  {key}: >= {minimum}ms")
 print("")
 print("Counts:")
 flow_counts_text = ", ".join(f"{k}={v}" for k, v in sorted(flow_counts.items())) if flow_counts else "<none>"
