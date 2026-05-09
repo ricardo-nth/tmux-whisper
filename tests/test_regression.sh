@@ -1097,6 +1097,7 @@ bench_summary_json="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE
 assert_json_equals "bench_json_command" "$bench_summary_json" "command" "bench"
 assert_json_equals "bench_json_subcommand" "$bench_summary_json" "subcommand" "show"
 assert_json_equals "bench_json_total_records" "$bench_summary_json" "total_records" "3"
+assert_json_equals "bench_json_filtered_records" "$bench_summary_json" "filtered_records" "3"
 assert_json_equals "bench_json_subset_records" "$bench_summary_json" "subset_records" "2"
 assert_json_equals "bench_json_flow_inline" "$bench_summary_json" "counts.flows.inline" "1"
 assert_json_equals "bench_json_status_ok" "$bench_summary_json" "counts.statuses.ok" "1"
@@ -1104,6 +1105,23 @@ assert_json_equals "bench_json_total_stage_n" "$bench_summary_json" "stages.tota
 assert_json_equals "bench_json_latest_timestamp" "$bench_summary_json" "latest.timestamp" "2026-04-22T09:02:00Z"
 assert_json_equals "bench_json_latest_mode" "$bench_summary_json" "latest.mode" "email"
 assert_json_equals "bench_json_latest_postprocess" "$bench_summary_json" "latest.postprocess_enabled" "true"
+
+bench_filtered_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench all --flow inline)"
+assert_contains "bench_filter_header" "$bench_filtered_out" "Tmux Whisper bench (last 2 of 2 matching runs; total 3)"
+assert_contains "bench_filter_flow_line" "$bench_filtered_out" "flow: inline"
+assert_contains "bench_filter_flow_counts" "$bench_filtered_out" "by flow: inline=2"
+assert_contains "bench_filter_latest_line" "$bench_filtered_out" "2026-04-22T09:02:00Z flow=inline status=ok"
+
+bench_filtered_json="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench all --flow inline --slow-startup-audio-ms 31 --json)"
+assert_json_equals "bench_filter_json_total_records" "$bench_filtered_json" "total_records" "3"
+assert_json_equals "bench_filter_json_filtered_records" "$bench_filtered_json" "filtered_records" "1"
+assert_json_equals "bench_filter_json_subset_records" "$bench_filtered_json" "subset_records" "1"
+assert_json_equals "bench_filter_json_filter_flow" "$bench_filtered_json" "filters.flow" "inline"
+assert_json_equals "bench_filter_json_filter_audio_min" "$bench_filtered_json" "filters.minimums.startup_audio_ms" "31"
+assert_json_equals "bench_filter_json_latest_timestamp" "$bench_filtered_json" "latest.timestamp" "2026-04-22T09:00:00Z"
+
+bench_filtered_export_json="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench export all --slow-startup-ffmpeg-ms 16 --json)"
+assert_json_equals "bench_filter_export_json_count" "$bench_filtered_export_json" "0.timestamp" "2026-04-22T09:00:00Z"
 
 bench_export_out="$(HOME="$BENCH_HOME" PATH="$BENCH_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$BENCH_CFG" DICTATE_CONFIG_FILE="$BENCH_CFG/config.toml" tmux-whisper bench export 2)"
 assert_contains "bench_export_first_entry" "$bench_export_out" "=== Bench 1 ==="
