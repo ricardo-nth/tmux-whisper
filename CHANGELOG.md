@@ -25,6 +25,8 @@
 - **Completed**: `tmux-whisper config [--json]`, `config path [--json]`, and `config get <path> [--json]` now make config inspection first-class for humans, shell tooling, and future agents
 - **Completed**: `tmux-whisper watch [--interval SECONDS] [--iterations N]` now composes `status`, latest history, and bench data into a live text-first operator view instead of forcing a dashboard/TUI jump
 - **Completed**: `tmux-whisper status --preset compact` and `watch --preset compact` now give terminal operators a tighter summary surface for narrow panes, quick checks, and future plugin-style shells without changing the JSON contracts underneath
+- **Completed**: filtered bench inspection, history session summaries, and command cross-links now connect `bench`, `history sessions`, `logs`, `status`, and `watch` into a more navigable operator workflow
+- **Completed**: `docs/CLI_CONTRACTS.md` now marks stable JSON read surfaces versus experimental streaming/watch/benchmark output so future wrappers can build on the CLI without guessing
 - **Completed**: mode/config UX validation polish in `tmux-whisper doctor`, including flow-aware checks, surgical fix hints, and text/JSON parity
 - **Completed**: public command/help/docs now standardize on `tmux-whisper ...`; internal `dictate` config/temp paths remain intentionally unchanged for now
 - **Completed**: vocab safety follow-up now adds dry-run import paths plus backup/literal-match guardrails for vocab import and removal flows
@@ -48,9 +50,9 @@
 
 - promote the operator CLI from a summary layer into the primary operator surface: consistent machine-readable read commands, export-friendly listings, and better shell composability
 - expand history/logs/bench/config inspection before any dashboard work, so the terminal surface becomes the real source of truth for operators and future integrations
-- add filtered bench inspection and text-first live watch flows now that history, logs, devices, config, bench, and log-following all have a stronger operator baseline
+- keep filtered bench inspection, history session summaries, and text-first watch/log flows evolving from real usage now that the core operator surfaces have stronger contracts
 - add text-first live workflows such as watch/tail-style commands that keep terminal users in the CLI instead of forcing a TUI just for observability
-- keep refining compact operator views and cross-links so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
+- keep refining compact operator views from real morning-delay/SwiftBar/sound-delay evidence so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
 - known polish: SwiftBar's polling/render loop can still leave a tiny stop-to-processing visual delay; future work should explore an event-driven refresh/signal path for the stop hotkey, and longer-term a very light native macOS menu bar companion for push-style state updates
 - treat any future dashboard/TUI as an optional layer on top of stable CLI contracts, not as the next milestone itself
 

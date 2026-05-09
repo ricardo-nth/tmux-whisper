@@ -1060,7 +1060,16 @@ for raw_line in os.environ.get("LOG_ROWS", "").splitlines():
         item["lines"] = lines
     streams.append(item)
 
-print(json.dumps({"command": "logs", "subcommand": subcmd, "streams": streams}, indent=2, sort_keys=True))
+print(json.dumps({
+    "command": "logs",
+    "subcommand": subcmd,
+    "streams": streams,
+    "next_commands": [
+        "tmux-whisper status --preset compact",
+        "tmux-whisper history sessions 5",
+        "tmux-whisper bench 10",
+    ],
+}, indent=2, sort_keys=True))
 PYEOF
   }
 
@@ -1298,6 +1307,12 @@ PYEOF
       logs_usage
       ;;
   esac
+
+  echo ""
+  echo "Next:"
+  echo "  tmux-whisper status --preset compact"
+  echo "  tmux-whisper history sessions 5"
+  echo "  tmux-whisper bench 10"
 }
 
 changelog() {
@@ -3690,6 +3705,11 @@ payload = {
         "target_ms": metric_summary([r["startup_target_ms"] for r in subset if r["startup_target_ms"] > 0]),
     },
     "latest": latest,
+    "next_commands": [
+        "tmux-whisper history sessions 5",
+        "tmux-whisper logs tail transcribe --lines 40",
+        "tmux-whisper status --preset compact",
+    ],
 }
 
 if json_output:
@@ -3766,6 +3786,12 @@ if latest is not None:
                 + "audio_source={startup_audio_source}"
             ).format(**latest)
         )
+
+print("")
+print("Next:")
+print("  tmux-whisper history sessions 5")
+print("  tmux-whisper logs tail transcribe --lines 40")
+print("  tmux-whisper status --preset compact")
 PYEOF
 }
 
@@ -3952,6 +3978,7 @@ def build_more_detail_commands(summary_state, active_flow, last_entry, status_mo
             f"tmux-whisper logs follow {transcribe_stream}",
             "tmux-whisper last",
             "tmux-whisper bench",
+            "tmux-whisper history sessions 5",
         ]
     if summary_state in {"attention", "not_ready"}:
         return [
@@ -3963,6 +3990,7 @@ def build_more_detail_commands(summary_state, active_flow, last_entry, status_mo
         "tmux-whisper last" if isinstance(last_entry, dict) else "tmux-whisper history list 5",
         "tmux-whisper bench",
         "tmux-whisper logs tail transcribe --lines 20",
+        "tmux-whisper history sessions 5",
     ]
 
 

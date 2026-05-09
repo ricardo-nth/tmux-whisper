@@ -207,6 +207,7 @@ tmux-whisper config repair
 - `tmux-whisper bench-matrix [N] [phrase_file]` runs a quick matrix over postprocess/vocab toggles (and LLM models when API key is set) on fixed phrases.
   - Phrase file format: one phrase per line (blank lines and `#` comments ignored). Optional `label<TAB>phrase` is supported.
   - Set `DICTATE_BENCH_MATRIX_PROGRESS=0` for summary-only output (no per-combo progress lines).
+- Stable CLI JSON surfaces are tracked in [`docs/CLI_CONTRACTS.md`](docs/CLI_CONTRACTS.md); prefer those contracts for scripts, agents, SwiftBar/native wrappers, and future UI layers.
 
 ## Troubleshooting
 

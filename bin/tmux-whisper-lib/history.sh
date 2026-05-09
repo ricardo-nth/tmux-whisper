@@ -770,6 +770,11 @@ payload = {
     "source": history_dir,
     "limit": limit,
     "sessions": sessions,
+    "next_commands": [
+        "tmux-whisper history stats",
+        "tmux-whisper bench 10",
+        "tmux-whisper logs tail transcribe --lines 40",
+    ],
 }
 
 if json_output:
@@ -815,6 +820,12 @@ for session in sessions:
     if session["debug_notes"]:
         print("    debug: " + "; ".join(session["debug_notes"]))
     print("    preview: " + session["preview"])
+
+print("")
+print("Next:")
+print("  tmux-whisper history stats")
+print("  tmux-whisper bench 10")
+print("  tmux-whisper logs tail transcribe --lines 40")
 PYEOF
 }
 
