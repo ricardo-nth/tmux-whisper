@@ -751,6 +751,17 @@ cat >"$HISTOBS_HISTORY/2026-02-22T17-05-00.json" <<'EOF'
     "chunk_words": 1000,
     "chunk_count": 2,
     "llm": "gpt-oss-120b"
+  },
+  "audio": {
+    "capture_wav_ms": 18120,
+    "capture_wav_bytes": 580000,
+    "capture_gap_to_record_ms": 120,
+    "capture_gap_to_record_plus_grace_ms": 1120,
+    "archive_wav_ms": 18040,
+    "archive_wav_bytes": 577000,
+    "wav_retention_days": 2,
+    "debug_archive_prefix": "2026-02-22T17-05-00-inline",
+    "retention_note": "debug wav retained"
   }
 }
 EOF
@@ -769,6 +780,17 @@ assert_contains "history_stats_typing_delta" "$histobs_stats" "typing_delta.tota
 assert_contains "history_stats_dictation_overall" "$histobs_stats" "dictation_wpm.overall: 92"
 assert_contains "history_stats_mode_breakdown" "$histobs_stats" "code: entries=2 processed_words=40 raw_words=40"
 assert_contains "history_stats_app_breakdown" "$histobs_stats" "Ghostty: entries=1 processed_words=30 raw_words=30"
+histobs_sessions="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history sessions 2)"
+assert_contains "history_sessions_header" "$histobs_sessions" "Recent dictation sessions (newest first):"
+assert_contains "history_sessions_latest" "$histobs_sessions" "mode=code app=Ghostty words=30 record=18.0s"
+assert_contains "history_sessions_audio" "$histobs_sessions" "audio: capture_wav=18.1s archive_wav=18.0s capture_bytes=580000 archive_bytes=577000"
+assert_contains "history_sessions_debug" "$histobs_sessions" "debug: debug_archive_prefix=2026-02-22T17-05-00-inline; retention_note=debug wav retained"
+histobs_sessions_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history sessions 2 --json)"
+assert_json_equals "history_sessions_json_command" "$histobs_sessions_json" "command" "history"
+assert_json_equals "history_sessions_json_subcommand" "$histobs_sessions_json" "subcommand" "sessions"
+assert_json_equals "history_sessions_json_first_app" "$histobs_sessions_json" "sessions.0.app" "Ghostty"
+assert_json_equals "history_sessions_json_first_debug" "$histobs_sessions_json" "sessions.0.audio.debug_archive_prefix" "2026-02-22T17-05-00-inline"
+assert_json_equals "history_sessions_json_first_note" "$histobs_sessions_json" "sessions.0.debug_notes.0" "debug_archive_prefix=2026-02-22T17-05-00-inline"
 histobs_show_latest="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$HISTOBS_CFG" DICTATE_CONFIG_FILE="$HISTOBS_CFG/config.toml" tmux-whisper history 1)"
 assert_contains "history_show_metrics_section" "$histobs_show_latest" "--- Metrics ---"
 assert_contains "history_show_metrics_postprocess_ms" "$histobs_show_latest" "postprocess_ms : 620"

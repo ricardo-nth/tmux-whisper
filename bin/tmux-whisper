@@ -170,6 +170,7 @@ HISTORY (saved transcripts, auto-cleanup after 7 days):
   tmux-whisper history export [N|all] [--json] # export full recent/history entries
   tmux-whisper history N [--json] # show entry N (1 = most recent)
   tmux-whisper history stats [--json] # summarize saved dictations + operator timings
+  tmux-whisper history sessions [N] [--json] # compact per-dictation session summaries
   tmux-whisper last [--json]      # concise summary of the most recent dictation
   tmux-whisper history reprocess N [mode]  # re-run LLM on raw transcript
   tmux-whisper history clear      # delete all history
