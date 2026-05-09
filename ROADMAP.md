@@ -44,6 +44,7 @@ Recent progress (2026-02-19):
 - Added runtime SwiftBar integration toggle (`tmux-whisper swiftbar on|off|toggle`) so integration can be managed without reinstalling.
 - Public-facing command language is now standardized on `tmux-whisper` across the active docs/operator surface, while config/sound paths remain intentionally under `dictate` for now.
 - Stale cached AVFoundation audio-index invalidations now leave lightweight breadcrumbs in `debug`, `debug --json`, and active record logs when device-order changes force a re-resolve.
+- Bootstrap installs now accept explicit source selectors (`--repo`, `--ref`, `--archive-url`) and write `~/.config/dictate/install-receipt.env`, making multi-machine setup/update provenance easier to verify.
 
 Success criteria:
 
@@ -57,6 +58,7 @@ Focus: turn the existing operator summary layer into a first-class terminal prod
 - Expand read-only/operator commands so shell users can inspect history, logs, bench data, devices, and config state without scraping human-only output.
 - Keep pushing from parity into workflow depth: export/search/follow/watch commands should build on the read-only contracts rather than bypass them.
 - Add export-friendly and watch/tail-style workflows that keep tmux/terminal users inside the CLI.
+- Use filtered bench inspection and history session summaries as the main reliability investigation surface for FFmpeg drift soak, morning-delay warm-cache behavior, and SwiftBar/sound-start timing.
 - Keep tmux-first workflow as the primary operating model.
 - Treat any future TUI as a later convenience layer built on stable CLI contracts, not as the next milestone.
 
@@ -65,6 +67,7 @@ Success criteria:
 - Common support and inspection tasks are answerable from the CLI alone.
 - Read-only operator surfaces have clear text plus machine-readable contracts.
 - Future integrations/TUI work can consume stable CLI data instead of re-implementing logic.
+- Legacy whisper.cpp decode-default tuning is no longer an active roadmap item; runtime tuning now targets Parakeet warmup/cache/latency behavior.
 
 ## v0.7.x - Integration Platform
 

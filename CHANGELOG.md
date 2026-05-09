@@ -33,6 +33,7 @@
 - **Completed**: config repair flow now provides canonical `config defaults`, in-place `config repair [--dry-run]`, and install-time seeding from one default template
 - **Completed**: malformed `config.toml` now degrades into explicit `debug`/`doctor`/`status` warnings, and `config repair` can reset invalid TOML safely with a backup
 - **Completed**: real-world docs refresh now clarifies install channels, tmux-first setup, integration environment expectations, and channel-specific upgrade/repair flows
+- **Completed**: bootstrap/install reproducibility pass now supports explicit bootstrap `--ref`, `--repo`, and `--archive-url` flags, records the installed source in `install-receipt.env`, and documents pinned setup across machines
 - **Completed**: stale cached AVFoundation audio-index invalidations now leave lightweight breadcrumbs in `debug`, `debug --json`, and active record logs when device order changes force a re-resolve
 - **Completed**: inline/Raycast fresh audio-cache hits now use a lighter mtime-based fast path and refresh cache timestamps in the background, reducing rare hotkey-to-start-cue stalls
 - **Completed**: SwiftBar inline processing now stays active until transcription, paste, and optional autosend finish, so the menu-bar state reflects when the frontmost window is safe to move away from
@@ -48,8 +49,8 @@
 
 ### Planned next (v0.6 CLI-first queue)
 
-- promote the operator CLI from a summary layer into the primary operator surface: consistent machine-readable read commands, export-friendly listings, and better shell composability
-- expand history/logs/bench/config inspection before any dashboard work, so the terminal surface becomes the real source of truth for operators and future integrations
+- keep using the operator CLI as the primary support surface: inspect reliability from `status`, `history sessions`, `bench`, and `logs` before adding dashboard/TUI layers
+- deepen workflow guidance around the remaining real reliability questions: FFmpeg drift soak, morning-delay/warm-cache behavior, SwiftBar/sound-start timing, and event-driven menu refresh
 - keep filtered bench inspection, history session summaries, and text-first watch/log flows evolving from real usage now that the core operator surfaces have stronger contracts
 - add text-first live workflows such as watch/tail-style commands that keep terminal users in the CLI instead of forcing a TUI just for observability
 - keep refining compact operator views from real morning-delay/SwiftBar/sound-delay evidence so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
@@ -515,15 +516,15 @@ Attempted to speed up transcription by implementing a persistent daemon that kee
 
 ### Next queue (core product)
 
-- [x] Add stage timings and a lightweight `dictate bench` summary (record stop → transcribe → clean → postprocess → paste).
-- [ ] Tune whisper decode defaults (`threads` / `beam_size` / `best_of`) using benchmark data, not intuition.
-- [x] Add a `dictate bench-matrix` command (`model × postprocess × vocab_clean`) to compare speed + output quality on a fixed phrase set.
+- [x] Add stage timings and a lightweight `tmux-whisper bench` summary (record stop -> transcribe -> clean -> postprocess -> paste).
+- [x] Retire legacy whisper.cpp decode-default tuning from the active queue; the runtime is Parakeet-only now, so future tuning belongs in Swift Parakeet warmup/cache/latency work.
+- [x] Add a `tmux-whisper bench-matrix` command (`model x postprocess x vocab_clean`) to compare speed + output quality on a fixed phrase set.
 - [x] Add explicit `short` vs `long` postprocess profiles (mode-specific LLM/token/chunk defaults).
 - [x] Evolve budget handling to `budget auto` (dynamic transcript-length-aware sizing for `max_tokens` / `chunk_words`), with `short` / `long` budget profiles kept as internal guardrails/presets.
 - [x] Improve vocab workflow: bulk import/batch add and easier correction review from recent history.
-- [ ] Expand the operator CLI around history/logs/bench/config before any dashboard work: JSON parity, export/search/tail helpers, and live text-first watch surfaces.
-- [ ] Package/install polish: bootstrap/update scripts + docs for reproducible setup across machines.
-- [x] Add explicit “SwiftBar integration on/off” toggle (Dictate should remain fully usable without SwiftBar).
+- [x] Expand the operator CLI around history/logs/bench/config before any dashboard work: JSON parity, export/search/tail helpers, live text-first watch surfaces, filtered bench inspection, session summaries, command cross-links, and documented JSON contracts.
+- [x] Package/install polish: bootstrap/update scripts + docs for reproducible setup across machines.
+- [x] Add explicit SwiftBar integration on/off toggle (Tmux Whisper remains fully usable without SwiftBar).
 - [ ] When `CHANGELOG.md` gets too long, archive older entries into a single `CHANGELOG.archive.md` (keep current/recent work in `CHANGELOG.md`).
 
 ### Future labs (deferred, separate projects)

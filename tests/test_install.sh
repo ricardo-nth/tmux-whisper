@@ -40,6 +40,7 @@ assert_file "$HOME/.local/bin/tmux-whisper-lib/diagnostics.sh"
 assert_file "$HOME/.config/dictate/config.toml"
 assert_file "$HOME/.config/dictate/current-mode"
 assert_file "$HOME/.config/dictate/vocab"
+assert_file "$HOME/.config/dictate/install-receipt.env"
 assert_file "$HOME/.config/dictate/integrations/raycast/tmux-whisper-inline.sh"
 assert_file "$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh"
 assert_file "$HOME/.local/share/sounds/dictate/start.wav"
@@ -70,6 +71,18 @@ if [[ "$install_output" != *"Run: tmux-whisper debug"* ]]; then
 fi
 if [[ "$install_output" != *"Paths kept for now: config=$HOME/.config/dictate sounds=$HOME/.local/share/sounds/dictate"* ]]; then
   echo "Expected install output to clarify the intentional dictate config/sound paths" >&2
+  exit 1
+fi
+if [[ "$install_output" != *"Install receipt: $HOME/.config/dictate/install-receipt.env"* ]]; then
+  echo "Expected install output to report the install receipt path" >&2
+  exit 1
+fi
+if ! rg -q '^install_source=local$' "$HOME/.config/dictate/install-receipt.env"; then
+  echo "Expected local install receipt source" >&2
+  exit 1
+fi
+if ! rg -q "^bin_path=$HOME/\\.local/bin/tmux-whisper$" "$HOME/.config/dictate/install-receipt.env"; then
+  echo "Expected install receipt to record installed binary path" >&2
   exit 1
 fi
 

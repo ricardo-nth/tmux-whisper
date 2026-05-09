@@ -64,6 +64,42 @@ copy_if_missing() {
   [[ -e "$dst" ]] || cp -R "$src" "$dst"
 }
 
+write_install_receipt() {
+  local receipt="$CONFIG_DIR/install-receipt.env"
+  local installed_at source archive_url git_ref git_commit
+  installed_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  source="${DICTATE_INSTALL_SOURCE:-local}"
+  archive_url="${DICTATE_INSTALL_ARCHIVE_URL:-}"
+  git_ref=""
+  git_commit=""
+  if command -v git >/dev/null 2>&1 && [[ -d "$REPO_ROOT/.git" ]]; then
+    git_ref="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    git_commit="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+  fi
+
+  {
+    printf 'installed_at=%q\n' "$installed_at"
+    printf 'install_source=%q\n' "$source"
+    printf 'install_archive_url=%q\n' "$archive_url"
+    printf 'repo_root=%q\n' "$REPO_ROOT"
+    printf 'repo_git_ref=%q\n' "$git_ref"
+    printf 'repo_git_commit=%q\n' "$git_commit"
+    printf 'bin_path=%q\n' "$BIN_DIR/tmux-whisper"
+    printf 'config_dir=%q\n' "$CONFIG_DIR"
+    printf 'native_dir=%q\n' "$NATIVE_DIR/tmux-whisperd"
+    if [[ "$INSTALL_SWIFTBAR" == "1" ]]; then
+      printf 'swiftbar_plugin=%q\n' "$SWIFTBAR_DIR/tmux-whisper-status.0.2s.sh"
+    else
+      printf 'swiftbar_plugin=%q\n' "skipped"
+    fi
+    if [[ "$INSTALL_SOUNDS" == "1" ]]; then
+      printf 'sounds_dir=%q\n' "$SOUND_DIR"
+    else
+      printf 'sounds_dir=%q\n' "skipped"
+    fi
+  } > "$receipt"
+}
+
 run_install_warmup() {
   if [[ "$INSTALL_WARMUP" != "1" ]]; then
     echo "Warmup: skipped (DICTATE_INSTALL_WARMUP=0)"
@@ -181,6 +217,8 @@ if [[ "$INSTALL_SOUNDS" == "1" && -d "$REPO_ROOT/assets/sounds/dictate" ]]; then
   done
 fi
 
+write_install_receipt
+
 echo "Installed tmux-whisper to: $BIN_DIR/tmux-whisper"
 echo "Config path: $CONFIG_DIR"
 echo "Native backend source: $NATIVE_DIR/tmux-whisperd"
@@ -196,5 +234,6 @@ else
   echo "Sample sounds: skipped"
 fi
 echo "Paths kept for now: config=$CONFIG_DIR sounds=$SOUND_DIR"
+echo "Install receipt: $CONFIG_DIR/install-receipt.env"
 run_install_warmup
 echo "Run: tmux-whisper debug"
