@@ -61,16 +61,17 @@ Best for testing `main` or pinning a specific release without keeping a local cl
 curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash
 ```
 
-Pinned to the current stable tag:
+Pinned to a release tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.5.2/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.6.0/bootstrap.sh | bash
 ```
 
-Pass install flags through bootstrap:
+Pass bootstrap and install flags explicitly:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force --with-sounds
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --ref v0.6.0 --force
 ```
 
 ### Local clone / development
@@ -109,6 +110,7 @@ Install behavior:
 - Installs SwiftBar plugin to `~/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh`.
 - Installs sample sounds to `~/.local/share/sounds/dictate`.
 - Runs a best-effort backend warm-up after install/update, including a tiny synthetic prime transcription so the next real dictation is closer to warm.
+- Writes an install receipt to `~/.config/dictate/install-receipt.env` with the install source, archive URL when bootstrapped, repo ref/commit when available, and resolved runtime paths.
 - Note: config and sounds paths intentionally remain under `dictate` in this phase (`~/.config/dictate`, `~/.local/share/sounds/dictate`).
 
 Useful install flags:
@@ -120,7 +122,7 @@ Useful install flags:
 ./install.sh --replace-sounds   # overwrite existing sound files with bundled samples
 ```
 
-`bootstrap.sh` downloads a repository archive from GitHub and runs `install.sh` from that archive.
+`bootstrap.sh` downloads a repository archive from GitHub and runs `install.sh` from that archive. Use `--ref <tag-or-commit>` when you want reproducible setup across machines.
 
 ## First Run Checklist
 
@@ -162,6 +164,7 @@ Daily-use upgrade flow depends on channel:
   - `brew upgrade tmux-whisper`
 - Bootstrap:
   - rerun the bootstrap command you used before, typically with `--force`
+  - for reproducible upgrades, include the same `--ref <tag-or-commit>` on every machine
 - Local clone:
   - `git pull`
   - `./install.sh --force`

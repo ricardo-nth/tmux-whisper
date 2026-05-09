@@ -6,6 +6,7 @@
 - [ ] Run local validation:
   - [ ] `./tests/ci.sh`
   - [ ] `./install.sh --force`
+  - [ ] `test -f ~/.config/dictate/install-receipt.env`
   - [ ] `tmux-whisper debug`
   - [ ] `tmux-whisper doctor`
 - [ ] Confirm changelog is updated (`CHANGELOG.md`).
@@ -17,6 +18,8 @@
 - [ ] Push tag to origin.
 - [ ] Verify GitHub tarball URL and checksum:
   - [ ] `tools/update-homebrew-formula.sh vX.Y.Z`
+- [ ] Smoke-test pinned bootstrap install from the tag in a temporary `$HOME`:
+  - [ ] `DICTATE_BOOTSTRAP_REF=vX.Y.Z bash bootstrap.sh --no-sounds`
 
 ## Homebrew Update
 
