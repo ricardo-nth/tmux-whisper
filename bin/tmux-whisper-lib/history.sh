@@ -667,6 +667,157 @@ print(json.dumps(entries, indent=2, sort_keys=True))
 PYEOF
 }
 
+history_sessions() {
+  local limit="${1:-10}"
+  local json_output="${2:-0}"
+  [[ "$limit" =~ ^[0-9]+$ ]] || die "history sessions limit must be an integer"
+  (( limit > 0 )) || die "history sessions limit must be greater than zero"
+  need python3
+
+  python3 - "$HISTORY_DIR" "$limit" "$json_output" <<'PYEOF'
+import glob
+import json
+import os
+import re
+import sys
+
+history_dir = os.path.expanduser(sys.argv[1])
+limit = int(sys.argv[2])
+json_output = sys.argv[3] == "1"
+
+files = sorted(glob.glob(os.path.join(history_dir, "*.json")), reverse=True)[:limit]
+
+def word_count(text: str) -> int:
+    return len(re.findall(r"\b\w+\b", text or ""))
+
+def to_int(value, default=0):
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+def fmt_ms(value) -> str:
+    ms = to_int(value)
+    if ms <= 0:
+        return "0ms"
+    seconds = ms / 1000.0
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    total_seconds = int(round(seconds))
+    minutes, rem_seconds = divmod(total_seconds, 60)
+    return f"{minutes}m {rem_seconds:02d}s"
+
+def preview_text(raw: str, processed: str) -> str:
+    preview = re.sub(r"\s+", " ", (processed or raw or "")).strip()
+    if len(preview) > 120:
+        preview = preview[:120]
+    return preview
+
+def compact_debug_notes(audio):
+    notes = []
+    prefix = str(audio.get("debug_archive_prefix", "") or "")
+    retention = str(audio.get("retention_note", "") or "")
+    if prefix:
+        notes.append(f"debug_archive_prefix={prefix}")
+    if retention:
+        notes.append(f"retention_note={retention}")
+    for key in ("capture_gap_to_record_ms", "capture_gap_to_record_plus_grace_ms"):
+        if key in audio:
+            notes.append(f"{key}={audio[key]}ms")
+    return notes
+
+sessions = []
+for path in files:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        continue
+
+    raw = str(data.get("raw", "") or "")
+    processed = str(data.get("processed", "") or "")
+    metrics = data.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+    audio = data.get("audio")
+    if not isinstance(audio, dict):
+        audio = {}
+    budget = data.get("postprocess_budget")
+    if not isinstance(budget, dict):
+        budget = {}
+
+    sessions.append(
+        {
+            "index": len(sessions) + 1,
+            "file": path,
+            "filename": os.path.basename(path),
+            "timestamp": str(data.get("timestamp", "") or ""),
+            "mode": str(data.get("mode", "?") or "?"),
+            "app": str(data.get("app", "?") or "?"),
+            "raw_words": word_count(raw),
+            "processed_words": word_count(processed),
+            "preview": preview_text(raw, processed),
+            "metrics": metrics,
+            "audio": audio,
+            "debug_notes": compact_debug_notes(audio),
+            "postprocess_budget": budget,
+        }
+    )
+
+payload = {
+    "command": "history",
+    "subcommand": "sessions",
+    "source": history_dir,
+    "limit": limit,
+    "sessions": sessions,
+}
+
+if json_output:
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    raise SystemExit(0)
+
+if not sessions:
+    print("No history entries.")
+    raise SystemExit(0)
+
+print("Recent dictation sessions (newest first):")
+print("")
+for session in sessions:
+    metrics = session["metrics"]
+    audio = session["audio"]
+    words = session["processed_words"] or session["raw_words"]
+    timing_bits = []
+    for key, label in (
+        ("record_ms", "record"),
+        ("transcribe_ms", "transcribe"),
+        ("postprocess_ms", "postprocess"),
+        ("paste_ms", "paste"),
+        ("total_ms", "total"),
+    ):
+        if key in metrics:
+            timing_bits.append(f"{label}={fmt_ms(metrics.get(key))}")
+    timing_text = " ".join(timing_bits) if timing_bits else "timing=unavailable"
+    print(
+        f"{session['index']:2d}. {session['timestamp'] or session['filename']} "
+        f"mode={session['mode']} app={session['app']} words={words} {timing_text}"
+    )
+    audio_bits = []
+    if "capture_wav_ms" in audio:
+        audio_bits.append(f"capture_wav={fmt_ms(audio.get('capture_wav_ms'))}")
+    if "archive_wav_ms" in audio:
+        audio_bits.append(f"archive_wav={fmt_ms(audio.get('archive_wav_ms'))}")
+    if "capture_wav_bytes" in audio:
+        audio_bits.append(f"capture_bytes={audio.get('capture_wav_bytes')}")
+    if "archive_wav_bytes" in audio:
+        audio_bits.append(f"archive_bytes={audio.get('archive_wav_bytes')}")
+    if audio_bits:
+        print("    audio: " + " ".join(audio_bits))
+    if session["debug_notes"]:
+        print("    debug: " + "; ".join(session["debug_notes"]))
+    print("    preview: " + session["preview"])
+PYEOF
+}
+
 # Show a specific history entry
 show_history() {
   local n="${1:-1}"
@@ -1252,6 +1403,9 @@ if budget_rows:
         print(f"{label}: n={metric['n']} median={metric['median']} p95={metric['p95']} max={metric['max']}")
 PYEOF
       ;;
+    sessions)
+      history_sessions "${1:-10}" "$json_output"
+      ;;
     clear)
       if [[ -d "$HISTORY_DIR" ]]; then
         rm -rf "$HISTORY_DIR"
@@ -1271,7 +1425,7 @@ PYEOF
       fi
       ;;
     *)
-      die "unknown history command: $subcmd (use: list, search, export, N, reprocess, clear, stats)"
+      die "unknown history command: $subcmd (use: list, search, export, sessions, N, reprocess, clear, stats)"
       ;;
   esac
 }
