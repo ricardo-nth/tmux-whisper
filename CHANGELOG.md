@@ -37,6 +37,9 @@
 - **Completed**: stale cached AVFoundation audio-index invalidations now leave lightweight breadcrumbs in `debug`, `debug --json`, and active record logs when device order changes force a re-resolve
 - **Completed**: inline/Raycast fresh audio-cache hits now use a lighter mtime-based fast path and refresh cache timestamps in the background, reducing rare hotkey-to-start-cue stalls
 - **Completed**: SwiftBar inline processing now stays active until transcription, paste, and optional autosend finish, so the menu-bar state reflects when the frontmost window is safe to move away from
+- **Completed**: internal architecture deepening extracted config snapshots, audio source resolution, mode policy, and recording helpers into `bin/tmux-whisper-lib/` modules instead of keeping those seams embedded in the main CLI
+- **Completed**: SwiftBar now consumes the shared mode policy module for mode names, flow allowance, and app-driven inline mode detection instead of mirroring the same rules locally
+- **Completed**: `tmux-whisper integrations [--json]` now inspects the installed binary, install receipt, SwiftBar plugin, and Raycast scripts as a first integration-adapter status surface
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
@@ -56,6 +59,15 @@
 - keep refining compact operator views from real morning-delay/SwiftBar/sound-delay evidence so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
 - known polish: SwiftBar's polling/render loop can still leave a tiny stop-to-processing visual delay; future work should explore an event-driven refresh/signal path for the stop hotkey, and longer-term a very light native macOS menu bar companion for push-style state updates
 - treat any future dashboard/TUI as an optional layer on top of stable CLI contracts, not as the next milestone itself
+
+### Planned next (v0.7 integration platform)
+
+- extend the new `tmux-whisper integrations [--json]` surface from inspection into repair/update actions once the desired lifecycle is proven in daily use
+- investigate integration setup/update helpers that can reinstall or verify Raycast scripts and SwiftBar plugin files without forcing a full app reinstall
+- investigate SwiftBar/menu-state reliability as an integration-layer problem: event-driven refresh, stop-to-processing immediacy, sound cue timing, and stale menu-state recovery
+- explore the native macOS companion path separately from the CLI: lightweight menu-bar app, push-style state updates, and later Swift/Core Audio capture options
+- document integration compatibility and support boundaries: supported macOS assumptions, required PATH/env behavior, Homebrew vs bootstrap/local differences, and stable vs experimental integration surfaces
+- keep v0.6 soak fixes separate from v0.7 expansion work: production issues found during the soak should stay small, reliability-focused, and backportable before the Homebrew/tag release
 
 ## 2026-05-09
 

@@ -1,6 +1,6 @@
 # Tmux Whisper Script Refactor Spec
 
-> Status: Draft
+> Status: Active incremental refactor
 > Scope: Reduce the size and complexity of `bin/tmux-whisper` by modularizing the active runtime and removing dead compatibility paths.
 > Intent: This is a planning/spec document only. No code behavior changes are proposed in this file itself.
 
@@ -8,9 +8,10 @@
 
 `bin/tmux-whisper` is now the main orchestration layer for the whole product, but it is carrying too many responsibilities in one file.
 
-Current size:
+Current size after the 2026-05-11 module-deepening slice:
 
-- `bin/tmux-whisper`: 6798 lines
+- `bin/tmux-whisper`: 7106 lines
+- `bin/tmux-whisper-lib/`: 5235 lines across config, audio, mode, recording, integrations, history, and diagnostics modules
 - `bin/dictate-lib.sh`: 471 lines
 
 The main script currently mixes:
@@ -25,6 +26,14 @@ The main script currently mixes:
 - settings commands and CLI dispatch
 
 That makes change review slower, raises the chance of accidental regressions, and hides the real architecture of the tool.
+
+Progress now landed:
+
+- `config.sh` owns config defaults, loading, schema status, and schema labels.
+- `audio.sh` owns source-aware device resolution and cache policy.
+- `mode.sh` owns shared mode naming, flow allowance, app detection, and prompt assembly; SwiftBar sources it rather than mirroring mode rules.
+- `recording.sh` owns shared capture startup facts, retry metadata, ffmpeg-tail failure hints, and stop-signal behavior.
+- `integrations.sh` owns the read-only integration adapter status surface behind `tmux-whisper integrations [--json]`.
 
 The refactor goal is not to rewrite the product or change the CLI surface. The goal is to make the active runtime easier to understand and maintain by:
 
