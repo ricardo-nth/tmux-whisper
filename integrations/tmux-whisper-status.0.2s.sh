@@ -29,6 +29,15 @@ CONFIG_TOML="$CONFIG_DIR/config.toml"
 MODE_FILE="$CONFIG_DIR/current-mode"
 DICTATE_BIN="${DICTATE_BIN:-$(command -v tmux-whisper 2>/dev/null || true)}"
 DICTATE_BIN="${DICTATE_BIN:-$HOME/.local/bin/tmux-whisper}"
+DICTATE_CONFIG_DIR="$CONFIG_DIR"
+DICTATE_INTERNAL_LIB_DIR="${DICTATE_INTERNAL_LIB_DIR:-$HOME/.local/bin/tmux-whisper-lib}"
+if [[ ! -d "$DICTATE_INTERNAL_LIB_DIR" && -n "$DICTATE_BIN" ]]; then
+  DICTATE_BIN_DIR="$(cd "$(dirname "$DICTATE_BIN")" 2>/dev/null && pwd || true)"
+  if [[ -n "${DICTATE_BIN_DIR:-}" && -d "$DICTATE_BIN_DIR/tmux-whisper-lib" ]]; then
+    DICTATE_INTERNAL_LIB_DIR="$DICTATE_BIN_DIR/tmux-whisper-lib"
+  fi
+fi
+[[ -r "$DICTATE_INTERNAL_LIB_DIR/mode.sh" ]] && source "$DICTATE_INTERNAL_LIB_DIR/mode.sh"
 
 # SwiftBar may run without interactive shell env; load API key similarly to Raycast path.
 if [[ -z "${CEREBRAS_API_KEY:-}" && -f "${ZDOTDIR:-$HOME}/.zshrc" ]]; then
@@ -238,87 +247,8 @@ load_audio_resolution_cache() {
   return 0
 }
 
-canonical_mode_name() {
-  local m="${1:-}"
-  echo "$m"
-}
-
-mode_display_name() {
-  local m
-  m="$(canonical_mode_name "${1:-}")"
-  echo "$m"
-}
-
-mode_to_dir_name() {
-  local m
-  m="$(canonical_mode_name "${1:-}")"
-  echo "$m"
-}
-
-mode_allows_flow() {
-  local mode flow flows_file line saw_entries
-  mode="$(canonical_mode_name "${1:-}")"
-  flow="${2:-}"
-  [[ -n "$mode" ]] || return 1
-  [[ -z "$flow" ]] && return 0
-
-  flows_file="$CONFIG_DIR/modes/$(mode_to_dir_name "$mode")/flows"
-  [[ -f "$flows_file" ]] || return 0
-
-  saw_entries="0"
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%%#*}"
-    line="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
-    [[ -n "$line" ]] || continue
-    saw_entries="1"
-    case "$line" in
-      all|both) return 0 ;;
-      tmux|inline)
-        [[ "$line" == "$flow" ]] && return 0
-        ;;
-    esac
-  done < "$flows_file"
-
-  [[ "$saw_entries" == "0" ]]
-}
-
 list_modes_for_flow() {
-  local flow="${1:-}"
-  local mode_dir mode_name
-  for mode_dir in "$CONFIG_DIR/modes"/*/; do
-    [[ -d "$mode_dir" ]] || continue
-    mode_name="$(basename "$mode_dir")"
-    mode_name="$(canonical_mode_name "$mode_name")"
-    [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode_name")" ]] || continue
-    mode_allows_flow "$mode_name" "$flow" || continue
-    printf '%s\n' "$mode_name"
-  done | sort -u
-}
-
-first_mode_for_flow() {
-  local flow="${1:-}"
-  local first
-  first="$(list_modes_for_flow "$flow" | head -n 1)"
-  [[ -n "$first" ]] && echo "$first" || echo "code"
-}
-
-default_inline_mode() {
-  if [[ -d "$CONFIG_DIR/modes/base" ]] && mode_allows_flow "base" "inline"; then
-    echo "base"
-  else
-    first_mode_for_flow "inline"
-  fi
-}
-
-normalize_mode_name() {
-  local mode
-  mode="$(canonical_mode_name "${1:-}")"
-  [[ -z "$mode" ]] && mode="$(default_inline_mode)"
-  if [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode")" ]]; then
-    echo "$mode"
-  else
-    echo "$(default_inline_mode)"
-  fi
+  list_modes "${1:-}"
 }
 
 read_saved_mode_raw() {
@@ -329,12 +259,6 @@ read_saved_mode_raw() {
   fi
 }
 
-mode_exists() {
-  local mode_name
-  mode_name="$(normalize_mode_name "${1:-}")"
-  [[ -d "$CONFIG_DIR/modes/$(mode_to_dir_name "$mode_name")" ]]
-}
-
 mode_hidden_in_inline_menu() {
   local mode_name
   mode_name="$(normalize_mode_name "${1:-}")"
@@ -342,29 +266,6 @@ mode_hidden_in_inline_menu() {
     email|chat|linkedin|twitter|long) return 0 ;;
     *) return 1 ;;
   esac
-}
-
-detect_mode() {
-  local app="${1:-}"
-  if [[ -z "$app" ]]; then
-    app="$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null || echo "")"
-  fi
-  [[ -z "$app" ]] && { default_inline_mode; return 0; }
-
-  local mode_dir mode_name apps_file
-  for mode_dir in "$CONFIG_DIR/modes"/*/; do
-    [[ -d "$mode_dir" ]] || continue
-    mode_name="$(basename "$mode_dir")"
-    apps_file="$mode_dir/apps"
-    [[ -f "$apps_file" ]] || continue
-    mode_allows_flow "$mode_name" "inline" || continue
-    if grep -iq "^${app}$" "$apps_file" 2>/dev/null; then
-      normalize_mode_name "$mode_name"
-      return 0
-    fi
-  done
-
-  default_inline_mode
 }
 
 resolve_inline_mode() {
