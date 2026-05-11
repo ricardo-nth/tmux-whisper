@@ -261,7 +261,7 @@ if [[ ! -d "$DICTATE_INTERNAL_LIB_DIR" ]]; then
     DICTATE_INTERNAL_LIB_DIR="$FALLBACK_INTERNAL_LIB_DIR"
   fi
 fi
-for internal_runtime_module in config.sh audio.sh mode.sh history.sh diagnostics.sh; do
+for internal_runtime_module in config.sh audio.sh mode.sh recording.sh history.sh diagnostics.sh; do
   [[ -r "$DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module" ]] || die "missing internal runtime module: $DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module"
   # shellcheck disable=SC1090
   source "$DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module"
@@ -4550,24 +4550,12 @@ start() {
   startup_ffmpeg_live_ms=0
   startup_total_ms=0
   startup_audio_source="(none)"
-  local preferred_audio_name="${DICTATE_AUDIO_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}}"
-
-  local audio_index="${DICTATE_AUDIO_INDEX:-}"
-  # Resolve by selected source strategy unless index is explicitly forced.
-  if [[ -n "$audio_index" ]]; then
-    startup_audio_source="env:DICTATE_AUDIO_INDEX"
-  else
-    local detect_meta detect_src detect_ms audio_cache_note=""
-    detect_meta="$(detect_audio_index 2>/dev/null || true)"
-    IFS=$'\t' read -r audio_index detect_src detect_ms audio_cache_note <<<"$detect_meta"
-    startup_audio_ms="${detect_ms:-0}"
-    startup_audio_source="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
-  fi
-  if [[ -z "$audio_index" && -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
-    audio_index="$CFG_AUDIO_DEVICE_INDEX"
-    startup_audio_source="config:audio.device_index"
-  fi
-  [[ -n "$audio_index" ]] || die "no audio device found. Run: tmux-whisper debug"
+  recording_resolve_audio_context "tmux" "0"
+  local audio_index="$RECORDING_AUDIO_INDEX"
+  local preferred_audio_name="$RECORDING_PREFERRED_AUDIO_NAME"
+  local audio_cache_note="$RECORDING_AUDIO_CACHE_NOTE"
+  startup_audio_ms="$RECORDING_AUDIO_MS"
+  startup_audio_source="$RECORDING_AUDIO_SOURCE"
 
   if [[ -f "$STATE_FILE" ]]; then
     # shellcheck disable=SC1090
@@ -4627,14 +4615,11 @@ start() {
     if [[ "$retry_allowed" == "1" ]]; then
       retry_allowed="0"
       clear_audio_index_cache
-      local retry_index="" retry_src="" retry_ms="" retry_note="" retry_meta=""
-      retry_meta="$(DICTATE_AUDIO_NAME="$preferred_audio_name" detect_audio_index 2>/dev/null || true)"
-      IFS=$'\t' read -r retry_index retry_src retry_ms retry_note <<<"$retry_meta"
-      if [[ -n "$retry_index" ]]; then
-        audio_index="$retry_index"
-        startup_audio_ms=$(( startup_audio_ms + ${retry_ms:-0} ))
-        startup_audio_source="retry:${retry_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
-        log_audio_cache_note_if_any "${retry_note:-}" "$RECORD_LOG"
+      if recording_retry_audio_index "$preferred_audio_name"; then
+        audio_index="$RECORDING_AUDIO_INDEX"
+        startup_audio_ms="$RECORDING_AUDIO_MS"
+        startup_audio_source="$RECORDING_AUDIO_SOURCE"
+        log_audio_cache_note_if_any "${RECORDING_AUDIO_CACHE_NOTE:-}" "$RECORD_LOG"
         continue
       fi
     fi
@@ -4876,86 +4861,6 @@ stop() {
   local target_label
   target_label="$(tmux_pane_cwd_label "$target_pane")"
   echo "⏹️ STOPPED → transcribing → ${target_label:-target}"
-}
-
-terminate_recording_pid() {
-  local target_pid="${1:-}"
-  local requested_stop_grace_ms="${2:-}"
-  local record_log_path="${3:-${RECORD_LOG:-/dev/null}}"
-  local attempt
-  local stop_grace_ms
-  local int_wait_attempts="60"
-  local term_wait_attempts="40"
-  local stop_begin_ms alive_before_grace alive_after_grace signal_sent_ms exit_ms
-  [[ -n "$target_pid" && "$target_pid" =~ ^[0-9]+$ ]] || return 0
-  stop_grace_ms="$(resolve_stop_grace_ms "$requested_stop_grace_ms" "700")"
-  stop_begin_ms="$(now_ms)"
-  alive_before_grace="0"
-  kill -0 "$target_pid" 2>/dev/null && alive_before_grace="1"
-
-  if keep_logs_enabled; then
-    printf "[%s] stop_recording: pid=%s grace_ms=%s int_wait_ms=%s term_wait_ms=%s stop_begin_ms=%s alive_before_grace=%s\n" \
-      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$stop_grace_ms" \
-      "$(( int_wait_attempts * 50 ))" "$(( term_wait_attempts * 50 ))" "$stop_begin_ms" "$alive_before_grace" \
-      >>"$record_log_path" 2>/dev/null || true
-  fi
-
-  # This grace window makes hotkey stop feel less "hard cut" when the user
-  # finishes the last word right as they trigger stop.
-  sleep_ms "$stop_grace_ms"
-
-  alive_after_grace="0"
-  kill -0 "$target_pid" 2>/dev/null && alive_after_grace="1"
-  if keep_logs_enabled; then
-    printf "[%s] stop_recording: after_grace pid=%s alive_after_grace=%s elapsed_ms=%s\n" \
-      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$alive_after_grace" "$(( $(now_ms) - stop_begin_ms ))" \
-      >>"$record_log_path" 2>/dev/null || true
-  fi
-  if [[ "$alive_after_grace" != "1" ]]; then
-    return 0
-  fi
-
-  kill -INT "$target_pid" 2>/dev/null || true
-  signal_sent_ms="$(now_ms)"
-  for ((attempt=1; attempt<=int_wait_attempts; attempt++)); do
-    if ! kill -0 "$target_pid" 2>/dev/null; then
-      if keep_logs_enabled; then
-        exit_ms="$(now_ms)"
-        printf "[%s] stop_recording: exit_after_int pid=%s wait_ms=%s total_ms=%s\n" \
-          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( exit_ms - signal_sent_ms ))" "$(( exit_ms - stop_begin_ms ))" \
-          >>"$record_log_path" 2>/dev/null || true
-      fi
-      return 0
-    fi
-    sleep 0.05
-  done
-
-  kill -TERM "$target_pid" 2>/dev/null || true
-  signal_sent_ms="$(now_ms)"
-  if keep_logs_enabled; then
-    printf "[%s] stop_recording: term_after_int_timeout pid=%s elapsed_ms=%s\n" \
-      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( signal_sent_ms - stop_begin_ms ))" \
-      >>"$record_log_path" 2>/dev/null || true
-  fi
-  for ((attempt=1; attempt<=term_wait_attempts; attempt++)); do
-    if ! kill -0 "$target_pid" 2>/dev/null; then
-      if keep_logs_enabled; then
-        exit_ms="$(now_ms)"
-        printf "[%s] stop_recording: exit_after_term pid=%s wait_ms=%s total_ms=%s\n" \
-          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( exit_ms - signal_sent_ms ))" "$(( exit_ms - stop_begin_ms ))" \
-          >>"$record_log_path" 2>/dev/null || true
-      fi
-      return 0
-    fi
-    sleep 0.05
-  done
-
-  if keep_logs_enabled; then
-    printf "[%s] stop_recording: kill_after_term_timeout pid=%s elapsed_ms=%s\n" \
-      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$target_pid" "$(( $(now_ms) - stop_begin_ms ))" \
-      >>"$record_log_path" 2>/dev/null || true
-  fi
-  kill -KILL "$target_pid" 2>/dev/null || true
 }
 
 # Cancel recording: stop without transcribing or pasting
@@ -5367,49 +5272,14 @@ inline_start() {
   startup_audio_source="(none)"
   local paste_target
   paste_target="$(normalize_inline_paste_target "${DICTATE_INLINE_PASTE_TARGET:-${CFG_INLINE_PASTE_TARGET:-restore}}")"
-  local configured_audio_source
-  configured_audio_source="$(normalize_audio_source "${DICTATE_AUDIO_SOURCE:-${CFG_AUDIO_SOURCE:-auto}}")"
-  local mac_audio_name
-  mac_audio_name="${CFG_AUDIO_MAC_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}}"
-  local preferred_audio_name
-  preferred_audio_name="${DICTATE_AUDIO_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}}"
-
-  local audio_index="${DICTATE_AUDIO_INDEX:-}"
-  if [[ -n "$audio_index" ]]; then
-    startup_audio_source="env:DICTATE_AUDIO_INDEX"
-  else
-    local detect_meta detect_src detect_ms audio_cache_note=""
-    detect_meta="$(DICTATE_AUDIO_CACHE_SKIP_VALIDATE=1 detect_audio_index 2>/dev/null || true)"
-    IFS=$'\t' read -r audio_index detect_src detect_ms audio_cache_note <<<"$detect_meta"
-    startup_audio_ms="${detect_ms:-0}"
-    startup_audio_source="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
-  fi
-  if [[ -z "$audio_index" && -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
-    audio_index="$CFG_AUDIO_DEVICE_INDEX"
-    startup_audio_source="config:audio.device_index"
-  fi
-  [[ -n "$audio_index" ]] || die "no audio device found. Run: tmux-whisper debug"
-
-  local audio_selector="$audio_index"
-  local audio_selector_kind="index"
-  # For mac/name source modes, prefer ffmpeg name-based selection on the fast path
-  # to avoid stale index issues after device route changes.
-  if [[ -z "${DICTATE_AUDIO_INDEX:-}" ]]; then
-    case "$configured_audio_source" in
-      mac)
-        if [[ -n "$mac_audio_name" ]]; then
-          audio_selector="$mac_audio_name"
-          audio_selector_kind="name"
-        fi
-        ;;
-      name)
-        if [[ -n "$preferred_audio_name" ]]; then
-          audio_selector="$preferred_audio_name"
-          audio_selector_kind="name"
-        fi
-        ;;
-    esac
-  fi
+  recording_resolve_audio_context "inline" "1"
+  local audio_index="$RECORDING_AUDIO_INDEX"
+  local preferred_audio_name="$RECORDING_PREFERRED_AUDIO_NAME"
+  local audio_cache_note="$RECORDING_AUDIO_CACHE_NOTE"
+  local audio_selector="$RECORDING_AUDIO_SELECTOR"
+  local audio_selector_kind="$RECORDING_AUDIO_SELECTOR_KIND"
+  startup_audio_ms="$RECORDING_AUDIO_MS"
+  startup_audio_source="$RECORDING_AUDIO_SOURCE"
 
   local target_app="${DICTATE_TARGET_APP:-}"
   if [[ "$paste_target" == "restore" && -z "$target_app" ]]; then
@@ -5466,16 +5336,13 @@ inline_start() {
 
     if [[ "$retry_allowed" == "1" ]]; then
       retry_allowed="0"
-      local retry_index="" retry_src="" retry_ms="" retry_note="" retry_meta=""
-      retry_meta="$(DICTATE_AUDIO_NAME="$preferred_audio_name" detect_audio_index 2>/dev/null || true)"
-      IFS=$'\t' read -r retry_index retry_src retry_ms retry_note <<<"$retry_meta"
-      if [[ -n "$retry_index" ]]; then
-        audio_index="$retry_index"
-        audio_selector="$retry_index"
-        audio_selector_kind="index"
-        startup_audio_ms=$(( startup_audio_ms + ${retry_ms:-0} ))
-        startup_audio_source="retry:${retry_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
-        log_audio_cache_note_if_any "${retry_note:-}" "$record_log"
+      if recording_retry_audio_index "$preferred_audio_name"; then
+        audio_index="$RECORDING_AUDIO_INDEX"
+        audio_selector="$RECORDING_AUDIO_SELECTOR"
+        audio_selector_kind="$RECORDING_AUDIO_SELECTOR_KIND"
+        startup_audio_ms="$RECORDING_AUDIO_MS"
+        startup_audio_source="$RECORDING_AUDIO_SOURCE"
+        log_audio_cache_note_if_any "${RECORDING_AUDIO_CACHE_NOTE:-}" "$record_log"
         continue
       fi
     fi
@@ -5486,9 +5353,7 @@ inline_start() {
   if [[ "$live_ok" != "1" ]]; then
     rm -f "$wav" 2>/dev/null || true
     local hint=""
-    if [[ -s "$record_log" ]]; then
-      hint="$(tail -n 2 "$record_log" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//')"
-    fi
+    hint="$(recording_log_tail_hint "$record_log")"
     if [[ -n "$hint" ]]; then
       die "recording failed ($hint)"
     fi
@@ -5599,21 +5464,11 @@ inline() {
   local paste_target
   paste_target="$(normalize_inline_paste_target "${DICTATE_INLINE_PASTE_TARGET:-${CFG_INLINE_PASTE_TARGET:-restore}}")"
 
-  local audio_index="${DICTATE_AUDIO_INDEX:-}"
-  if [[ -n "$audio_index" ]]; then
-    startup_audio_source="env:DICTATE_AUDIO_INDEX"
-  else
-    local detect_meta detect_src detect_ms audio_cache_note=""
-    detect_meta="$(detect_audio_index 2>/dev/null || true)"
-    IFS=$'\t' read -r audio_index detect_src detect_ms audio_cache_note <<<"$detect_meta"
-    startup_audio_ms="${detect_ms:-0}"
-    startup_audio_source="${detect_src:-detect:source(${CFG_AUDIO_SOURCE:-auto})}"
-  fi
-  if [[ -z "$audio_index" && -n "${CFG_AUDIO_DEVICE_INDEX:-}" ]]; then
-    audio_index="$CFG_AUDIO_DEVICE_INDEX"
-    startup_audio_source="config:audio.device_index"
-  fi
-  [[ -n "$audio_index" ]] || die "no audio device found. Run: tmux-whisper debug"
+  recording_resolve_audio_context "inline" "0"
+  local audio_selector="$RECORDING_AUDIO_SELECTOR"
+  local audio_cache_note="$RECORDING_AUDIO_CACHE_NOTE"
+  startup_audio_ms="$RECORDING_AUDIO_MS"
+  startup_audio_source="$RECORDING_AUDIO_SOURCE"
 
   local target_app="${DICTATE_TARGET_APP:-}"
   if [[ "$paste_target" == "restore" && -z "$target_app" ]]; then
@@ -5642,7 +5497,7 @@ inline() {
   : >"$record_log" 2>/dev/null || true
   log_audio_cache_note_if_any "${audio_cache_note:-}" "$record_log"
   ffmpeg -hide_banner -nostdin -loglevel error \
-    -f avfoundation -i ":${audio_index}" \
+    -f avfoundation -i ":${audio_selector}" \
     -af "aresample=async=1000:first_pts=0" \
     -ac 1 -ar 16000 -c:a pcm_s16le \
     "$wav" >>"$record_log" 2>&1 &
