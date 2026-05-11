@@ -480,6 +480,52 @@ assert_file_contains "raycast_toggle_binary_notice" "$ROOT/integrations/raycast/
 assert_file_contains "swiftbar_missing_binary_notice" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "Tmux Whisper binary not found | color=red"
 assert_file_contains "swiftbar_enabled_config_parse" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "integrations.swiftbar.enabled"
 
+# --- Regression 8b: integration status inspects installed adapter paths. ---
+INTEGRATIONS_HOME="$TMP_ROOT/home-integrations"
+INTEGRATIONS_BIN="$INTEGRATIONS_HOME/.local/bin"
+INTEGRATIONS_CFG="$INTEGRATIONS_HOME/.config/dictate"
+INTEGRATIONS_SWIFTBAR="$INTEGRATIONS_HOME/.config/swiftbar/plugins"
+mkdir -p "$INTEGRATIONS_BIN" "$INTEGRATIONS_CFG/integrations/raycast" "$INTEGRATIONS_SWIFTBAR"
+install_test_runtime "$INTEGRATIONS_BIN"
+cp "$ROOT/integrations/raycast/tmux-whisper-inline.sh" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-inline.sh"
+cp "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-toggle.sh"
+cp "$ROOT/integrations/raycast/tmux-whisper-cancel.sh" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-cancel.sh"
+cp "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
+chmod +x "$INTEGRATIONS_CFG/integrations/raycast/"*.sh "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
+cat >"$INTEGRATIONS_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[integrations.swiftbar]
+enabled = false
+EOF
+cat >"$INTEGRATIONS_CFG/install-receipt.env" <<EOF
+installed_at='2026-05-11T00:00:00Z'
+install_source='test'
+repo_git_ref='architecture-test'
+repo_git_commit='abc123'
+bin_path='$INTEGRATIONS_BIN/tmux-whisper'
+config_dir='$INTEGRATIONS_CFG'
+swiftbar_plugin='$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh'
+EOF
+integrations_text="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations)"
+assert_contains "integrations_status_header" "$integrations_text" "Integrations:"
+assert_contains "integrations_status_receipt" "$integrations_text" "install receipt: $INTEGRATIONS_CFG/install-receipt.env (present)"
+assert_contains "integrations_status_swiftbar_off" "$integrations_text" "enabled: OFF"
+assert_contains "integrations_status_swiftbar_path" "$integrations_text" "plugin: $INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh (executable)"
+assert_contains "integrations_status_raycast_inline" "$integrations_text" "inline: $INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-inline.sh (executable)"
+integrations_json="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations --json)"
+assert_json_equals "integrations_json_command" "$integrations_json" "command" "integrations"
+assert_json_equals "integrations_json_receipt_exists" "$integrations_json" "receipt.exists" "true"
+assert_json_equals "integrations_json_receipt_ref" "$integrations_json" "receipt.repo_git_ref" "architecture-test"
+assert_json_equals "integrations_json_swiftbar_enabled" "$integrations_json" "swiftbar.enabled" "false"
+assert_json_equals "integrations_json_swiftbar_executable" "$integrations_json" "swiftbar.plugin.executable" "true"
+assert_json_equals "integrations_json_raycast_inline" "$integrations_json" "raycast.scripts.0.name" "inline"
+assert_json_equals "integrations_json_raycast_inline_executable" "$integrations_json" "raycast.scripts.0.executable" "true"
+
 # --- Regression 9: script-level behavior for missing tmux-whisper binary is explicit. ---
 INLINE_HOME="$TMP_ROOT/home-inline"
 mkdir -p "$INLINE_HOME"

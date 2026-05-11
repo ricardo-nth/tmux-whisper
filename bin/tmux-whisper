@@ -71,6 +71,7 @@ DIAGNOSTICS:
   tmux-whisper changelog          # show recent Tmux Whisper changes
 
 INTEGRATIONS:
+  tmux-whisper integrations [--json] # inspect installed SwiftBar/Raycast adapters
   tmux-whisper swiftbar           # show SwiftBar runtime integration state
   tmux-whisper swiftbar on|off    # enable/disable SwiftBar runtime integration
   tmux-whisper swiftbar toggle    # toggle SwiftBar runtime integration
@@ -261,7 +262,7 @@ if [[ ! -d "$DICTATE_INTERNAL_LIB_DIR" ]]; then
     DICTATE_INTERNAL_LIB_DIR="$FALLBACK_INTERNAL_LIB_DIR"
   fi
 fi
-for internal_runtime_module in config.sh audio.sh mode.sh recording.sh history.sh diagnostics.sh; do
+for internal_runtime_module in config.sh audio.sh mode.sh recording.sh integrations.sh history.sh diagnostics.sh; do
   [[ -r "$DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module" ]] || die "missing internal runtime module: $DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module"
   # shellcheck disable=SC1090
   source "$DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module"
@@ -7090,6 +7091,7 @@ case "$cmd" in
   vocab) manage_vocab "${2:-}" "${@:3}" ;;
   mode) manage_mode "${2:-}" "${@:3}" ;;
   keybind) manage_keybind "${2:-}" "${3:-}" ;;
+  integrations) manage_integrations "${2:-}" "${@:3}" ;;
   swiftbar) manage_swiftbar "${2:-}" ;;
   replay) replay "${2:-}" "${@:3}" ;;
   history) manage_history "${@:2}" ;;

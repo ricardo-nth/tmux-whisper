@@ -32,6 +32,8 @@ These commands are safe to build integrations on:
 - `tmux-whisper config path --json`
 - `tmux-whisper config get <path> --json`
   - Read-only config inspection contracts.
+- `tmux-whisper integrations --json`
+  - Object with installed binary, install receipt, SwiftBar plugin, and Raycast script state.
 - `tmux-whisper bench [N|all] --json [filters]`
   - Object with record counts, filters, stage summaries, startup summaries, latest row, and `next_commands`.
 - `tmux-whisper bench export [N|all] --json [filters]`
