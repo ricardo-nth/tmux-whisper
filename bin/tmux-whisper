@@ -4898,7 +4898,7 @@ cancel() {
   
   # Stop recording process
   if [[ -n "${pid:-}" ]]; then
-    terminate_recording_pid "$pid" "$cancel_stop_grace_ms" "$cancel_record_log"
+    terminate_recording_pid "$pid" "$cancel_stop_grace_ms" "$cancel_record_log" "${control_fifo:-}" "${control_keeper_pid:-}"
   fi
   
   # Remove wav file without transcribing
@@ -5298,6 +5298,9 @@ inline_start() {
   log_audio_cache_note_if_any "${audio_cache_note:-}" "$record_log"
 
   local ffmpeg_started_ms record_started_ms pid attempt live_ok
+  local control_fifo control_keeper_pid
+  control_fifo=""
+  control_keeper_pid=""
   ffmpeg_started_ms="$(now_ms)"
   local retry_allowed
   retry_allowed="0"
@@ -5306,11 +5309,26 @@ inline_start() {
   fi
 
   while :; do
-    ffmpeg -hide_banner -nostdin -loglevel error \
-      -f avfoundation -i ":${audio_selector}" \
-      -af "aresample=async=1000:first_pts=0" \
-      -ac 1 -ar 16000 -c:a pcm_s16le \
-      "$wav" >>"$record_log" 2>&1 &
+    control_fifo=""
+    control_keeper_pid=""
+    if start_recording_control_fifo "${TMPDIR:-/tmp}/dictate-inline-$$" 2>/dev/null; then
+      control_fifo="$RECORDING_CONTROL_FIFO"
+      control_keeper_pid="$RECORDING_CONTROL_KEEPER_PID"
+    fi
+
+    if [[ -n "$control_fifo" && -p "$control_fifo" ]]; then
+      ffmpeg -hide_banner -loglevel error \
+        -f avfoundation -i ":${audio_selector}" \
+        -af "aresample=async=1000:first_pts=0" \
+        -ac 1 -ar 16000 -c:a pcm_s16le \
+        "$wav" <"$control_fifo" >>"$record_log" 2>&1 &
+    else
+      ffmpeg -hide_banner -nostdin -loglevel error \
+        -f avfoundation -i ":${audio_selector}" \
+        -af "aresample=async=1000:first_pts=0" \
+        -ac 1 -ar 16000 -c:a pcm_s16le \
+        "$wav" >>"$record_log" 2>&1 &
+    fi
     pid=$!
     record_started_ms="$(now_ms)"
     startup_total_ms=$(( record_started_ms - startup_started_ms ))
@@ -5328,12 +5346,16 @@ inline_start() {
 
     if [[ "$live_ok" == "1" ]]; then
       if keep_logs_enabled; then
-        printf "[%s] inline_start: pid=%s record_started_ms=%s startup_ffmpeg_live_ms=%s selector=%s audio_source=%s wav=%q\n" \
+        printf "[%s] inline_start: pid=%s record_started_ms=%s startup_ffmpeg_live_ms=%s selector=%s audio_source=%s wav=%q control_fifo=%q\n" \
           "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$pid" "$record_started_ms" "$startup_ffmpeg_live_ms" \
-          "$audio_selector_kind" "$startup_audio_source" "$wav" >>"$record_log" 2>/dev/null || true
+          "$audio_selector_kind" "$startup_audio_source" "$wav" "${control_fifo:-}" >>"$record_log" 2>/dev/null || true
       fi
       break
     fi
+
+    cleanup_recording_control_fifo "$control_fifo" "$control_keeper_pid"
+    control_fifo=""
+    control_keeper_pid=""
 
     if [[ "$retry_allowed" == "1" ]]; then
       retry_allowed="0"
@@ -5352,6 +5374,7 @@ inline_start() {
   done
 
   if [[ "$live_ok" != "1" ]]; then
+    cleanup_recording_control_fifo "$control_fifo" "$control_keeper_pid"
     rm -f "$wav" 2>/dev/null || true
     local hint=""
     hint="$(recording_log_tail_hint "$record_log")"
@@ -5361,9 +5384,10 @@ inline_start() {
     die "recording failed (ffmpeg exited immediately)"
   fi
 
-  printf 'pid=%q\nwav=%q\ntarget_app=%q\nmodel_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\ninline_session_id=%q\n' \
+  printf 'pid=%q\nwav=%q\ntarget_app=%q\nmodel_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\ninline_session_id=%q\ncontrol_fifo=%q\ncontrol_keeper_pid=%q\n' \
     "$pid" "$wav" "$target_app" "$model_id" "$record_started_ms" \
-    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "${startup_audio_source};selector=${audio_selector_kind}" "$inline_session_id" >"$INLINE_STATE_FILE"
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "${startup_audio_source};selector=${audio_selector_kind}" "$inline_session_id" \
+    "${control_fifo:-}" "${control_keeper_pid:-}" >"$INLINE_STATE_FILE"
 
   maybe_warmup_swift_parakeet_in_background
 
@@ -5415,7 +5439,7 @@ inline_stop() {
     play_sound process
   fi
 
-  terminate_recording_pid "$pid" "$inline_stop_grace_ms" "$inline_record_log"
+  terminate_recording_pid "$pid" "$inline_stop_grace_ms" "$inline_record_log" "${control_fifo:-}" "${control_keeper_pid:-}"
 
   local inline_bg_pid
   (

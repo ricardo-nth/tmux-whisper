@@ -7,6 +7,7 @@
 - **Next expansion target**: `v0.6.x` (CLI-first operator platform)
 - **Completed**: FFmpeg AVFoundation capture now uses async resampling so WAV duration tracks wall-clock recording time instead of drifting short
 - **Completed**: inline/Raycast stop-grace retuned back down to `1000ms` after capture-layer drift was isolated upstream of stop timing
+- **Completed**: inline/Raycast FFmpeg shutdown now sends a controlled `q` over a private FIFO before falling back to SIGINT, preserving most of the stop-grace tail that SIGINT was dropping
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
 - **Completed**: inline/Raycast stop breadcrumbs when `keep_logs` is enabled
 - **Completed**: FFmpeg capture/shutdown diagnostics now archive WAV duration, byte counts, grace timing, and SIGINT/TERM exit timing for clipped-run forensics

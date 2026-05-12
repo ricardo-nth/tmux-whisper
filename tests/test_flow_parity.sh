@@ -176,6 +176,11 @@ printf '%s\n' "stub-wav" >"$out"
 
 if [[ "${DICTATE_TEST_FFMPEG_HOLD:-0}" == "1" && ( "$out" == *"whisper-dictate-"* || "$out" == *"dictate-inline-"* ) ]]; then
   trap 'exit 0' INT TERM
+  if [[ "$*" != *"-nostdin"* ]]; then
+    while IFS= read -r -n 1 ch; do
+      [[ "$ch" == "q" ]] && exit 0
+    done
+  fi
   while :; do sleep 1; done
 fi
 exit 0
@@ -593,6 +598,7 @@ run_inline_toggle_grace_override_round() {
   assert_contains "inline_toggle_grace_stop" "$stop_out" "STOPPED"
 
   assert_file_contains "inline_toggle_grace_record_log" "$inline_record_log" "grace_ms=123"
+  assert_file_contains "inline_toggle_grace_quit_stop" "$inline_record_log" "exit_after_q"
 }
 
 run_inline_toggle_process_sound_immediate_round() {
