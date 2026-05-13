@@ -43,6 +43,7 @@
 - **Completed**: internal architecture deepening extracted config snapshots, audio source resolution, mode policy, and recording helpers into `bin/tmux-whisper-lib/` modules instead of keeping those seams embedded in the main CLI
 - **Completed**: SwiftBar now consumes the shared mode policy module for mode names, flow allowance, and app-driven inline mode detection instead of mirroring the same rules locally
 - **Completed**: `tmux-whisper integrations [--json]` now inspects the installed binary, install receipt, SwiftBar plugin, and Raycast scripts as a first integration-adapter status surface
+- **Completed**: `tmux-whisper integrations repair` now applies an adapter-only Raycast/SwiftBar refresh with missing-directory creation, executable-bit repair, changed-file reporting, and backups for replaced adapter files, while `repair --dry-run` remains non-mutating
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
@@ -57,8 +58,8 @@
 ### Planned next (v0.7 integration platform)
 
 - begin v0.7 from a dedicated integration-platform branch now that `v0.6.0` is tagged and the Homebrew formula is updated
-- start with `tmux-whisper integrations doctor` and `tmux-whisper integrations repair --dry-run` so adapter lifecycle work stays observable before any live repair mutates files
-- extend `tmux-whisper integrations [--json]` from inspection into explicit repair/install/update actions once the current lifecycle is proven in daily use
+- keep proving `tmux-whisper integrations doctor`, `repair --dry-run`, and adapter-only `repair` in daily use before widening lifecycle actions
+- extend `tmux-whisper integrations [--json]` from inspection into broader install/update actions only after the current repair lifecycle is proven
 - add integration setup/update helpers that can verify or reinstall Raycast scripts and SwiftBar plugin files without forcing a full app reinstall
 - treat SwiftBar/menu-state reliability as the first integration-platform problem: event-driven refresh, stop-to-processing immediacy, sound cue timing, and stale menu-state recovery
 - explore the native macOS companion path separately from the CLI: lightweight menu-bar app, push-style state updates, and later Swift/Core Audio capture options

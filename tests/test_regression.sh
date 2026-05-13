@@ -118,6 +118,50 @@ assert_file_exists() {
   echo "PASS: $name"
 }
 
+assert_file_not_exists() {
+  local name="$1"
+  local file="$2"
+  if [[ -e "$file" ]]; then
+    echo "FAIL: $name" >&2
+    echo "Expected file to be absent: $file" >&2
+    exit 1
+  fi
+  echo "PASS: $name"
+}
+
+assert_file_executable() {
+  local name="$1"
+  local file="$2"
+  if [[ ! -x "$file" ]]; then
+    echo "FAIL: $name" >&2
+    echo "Expected file to be executable: $file" >&2
+    exit 1
+  fi
+  echo "PASS: $name"
+}
+
+assert_file_not_executable() {
+  local name="$1"
+  local file="$2"
+  if [[ -x "$file" ]]; then
+    echo "FAIL: $name" >&2
+    echo "Expected file not to be executable: $file" >&2
+    exit 1
+  fi
+  echo "PASS: $name"
+}
+
+assert_glob_exists() {
+  local name="$1"
+  local pattern="$2"
+  if ! compgen -G "$pattern" >/dev/null; then
+    echo "FAIL: $name" >&2
+    echo "Expected match for: $pattern" >&2
+    exit 1
+  fi
+  echo "PASS: $name"
+}
+
 install_test_runtime() {
   local dest_bin="$1"
   mkdir -p "$dest_bin"
@@ -534,15 +578,38 @@ assert_contains "integrations_doctor_ok" "$integrations_doctor" "status: ok (0 w
 assert_contains "integrations_doctor_source" "$integrations_doctor" "source: $ROOT"
 assert_contains "integrations_doctor_swiftbar" "$integrations_doctor" "plugin: $INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh (executable)"
 assert_contains "integrations_doctor_next_repair" "$integrations_doctor" "tmux-whisper integrations repair --dry-run"
+assert_contains "integrations_doctor_next_repair_apply" "$integrations_doctor" "tmux-whisper integrations repair"
 integrations_repair_dry_run="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations repair --dry-run)"
 assert_contains "integrations_repair_dry_run_header" "$integrations_repair_dry_run" "Integration repair dry run:"
 assert_contains "integrations_repair_dry_run_no_mutation" "$integrations_repair_dry_run" "files changed: 0"
 assert_contains "integrations_repair_dry_run_raycast_plan" "$integrations_repair_dry_run" "would install Raycast inline: $ROOT/integrations/raycast/tmux-whisper-inline.sh -> $INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-inline.sh"
 assert_contains "integrations_repair_dry_run_swiftbar_plan" "$integrations_repair_dry_run" "would install SwiftBar plugin: $ROOT/integrations/tmux-whisper-status.0.2s.sh -> $INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
-chmod -x "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-cancel.sh"
+rm -rf "$INTEGRATIONS_CFG/integrations/raycast"
+printf '%s\n' "# stale swiftbar plugin" >"$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
+chmod -x "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
 integrations_doctor_broken="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations doctor)"
 assert_contains "integrations_doctor_broken_status" "$integrations_doctor_broken" "status: needs repair"
-assert_contains "integrations_doctor_broken_cancel" "$integrations_doctor_broken" "Raycast cancel script is not executable"
+assert_contains "integrations_doctor_broken_inline" "$integrations_doctor_broken" "Raycast inline script is missing"
+assert_contains "integrations_doctor_broken_swiftbar" "$integrations_doctor_broken" "SwiftBar plugin is not executable"
+integrations_repair_broken_dry_run="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations repair --dry-run)"
+assert_contains "integrations_repair_broken_dry_run_no_mutation" "$integrations_repair_broken_dry_run" "files changed: 0"
+assert_file_not_exists "integrations_repair_dry_run_missing_kept" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-inline.sh"
+assert_file_not_executable "integrations_repair_dry_run_mode_kept" "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
+assert_file_contains "integrations_repair_dry_run_content_kept" "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh" "stale swiftbar"
+integrations_repair_apply="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations repair)"
+assert_contains "integrations_repair_apply_header" "$integrations_repair_apply" "Integration repair:"
+assert_contains "integrations_repair_apply_changed" "$integrations_repair_apply" "files changed: 4"
+assert_contains "integrations_repair_apply_inline" "$integrations_repair_apply" "changed Raycast inline: installed"
+assert_contains "integrations_repair_apply_swiftbar_backup" "$integrations_repair_apply" "changed SwiftBar plugin: replaced"
+assert_file_executable "integrations_repair_apply_inline_executable" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-inline.sh"
+assert_file_executable "integrations_repair_apply_toggle_executable" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-toggle.sh"
+assert_file_executable "integrations_repair_apply_cancel_executable" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-cancel.sh"
+assert_file_executable "integrations_repair_apply_swiftbar_executable" "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
+assert_glob_exists "integrations_repair_apply_swiftbar_backup" "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh.backup.*"
+integrations_doctor_repaired="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations doctor)"
+assert_contains "integrations_doctor_repaired_ok" "$integrations_doctor_repaired" "status: ok (0 warnings)"
+integrations_repair_apply_again="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations repair)"
+assert_contains "integrations_repair_apply_idempotent" "$integrations_repair_apply_again" "files changed: 0"
 
 # --- Regression 9: script-level behavior for missing tmux-whisper binary is explicit. ---
 INLINE_HOME="$TMP_ROOT/home-inline"
