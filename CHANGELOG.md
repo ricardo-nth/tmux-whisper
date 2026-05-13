@@ -6,7 +6,10 @@
 - **Maintenance track**: `v0.5.x` (stress-test the latest hardening and keep the release path calm)
 - **Next expansion target**: `v0.6.x` (CLI-first operator platform)
 - **Completed**: FFmpeg AVFoundation capture now uses async resampling so WAV duration tracks wall-clock recording time instead of drifting short
-- **Completed**: inline/Raycast stop-grace retuned back down to `1000ms` after capture-layer drift was isolated upstream of stop timing
+- **Completed**: Swift tail rescue now re-transcribes the final seconds of longer WAVs and merges that text back into the full-file transcript, fixing cases where Parakeet's full-file pass omits words that are present in the recorded WAV
+- **Completed**: Swift audio chunking is now opt-in via `DICTATE_SWIFT_PARAKEET_CHUNKING=1` instead of default, keeping the stable single-pass path for daily dictation
+- **Watch**: treat Swift chunking as quarantined experimental code; if tail rescue solves the observed clipping without a clear long-audio need for chunking, remove the chunking path rather than carrying a dormant complexity branch
+- **Completed**: experimental Swift chunking skips sub-1s tail fragments instead of asking the daemon to transcribe invalid audio
 - **Completed**: inline/Raycast FFmpeg shutdown now sends a controlled `q` over a private FIFO before falling back to SIGINT, preserving most of the stop-grace tail that SIGINT was dropping
 - **Completed**: trailing-word clipping hardening in the stop/transcribe path
 - **Completed**: inline/Raycast stop breadcrumbs when `keep_logs` is enabled
@@ -74,7 +77,7 @@
 
 - **Inline/Raycast clipping hardening**:
   - Added async FFmpeg resampling (`aresample=async=1000:first_pts=0`) to tmux and inline capture so AVFoundation sample-clock drift does not produce short WAVs before transcription.
-  - Retuned the inline stop grace window back down to `1000ms` now that the observed clipping source is upstream in FFmpeg/AVFoundation capture rather than only stop timing.
+  - Retuned the inline stop grace window back down to `1000ms` as a diagnostic probe after capture drift was isolated; later tail-slice evidence showed clipped words were present in the WAV but missing from Parakeet's full-file transcript.
 - **Validation**:
   - Ran `bash -n`, `./tests/test_cli.sh`, `./tests/test_regression.sh`, `./tests/test_flow_parity.sh`, `./tests/ci.sh`, `./install.sh --force`, and a fixed-duration FFmpeg probe that produced a `15.000s` WAV from a `15s` capture.
 

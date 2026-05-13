@@ -172,7 +172,20 @@ fi
 
 out="${!#}"
 mkdir -p "$(dirname "$out")"
-printf '%s\n' "stub-wav" >"$out"
+duration_ms=""
+prev=""
+for arg in "$@"; do
+  if [[ "$prev" == "-t" ]]; then
+    duration_ms="$(awk -v seconds="$arg" 'BEGIN { printf "%.0f", seconds * 1000 }')"
+    break
+  fi
+  prev="$arg"
+done
+if [[ "$duration_ms" =~ ^[0-9]+$ ]]; then
+  printf 'duration_ms=%s\n' "$duration_ms" >"$out"
+else
+  printf '%s\n' "stub-wav" >"$out"
+fi
 
 if [[ "${DICTATE_TEST_FFMPEG_HOLD:-0}" == "1" && ( "$out" == *"whisper-dictate-"* || "$out" == *"dictate-inline-"* ) ]]; then
   trap 'exit 0' INT TERM
@@ -347,6 +360,25 @@ while True:
             }
         else:
             if req.get("op") == "transcribe" and req.get("flow") != "warmup":
+                if os.environ.get("DICTATE_TEST_SWIFT_REJECT_SUBSECOND", "0") == "1":
+                    wav_path = req.get("wav_path") or ""
+                    try:
+                        with open(wav_path, encoding="utf-8", errors="replace") as fh:
+                            marker = fh.read(200)
+                        if marker.startswith("duration_ms="):
+                            duration_ms = int(marker.split("=", 1)[1].splitlines()[0])
+                            if duration_ms < 1000:
+                                resp = {
+                                    "id": req.get("id"),
+                                    "ok": False,
+                                    "engine": "swift_parakeet",
+                                    "error_code": "runtime_error",
+                                    "message": "Invalid audio data provided. Must be at least 1 second of 16kHz audio.",
+                                }
+                                conn.sendall(json.dumps(resp).encode("utf-8") + b"\n")
+                                continue
+                    except Exception:
+                        pass
                 transcribe_count += 1
                 idx = transcribe_count - 1
                 if idx < len(delay_values) and delay_values[idx]:
@@ -467,7 +499,12 @@ setup_case() {
   unset DICTATE_TEST_SWIFT_DAEMON_FAIL
   unset DICTATE_TEST_SWIFT_DELAY_SEQUENCE
   unset DICTATE_TEST_SWIFT_TEXT_SEQUENCE
+  unset DICTATE_TEST_SWIFT_REJECT_SUBSECOND
   unset DICTATE_TEST_FFPROBE_DURATION_MS
+  unset DICTATE_SWIFT_PARAKEET_TAIL_RESCUE
+  unset DICTATE_SWIFT_PARAKEET_TAIL_RESCUE_MS
+  unset DICTATE_SWIFT_PARAKEET_TAIL_RESCUE_MIN_MS
+  unset DICTATE_SWIFT_PARAKEET_CHUNKING
   unset DICTATE_SWIFT_PARAKEET_CHUNK_THRESHOLD_MS
   unset DICTATE_SWIFT_PARAKEET_CHUNK_MS
   unset DICTATE_SWIFT_PARAKEET_CHUNK_OVERLAP_MS
@@ -874,9 +911,26 @@ run_inline_swift_round() {
   assert_file_contains "inline_swift_tail_pad_ffmpeg" "$DICTATE_TEST_FFMPEG_LOG" "anullsrc=r=16000:cl=mono"
 }
 
+run_inline_swift_tail_rescue_round() {
+  setup_case "inline-swift-tail-rescue"
+  export DICTATE_AUTOSEND=1
+  export DICTATE_TEST_FFPROBE_DURATION_MS=20591
+  export DICTATE_TEST_SWIFT_TEXT_SEQUENCE="section by section review and then we'll go back|And we'll go back down and break down each section and then potentially rewrite then"
+
+  local out copied inline_transcribe_log
+  inline_transcribe_log="$CASE_DIR/tmp/whisper-dictate-inline.transcribe.log"
+  out="$("$DICTATE_BIN" inline)"
+  assert_contains "inline_swift_tail_rescue_sent" "$out" "Sent"
+
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_swift_tail_rescue_merged" "$copied" "section by section review and then we'll go back down and break down each section and then potentially rewrite then"
+  assert_file_contains "inline_swift_tail_rescue_log" "$inline_transcribe_log" "swift_parakeet_tail_rescue:"
+}
+
 run_inline_swift_chunked_round() {
   setup_case "inline-swift-chunked"
   export DICTATE_AUTOSEND=1
+  export DICTATE_SWIFT_PARAKEET_CHUNKING=1
   export DICTATE_TEST_FFPROBE_DURATION_MS=65000
   export DICTATE_SWIFT_PARAKEET_CHUNK_THRESHOLD_MS=1000
   export DICTATE_SWIFT_PARAKEET_CHUNK_MS=30000
@@ -892,6 +946,47 @@ run_inline_swift_chunked_round() {
   assert_contains "inline_swift_chunked_merged" "$copied" "first chunk shared words final chunk tail"
   assert_file_contains "inline_swift_chunked_log" "$inline_transcribe_log" "swift_parakeet_chunked:"
   assert_file_contains "inline_swift_chunked_chunk_log" "$inline_transcribe_log" "swift_parakeet_chunk: index=1"
+}
+
+run_inline_swift_chunking_default_off_round() {
+  setup_case "inline-swift-chunking-default-off"
+  export DICTATE_AUTOSEND=1
+  export DICTATE_TEST_FFPROBE_DURATION_MS=65000
+  export DICTATE_SWIFT_PARAKEET_CHUNK_THRESHOLD_MS=1000
+  export DICTATE_TEST_SWIFT_TEXT="unchunked long default"
+
+  local out copied inline_transcribe_log
+  inline_transcribe_log="$CASE_DIR/tmp/whisper-dictate-inline.transcribe.log"
+  out="$("$DICTATE_BIN" inline)"
+  assert_contains "inline_swift_chunking_default_off_sent" "$out" "Sent"
+
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_swift_chunking_default_off_transcript" "$copied" "unchunked long default"
+  assert_file_not_contains "inline_swift_chunking_default_off_no_chunk_log" "$inline_transcribe_log" "swift_parakeet_chunked:"
+}
+
+run_inline_swift_chunked_tail_boundary_round() {
+  setup_case "inline-swift-chunked-tail-boundary"
+  export DICTATE_AUTOSEND=1
+  export DICTATE_SWIFT_PARAKEET_CHUNKING=1
+  export DICTATE_TEST_FFPROBE_DURATION_MS=84521
+  export DICTATE_SWIFT_PARAKEET_CHUNK_THRESHOLD_MS=45000
+  export DICTATE_SWIFT_PARAKEET_CHUNK_MS=30000
+  export DICTATE_SWIFT_PARAKEET_CHUNK_OVERLAP_MS=2000
+  export DICTATE_TEST_SWIFT_REJECT_SUBSECOND=1
+  export DICTATE_TEST_SWIFT_TEXT_SEQUENCE="boundary first shared words|shared words middle bridge|middle bridge final"
+
+  local out copied inline_transcribe_log
+  inline_transcribe_log="$CASE_DIR/tmp/whisper-dictate-inline.transcribe.log"
+  out="$("$DICTATE_BIN" inline)"
+  assert_contains "inline_swift_chunked_tail_boundary_sent" "$out" "Sent"
+
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_swift_chunked_tail_boundary_merged" "$copied" "boundary first shared words middle bridge final"
+  assert_file_contains "inline_swift_chunked_tail_boundary_log" "$inline_transcribe_log" "swift_parakeet_chunk: index=2"
+  assert_file_contains "inline_swift_chunked_tail_boundary_skip_log" "$inline_transcribe_log" "swift_parakeet_chunk_skip: index=3"
+  assert_file_not_contains "inline_swift_chunked_tail_boundary_no_fourth_transcribe" "$inline_transcribe_log" "swift_parakeet_chunk: index=3"
+  assert_file_not_contains "inline_swift_chunked_tail_boundary_no_daemon_error" "$inline_transcribe_log" "Invalid audio data provided"
 }
 
 run_inline_swift_superseded_round() {
@@ -1019,7 +1114,10 @@ run_inline_audio_cache_refresh_round
 run_inline_keep_logs_archive_round
 run_inline_audio_retention_round
 run_inline_swift_round
+run_inline_swift_tail_rescue_round
 run_inline_swift_chunked_round
+run_inline_swift_chunking_default_off_round
+run_inline_swift_chunked_tail_boundary_round
 run_inline_swift_superseded_round
 run_tmux_audio_cache_note_round
 run_status_postprocess_round

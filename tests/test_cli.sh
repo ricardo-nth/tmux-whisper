@@ -42,6 +42,10 @@ if [[ "$output" != *"DICTATE_TRANSCRIBE_TAIL_PAD_MS=500"* ]]; then
   echo "Expected help output to document transcription tail padding" >&2
   exit 1
 fi
+if [[ "$output" != *"DICTATE_SWIFT_PARAKEET_TAIL_RESCUE=0|1"* ]]; then
+  echo "Expected help output to document Swift tail rescue tuning" >&2
+  exit 1
+fi
 if [[ "$output" != *"tmux-whisper last [--json]"* ]]; then
   echo "Expected help output to document the last command" >&2
   exit 1
