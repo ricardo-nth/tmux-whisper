@@ -34,6 +34,7 @@ These commands are safe to build integrations on:
   - Read-only config inspection contracts.
 - `tmux-whisper integrations --json`
   - Object with installed binary, install receipt, SwiftBar plugin, and Raycast script state.
+  - Adapter entries include source path and provenance state: `current`, `missing`, `non-executable`, `different`, or source-unavailable/source-missing fallbacks.
 - `tmux-whisper bench [N|all] --json [filters]`
   - Object with record counts, filters, stage summaries, startup summaries, latest row, and `next_commands`.
 - `tmux-whisper bench export [N|all] --json [filters]`
@@ -44,7 +45,7 @@ These commands are safe to build integrations on:
 These are useful but not yet promised as stable contracts:
 
 - `tmux-whisper integrations doctor`
-  - Human-readable integration lifecycle diagnostics for installed binary, receipt, Raycast scripts, SwiftBar plugin, executable bits, and adapter drift from the recorded source tree.
+  - Human-readable integration lifecycle diagnostics for installed binary, receipt, Raycast scripts, SwiftBar plugin, executable bits, and adapter provenance/drift from the recorded source tree.
 - `tmux-whisper integrations repair --dry-run`
   - Human-readable adapter-only repair preview. This intentionally does not mutate files.
 - `tmux-whisper integrations repair`
