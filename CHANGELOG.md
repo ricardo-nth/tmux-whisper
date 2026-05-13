@@ -3,8 +3,8 @@
 ## Current working version
 
 - **Stable release**: `v0.5.2` (tagged on 2026-04-19)
-- **Maintenance track**: `v0.5.x` (stress-test the latest hardening and keep the release path calm)
-- **Next expansion target**: `v0.6.x` (CLI-first operator platform)
+- **Release candidate on `main`**: `v0.6.0` (CLI-first operator platform; validated locally and ready for tag + Homebrew release work)
+- **Next expansion target**: `v0.7.x` (integration platform)
 - **Completed**: FFmpeg AVFoundation capture now uses async resampling so WAV duration tracks wall-clock recording time instead of drifting short
 - **Completed**: Swift tail rescue now re-transcribes the final seconds of longer WAVs and merges that text back into the full-file transcript, fixing cases where Parakeet's full-file pass omits words that are present in the recorded WAV
 - **Completed**: Swift audio chunking is now opt-in via `DICTATE_SWIFT_PARAKEET_CHUNKING=1` instead of default, keeping the stable single-pass path for daily dictation
@@ -49,29 +49,26 @@
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
   - Bootstrap/local install (testing): `bootstrap.sh` or `./install.sh --force`
 
-### Planned next (v0.5 maintenance queue)
+### Planned next (v0.6.0 release gate)
 
-- clipped-run hardening follow-up: use the archived inline artifacts to confirm async-resampled WAV duration stays close to wall-clock capture time during daily use
-- keep release path stable: iterate with local/bootstrap, ship stable cuts via Homebrew
+- keep the last soak pass narrow: use archived inline artifacts to confirm async-resampled WAV duration stays close to wall-clock capture time during daily use
+- accept only small, backportable reliability polish until the stable cut lands: clipping evidence review, warm-cache/start-cue observations, and any low-risk stop-path adjustments
+- finish the release loop cleanly: tag `v0.6.0`, smoke-test the tagged bootstrap path, and update `homebrew-tap` from that tag
 
-### Planned next (v0.6 CLI-first queue)
+### Residual v0.6 polish only (after the stable cut, if still needed)
 
-- keep using the operator CLI as the primary support surface: inspect reliability from `status`, `history sessions`, `bench`, and `logs` before adding dashboard/TUI layers
-- deepen workflow guidance around the remaining real reliability questions: FFmpeg drift soak, morning-delay/warm-cache behavior, SwiftBar/sound-start timing, and event-driven menu refresh
-- keep filtered bench inspection, history session summaries, and text-first watch/log flows evolving from real usage now that the core operator surfaces have stronger contracts
-- add text-first live workflows such as watch/tail-style commands that keep terminal users in the CLI instead of forcing a TUI just for observability
-- keep refining compact operator views from real morning-delay/SwiftBar/sound-delay evidence so first-class CLI workflows stay pleasant in narrow tmux panes and shell/plugin wrappers
-- known polish: SwiftBar's polling/render loop can still leave a tiny stop-to-processing visual delay; future work should explore an event-driven refresh/signal path for the stop hotkey, and longer-term a very light native macOS menu bar companion for push-style state updates
-- treat any future dashboard/TUI as an optional layer on top of stable CLI contracts, not as the next milestone itself
+- keep the operator CLI as the primary support surface: inspect reliability from `status`, `history sessions`, `bench`, and `logs` before adding any new UI layer
+- keep filtered bench inspection, history session summaries, and compact/watch/log workflows evolving from real usage rather than opening a dashboard/TUI track
+- if any CLI-first polish remains after the stable cut, keep it small and evidence-led so it does not blur into v0.7 integration work
 
 ### Planned next (v0.7 integration platform)
 
-- extend the new `tmux-whisper integrations [--json]` surface from inspection into repair/update actions once the desired lifecycle is proven in daily use
-- investigate integration setup/update helpers that can reinstall or verify Raycast scripts and SwiftBar plugin files without forcing a full app reinstall
-- investigate SwiftBar/menu-state reliability as an integration-layer problem: event-driven refresh, stop-to-processing immediacy, sound cue timing, and stale menu-state recovery
+- start v0.7 only after `v0.6.0` is tagged and the Homebrew formula is updated, so integration work does not block the stable CLI-first cut
+- extend `tmux-whisper integrations [--json]` from inspection into explicit repair/install/update actions once the current lifecycle is proven in daily use
+- add integration setup/update helpers that can verify or reinstall Raycast scripts and SwiftBar plugin files without forcing a full app reinstall
+- treat SwiftBar/menu-state reliability as the first integration-platform problem: event-driven refresh, stop-to-processing immediacy, sound cue timing, and stale menu-state recovery
 - explore the native macOS companion path separately from the CLI: lightweight menu-bar app, push-style state updates, and later Swift/Core Audio capture options
 - document integration compatibility and support boundaries: supported macOS assumptions, required PATH/env behavior, Homebrew vs bootstrap/local differences, and stable vs experimental integration surfaces
-- keep v0.6 soak fixes separate from v0.7 expansion work: production issues found during the soak should stay small, reliability-focused, and backportable before the Homebrew/tag release
 
 ## 2026-05-09
 
