@@ -186,6 +186,19 @@ fi
 exit 0
 EOF
 
+  cat >"$STUB_DIR/ffprobe" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+duration_ms="${DICTATE_TEST_FFPROBE_DURATION_MS:-}"
+if [[ "$duration_ms" =~ ^[0-9]+$ ]]; then
+  awk -v ms="$duration_ms" 'BEGIN { printf "%.6f\n", ms/1000 }'
+  exit 0
+fi
+
+exit 1
+EOF
+
   cat >"$STUB_DIR/tmux" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -372,7 +385,7 @@ PYEOF
 esac
 EOF
 
-  chmod +x "$STUB_DIR/ffmpeg" "$STUB_DIR/tmux" "$STUB_DIR/pbcopy" "$STUB_DIR/osascript" "$STUB_DIR/afplay" "$STUB_DIR/tmux-whisperd"
+  chmod +x "$STUB_DIR/ffmpeg" "$STUB_DIR/ffprobe" "$STUB_DIR/tmux" "$STUB_DIR/pbcopy" "$STUB_DIR/osascript" "$STUB_DIR/afplay" "$STUB_DIR/tmux-whisperd"
 }
 
 CASE_DIR=""
@@ -404,6 +417,7 @@ setup_case() {
   export PATH="$STUB_DIR:/usr/bin:/bin"
   mkdir -p "$HOME/.local/bin"
   ln -sf "$STUB_DIR/ffmpeg" "$HOME/.local/bin/ffmpeg"
+  ln -sf "$STUB_DIR/ffprobe" "$HOME/.local/bin/ffprobe"
   ln -sf "$STUB_DIR/tmux" "$HOME/.local/bin/tmux"
   ln -sf "$STUB_DIR/pbcopy" "$HOME/.local/bin/pbcopy"
   ln -sf "$STUB_DIR/osascript" "$HOME/.local/bin/osascript"
@@ -453,6 +467,10 @@ setup_case() {
   unset DICTATE_TEST_SWIFT_DAEMON_FAIL
   unset DICTATE_TEST_SWIFT_DELAY_SEQUENCE
   unset DICTATE_TEST_SWIFT_TEXT_SEQUENCE
+  unset DICTATE_TEST_FFPROBE_DURATION_MS
+  unset DICTATE_SWIFT_PARAKEET_CHUNK_THRESHOLD_MS
+  unset DICTATE_SWIFT_PARAKEET_CHUNK_MS
+  unset DICTATE_SWIFT_PARAKEET_CHUNK_OVERLAP_MS
 
   unset CEREBRAS_API_KEY
   unset TMUX
@@ -856,6 +874,26 @@ run_inline_swift_round() {
   assert_file_contains "inline_swift_tail_pad_ffmpeg" "$DICTATE_TEST_FFMPEG_LOG" "anullsrc=r=16000:cl=mono"
 }
 
+run_inline_swift_chunked_round() {
+  setup_case "inline-swift-chunked"
+  export DICTATE_AUTOSEND=1
+  export DICTATE_TEST_FFPROBE_DURATION_MS=65000
+  export DICTATE_SWIFT_PARAKEET_CHUNK_THRESHOLD_MS=1000
+  export DICTATE_SWIFT_PARAKEET_CHUNK_MS=30000
+  export DICTATE_SWIFT_PARAKEET_CHUNK_OVERLAP_MS=2000
+  export DICTATE_TEST_SWIFT_TEXT_SEQUENCE="first chunk shared words|shared words final chunk|final chunk tail"
+
+  local out copied inline_transcribe_log
+  inline_transcribe_log="$CASE_DIR/tmp/whisper-dictate-inline.transcribe.log"
+  out="$("$DICTATE_BIN" inline)"
+  assert_contains "inline_swift_chunked_sent" "$out" "Sent"
+
+  copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
+  assert_contains "inline_swift_chunked_merged" "$copied" "first chunk shared words final chunk tail"
+  assert_file_contains "inline_swift_chunked_log" "$inline_transcribe_log" "swift_parakeet_chunked:"
+  assert_file_contains "inline_swift_chunked_chunk_log" "$inline_transcribe_log" "swift_parakeet_chunk: index=1"
+}
+
 run_inline_swift_superseded_round() {
   setup_case "inline-swift-superseded"
   export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/iss.sock"
@@ -981,6 +1019,7 @@ run_inline_audio_cache_refresh_round
 run_inline_keep_logs_archive_round
 run_inline_audio_retention_round
 run_inline_swift_round
+run_inline_swift_chunked_round
 run_inline_swift_superseded_round
 run_tmux_audio_cache_note_round
 run_status_postprocess_round

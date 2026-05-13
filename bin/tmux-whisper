@@ -2394,6 +2394,154 @@ transcribe_swift_parakeet_cli() {
   printf "%s" "${RESP_TEXT:-}"
 }
 
+merge_transcript_chunks() {
+  local chunks_file="${1:-}"
+  [[ -n "$chunks_file" && -f "$chunks_file" ]] || return 0
+
+  python3 - "$chunks_file" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+texts = [line.strip() for line in open(path, encoding="utf-8", errors="replace") if line.strip()]
+
+def word_matches(text):
+    return list(re.finditer(r"[A-Za-z0-9']+", text))
+
+def norm_words(text):
+    return [m.group(0).lower() for m in word_matches(text)]
+
+def char_after_words(text, count):
+    matches = word_matches(text)
+    if count <= 0 or count > len(matches):
+        return 0
+    return matches[count - 1].end()
+
+merged = ""
+merged_words = []
+
+for text in texts:
+    if not merged:
+        merged = text
+        merged_words = norm_words(merged)
+        continue
+
+    incoming_words = norm_words(text)
+    max_overlap = min(24, len(merged_words), len(incoming_words))
+    overlap = 0
+    for size in range(max_overlap, 1, -1):
+        if merged_words[-size:] == incoming_words[:size]:
+            overlap = size
+            break
+
+    if overlap:
+        rest = text[char_after_words(text, overlap):].lstrip(" \t,.;:!?-")
+        if rest:
+            merged = (merged.rstrip() + " " + rest).strip()
+    else:
+        merged = (merged.rstrip() + " " + text.lstrip()).strip()
+    merged_words = norm_words(merged)
+
+print(merged, end="")
+PYEOF
+}
+
+transcribe_swift_parakeet_chunked_cli() {
+  local wav="$1"
+  local language="${2:-en}"
+  local flow="${3:-inline}"
+  local duration_ms threshold_ms chunk_ms overlap_ms step_ms
+  duration_ms="$(audio_duration_ms "$wav" 2>/dev/null || true)"
+  threshold_ms="$(resolve_stop_grace_ms "${DICTATE_SWIFT_PARAKEET_CHUNK_THRESHOLD_MS:-}" "45000")"
+  chunk_ms="$(resolve_stop_grace_ms "${DICTATE_SWIFT_PARAKEET_CHUNK_MS:-}" "30000")"
+  overlap_ms="$(resolve_stop_grace_ms "${DICTATE_SWIFT_PARAKEET_CHUNK_OVERLAP_MS:-}" "2000")"
+
+  if [[ ! "$duration_ms" =~ ^[0-9]+$ ]] || (( duration_ms <= threshold_ms )); then
+    transcribe_swift_parakeet_cli "$wav" "$language" "$flow"
+    return $?
+  fi
+
+  if (( chunk_ms < 5000 )); then
+    chunk_ms=5000
+  fi
+  if (( overlap_ms >= chunk_ms )); then
+    overlap_ms=$(( chunk_ms / 5 ))
+  fi
+  step_ms=$(( chunk_ms - overlap_ms ))
+  if (( step_ms <= 0 )); then
+    step_ms="$chunk_ms"
+  fi
+
+  command -v ffmpeg >/dev/null 2>&1 || {
+    transcribe_swift_parakeet_cli "$wav" "$language" "$flow"
+    return $?
+  }
+
+  local chunk_dir chunk_texts start_ms index segment_ms start_s segment_s chunk_wav chunk_text rc
+  chunk_dir="$(mktemp -d "${TMPDIR:-/tmp}/tmux-whisper-chunks.XXXXXX" 2>/dev/null || true)"
+  [[ -n "$chunk_dir" ]] || {
+    transcribe_swift_parakeet_cli "$wav" "$language" "$flow"
+    return $?
+  }
+  chunk_texts="$chunk_dir/chunks.txt"
+  : >"$chunk_texts"
+
+  if [[ -n "${TRANSCRIBE_LOG:-}" ]]; then
+    printf "[%s] swift_parakeet_chunked: duration_ms=%s threshold_ms=%s chunk_ms=%s overlap_ms=%s\n" \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$duration_ms" "$threshold_ms" "$chunk_ms" "$overlap_ms" \
+      >>"$TRANSCRIBE_LOG" 2>/dev/null || true
+  fi
+
+  start_ms=0
+  index=0
+  rc=0
+  while (( start_ms < duration_ms )); do
+    segment_ms="$chunk_ms"
+    if (( start_ms + segment_ms > duration_ms )); then
+      segment_ms=$(( duration_ms - start_ms ))
+    fi
+    (( segment_ms > 0 )) || break
+
+    start_s="$(awk -v ms="$start_ms" 'BEGIN { printf "%.3f", ms/1000 }')"
+    segment_s="$(awk -v ms="$segment_ms" 'BEGIN { printf "%.3f", ms/1000 }')"
+    chunk_wav="$chunk_dir/chunk-${index}.wav"
+
+    if ! ffmpeg -hide_banner -loglevel error -y \
+      -ss "$start_s" -t "$segment_s" -i "$wav" \
+      -ac 1 -ar 16000 -c:a pcm_s16le \
+      "$chunk_wav" >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1; then
+      rc=1
+      break
+    fi
+
+    if [[ -n "${TRANSCRIBE_LOG:-}" ]]; then
+      printf "[%s] swift_parakeet_chunk: index=%s start_ms=%s duration_ms=%s\n" \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$index" "$start_ms" "$segment_ms" \
+        >>"$TRANSCRIBE_LOG" 2>/dev/null || true
+    fi
+
+    if ! chunk_text="$(transcribe_swift_parakeet_cli "$chunk_wav" "$language" "$flow" 2>>"${TRANSCRIBE_LOG:-/dev/null}")"; then
+      rc=1
+      break
+    fi
+    chunk_text="${chunk_text//$'\n'/ }"
+    printf "%s\n" "$chunk_text" >>"$chunk_texts"
+
+    index=$(( index + 1 ))
+    start_ms=$(( start_ms + step_ms ))
+  done
+
+  if [[ "$rc" -ne 0 ]]; then
+    rm -rf "$chunk_dir" 2>/dev/null || true
+    return "$rc"
+  fi
+
+  merge_transcript_chunks "$chunk_texts"
+  rc=$?
+  rm -rf "$chunk_dir" 2>/dev/null || true
+  return "$rc"
+}
+
 warmup_backend() {
   local best_effort="0"
   local arg model_path result model_name duration_ms message
@@ -2445,7 +2593,7 @@ transcribe_audio() {
   DICTATE_LAST_BACKEND_ENGINE=""
   DICTATE_LAST_BACKEND_MODEL=""
   set +e
-  txt="$(transcribe_swift_parakeet_cli "$wav" "$language" "$flow" 2>>"${TRANSCRIBE_LOG:-/dev/null}")"
+  txt="$(transcribe_swift_parakeet_chunked_cli "$wav" "$language" "$flow" 2>>"${TRANSCRIBE_LOG:-/dev/null}")"
   transcribe_rc=$?
   set -e
   write_backend_runtime_cache "$requested_backend" "$requested_backend" "" "${DICTATE_LAST_BACKEND_ENGINE:-swift_parakeet}" "${DICTATE_LAST_BACKEND_MODEL:-}"
