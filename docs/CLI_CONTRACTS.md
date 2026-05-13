@@ -44,9 +44,11 @@ These commands are safe to build integrations on:
 These are useful but not yet promised as stable contracts:
 
 - `tmux-whisper integrations doctor`
-  - Human-readable integration lifecycle diagnostics for installed binary, receipt, Raycast scripts, SwiftBar plugin, and executable bits.
+  - Human-readable integration lifecycle diagnostics for installed binary, receipt, Raycast scripts, SwiftBar plugin, executable bits, and adapter drift from the recorded source tree.
 - `tmux-whisper integrations repair --dry-run`
-  - Human-readable adapter-only repair preview. This intentionally does not mutate files yet.
+  - Human-readable adapter-only repair preview. This intentionally does not mutate files.
+- `tmux-whisper integrations repair`
+  - Human-readable adapter-only repair action for Raycast scripts and the SwiftBar plugin. It creates missing adapter directories, refreshes adapter files from the recorded source tree, ensures executable bits, and backs up replaced adapter files.
 - `tmux-whisper logs follow ... --json`
   - Streaming newline-delimited JSON events. Treat event names as provisional.
 - `tmux-whisper watch ...`

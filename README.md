@@ -269,14 +269,15 @@ Raycast and SwiftBar often run with a minimal shell environment. If you rely on 
 
 ### Integration lifecycle checks
 
-`tmux-whisper integrations` inspects the installed adapter surface. For v0.7 integration-platform work, lifecycle checks start in dry-run mode:
+`tmux-whisper integrations` inspects the installed adapter surface. For v0.7 integration-platform work, lifecycle checks start with an observable doctor and a dry-run repair preview:
 
 ```bash
 tmux-whisper integrations doctor
 tmux-whisper integrations repair --dry-run
+tmux-whisper integrations repair
 ```
 
-`doctor` checks the installed binary, install receipt, Raycast scripts, SwiftBar plugin, and executable bits. `repair --dry-run` shows the adapter-only refresh plan without changing files; use `./install.sh --force` as the current full local refresh fallback.
+`doctor` checks the installed binary, install receipt, Raycast scripts, SwiftBar plugin, executable bits, and adapter drift from the recorded source tree. `repair --dry-run` shows the adapter-only refresh plan without changing files. `repair` refreshes only the installed Raycast scripts and SwiftBar plugin, creates missing adapter directories, fixes executable bits, and backs up replaced adapter files; use `./install.sh --force` only when you need a full local runtime refresh.
 
 ## Sounds
 

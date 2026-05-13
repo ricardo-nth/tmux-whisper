@@ -91,6 +91,17 @@ integration_expected_source() {
   esac
 }
 
+integration_adapter_source_label() {
+  local adapter="$1"
+  case "$adapter" in
+    raycast-inline) printf '%s\n' "Raycast inline" ;;
+    raycast-toggle) printf '%s\n' "Raycast tmux-toggle" ;;
+    raycast-cancel) printf '%s\n' "Raycast cancel" ;;
+    swiftbar) printf '%s\n' "SwiftBar plugin" ;;
+    *) printf '%s\n' "$adapter" ;;
+  esac
+}
+
 integration_check_lines() {
   local binary_path="$1"
   local receipt_path="$2"
@@ -116,18 +127,32 @@ integration_check_lines() {
   elif [[ ! -x "$swiftbar_path" ]]; then
     printf '%s\n' "issue|swiftbar|SwiftBar plugin is not executable at $swiftbar_path"
   fi
+  if [[ -n "$source_root" && -f "$swiftbar_path" ]]; then
+    local swiftbar_src
+    swiftbar_src="$(integration_expected_source "$source_root" swiftbar)"
+    if [[ -f "$swiftbar_src" ]] && ! cmp -s "$swiftbar_src" "$swiftbar_path"; then
+      printf '%s\n' "warn|swiftbar|SwiftBar plugin differs from source at $swiftbar_src"
+    fi
+  fi
 
-  local name path
+  local name path adapter src label
   for name in inline tmux-toggle cancel; do
     case "$name" in
-      inline) path="$raycast_inline" ;;
-      tmux-toggle) path="$raycast_toggle" ;;
-      cancel) path="$raycast_cancel" ;;
+      inline) path="$raycast_inline"; adapter="raycast-inline" ;;
+      tmux-toggle) path="$raycast_toggle"; adapter="raycast-toggle" ;;
+      cancel) path="$raycast_cancel"; adapter="raycast-cancel" ;;
     esac
     if [[ ! -f "$path" ]]; then
       printf '%s\n' "issue|raycast|Raycast $name script is missing at $path"
     elif [[ ! -x "$path" ]]; then
       printf '%s\n' "issue|raycast|Raycast $name script is not executable at $path"
+    fi
+    if [[ -n "$source_root" && -f "$path" ]]; then
+      src="$(integration_expected_source "$source_root" "$adapter")"
+      label="$(integration_adapter_source_label "$adapter")"
+      if [[ -f "$src" ]] && ! cmp -s "$src" "$path"; then
+        printf '%s\n' "warn|raycast|$label script differs from source at $src"
+      fi
     fi
   done
 
@@ -191,6 +216,7 @@ integration_emit_doctor_text() {
   echo ""
   echo "Next:"
   echo "  tmux-whisper integrations repair --dry-run"
+  echo "  tmux-whisper integrations repair"
   echo "  ./install.sh --force  # full local refresh fallback"
 }
 
@@ -234,7 +260,134 @@ integration_emit_repair_dry_run_text() {
     echo "  - ok: no adapter repair currently needed"
   fi
   echo ""
-  echo "Current safe fallback: ./install.sh --force"
+  echo "Apply with: tmux-whisper integrations repair"
+  echo "Full local refresh fallback: ./install.sh --force"
+}
+
+integration_repair_one_adapter() {
+  local label="$1"
+  local src="$2"
+  local dest="$3"
+  local log_file="$4"
+  local backup_stamp="$5"
+  local dest_dir backup_path
+
+  if [[ -z "$src" || ! -f "$src" ]]; then
+    printf '%s\n' "failed|$label|source missing: ${src:-<source unavailable>}" >>"$log_file"
+    return 1
+  fi
+
+  dest_dir="$(dirname "$dest")"
+  if ! mkdir -p "$dest_dir"; then
+    printf '%s\n' "failed|$label|could not create directory: $dest_dir" >>"$log_file"
+    return 1
+  fi
+
+  if [[ -f "$dest" ]] && cmp -s "$src" "$dest"; then
+    if [[ -x "$dest" ]]; then
+      printf '%s\n' "unchanged|$label|already current and executable: $dest" >>"$log_file"
+      return 0
+    fi
+    if chmod +x "$dest"; then
+      printf '%s\n' "changed|$label|fixed executable bit: $dest" >>"$log_file"
+      return 0
+    fi
+    printf '%s\n' "failed|$label|could not set executable bit: $dest" >>"$log_file"
+    return 1
+  fi
+
+  if [[ -e "$dest" ]]; then
+    backup_path="$dest.backup.$backup_stamp"
+    if ! cp -p "$dest" "$backup_path"; then
+      printf '%s\n' "failed|$label|could not create backup: $backup_path" >>"$log_file"
+      return 1
+    fi
+    if ! cp "$src" "$dest"; then
+      printf '%s\n' "failed|$label|could not replace $dest from $src" >>"$log_file"
+      return 1
+    fi
+    if ! chmod +x "$dest"; then
+      printf '%s\n' "failed|$label|replaced file but could not set executable bit: $dest" >>"$log_file"
+      return 1
+    fi
+    printf '%s\n' "changed|$label|replaced: $src -> $dest; backup: $backup_path" >>"$log_file"
+    return 0
+  fi
+
+  if ! cp "$src" "$dest"; then
+    printf '%s\n' "failed|$label|could not install $dest from $src" >>"$log_file"
+    return 1
+  fi
+  if ! chmod +x "$dest"; then
+    printf '%s\n' "failed|$label|installed file but could not set executable bit: $dest" >>"$log_file"
+    return 1
+  fi
+  printf '%s\n' "changed|$label|installed: $src -> $dest" >>"$log_file"
+}
+
+integration_repair_action_count() {
+  local log_file="$1"
+  awk -F'|' '$1 == "changed" { count++ } END { print count + 0 }' "$log_file"
+}
+
+integration_repair_failed_count() {
+  local log_file="$1"
+  awk -F'|' '$1 == "failed" { count++ } END { print count + 0 }' "$log_file"
+}
+
+integration_emit_repair_text() {
+  local lines="$1"
+  local swiftbar_path="$2"
+  local raycast_inline="$3"
+  local raycast_toggle="$4"
+  local raycast_cancel="$5"
+  local source_root="$6"
+  local binary_path="$7"
+  local receipt_path="$8"
+  local receipt_bin_path="$9"
+  local issue_count warn_count backup_stamp log_file changed_count failed_count
+  issue_count="$(integration_issue_count "$lines")"
+  warn_count="$(integration_warn_count "$lines")"
+
+  log_file="$(mktemp "${TMPDIR:-/tmp}/tmux-whisper-integrations-repair.XXXXXX")"
+  backup_stamp="$(date -u '+%Y%m%dT%H%M%SZ')"
+
+  integration_repair_one_adapter "Raycast inline" \
+    "$(integration_expected_source "$source_root" raycast-inline)" "$raycast_inline" "$log_file" "$backup_stamp" || true
+  integration_repair_one_adapter "Raycast tmux-toggle" \
+    "$(integration_expected_source "$source_root" raycast-toggle)" "$raycast_toggle" "$log_file" "$backup_stamp" || true
+  integration_repair_one_adapter "Raycast cancel" \
+    "$(integration_expected_source "$source_root" raycast-cancel)" "$raycast_cancel" "$log_file" "$backup_stamp" || true
+  integration_repair_one_adapter "SwiftBar plugin" \
+    "$(integration_expected_source "$source_root" swiftbar)" "$swiftbar_path" "$log_file" "$backup_stamp" || true
+
+  changed_count="$(integration_repair_action_count "$log_file")"
+  failed_count="$(integration_repair_failed_count "$log_file")"
+
+  local post_lines post_issues post_warnings
+  post_lines="$(integration_check_lines "$binary_path" "$receipt_path" "$swiftbar_path" \
+    "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$receipt_bin_path" "$source_root")"
+  post_issues="$(integration_issue_count "$post_lines")"
+  post_warnings="$(integration_warn_count "$post_lines")"
+
+  echo "Integration repair:"
+  echo "  files changed: $changed_count"
+  echo "  source: ${source_root:-unavailable}"
+  echo "  findings before repair: $issue_count issues, $warn_count warnings"
+  echo "  findings after repair: $post_issues issues, $post_warnings warnings"
+  echo ""
+  echo "Adapter-only refresh:"
+  while IFS='|' read -r status label message; do
+    [[ -n "$status" ]] || continue
+    echo "  - $status $label: $message"
+  done <"$log_file"
+  rm -f "$log_file"
+  echo ""
+  echo "Next:"
+  echo "  tmux-whisper integrations doctor"
+  echo "  tmux-whisper integrations repair --dry-run"
+
+  [[ "$failed_count" -eq 0 && "$post_issues" -eq 0 ]]
 }
 
 integrations_status_json() {
@@ -326,6 +479,7 @@ payload = {
     "next": [
         "run tmux-whisper integrations doctor to diagnose adapter lifecycle drift",
         "run tmux-whisper integrations repair --dry-run to preview adapter-only refresh actions",
+        "run tmux-whisper integrations repair to refresh adapter files only",
         "run ./install.sh --force for the current full local refresh fallback"
     ],
 }
@@ -346,20 +500,17 @@ manage_integrations() {
       ;;
     repair) ;;
     *)
-      die "usage: tmux-whisper integrations [status|doctor|repair --dry-run|--json]"
+      die "usage: tmux-whisper integrations [status|doctor|repair [--dry-run]|--json]"
       ;;
   esac
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --json) json_output="1" ;;
       --dry-run) dry_run="1" ;;
-      *) die "usage: tmux-whisper integrations [status|doctor|repair --dry-run|--json]" ;;
+      *) die "usage: tmux-whisper integrations [status|doctor|repair [--dry-run]|--json]" ;;
     esac
     shift
   done
-  if [[ "$action" == "repair" && "$dry_run" != "1" ]]; then
-    die "usage: tmux-whisper integrations repair --dry-run"
-  fi
   if [[ "$json_output" == "1" && "$action" != "status" ]]; then
     die "usage: tmux-whisper integrations [status|--json]"
   fi
@@ -386,8 +537,14 @@ manage_integrations() {
     findings="$(integration_check_lines "$binary_path" "$receipt_path" "$swiftbar_path" \
       "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$receipt_bin_path" "$source_root")"
     if [[ "$action" == "repair" ]]; then
-      integration_emit_repair_dry_run_text "$findings" "$swiftbar_path" \
-        "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$source_root"
+      if [[ "$dry_run" == "1" ]]; then
+        integration_emit_repair_dry_run_text "$findings" "$swiftbar_path" \
+          "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$source_root"
+      else
+        integration_emit_repair_text "$findings" "$swiftbar_path" \
+          "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$source_root" \
+          "$binary_path" "$receipt_path" "$receipt_bin_path"
+      fi
     else
       integration_emit_doctor_text "$findings" "$binary_path" "$receipt_path" "$swiftbar_path" \
         "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$source_root"
@@ -425,5 +582,6 @@ manage_integrations() {
   echo "Next:"
   echo "  tmux-whisper integrations doctor"
   echo "  tmux-whisper integrations repair --dry-run"
+  echo "  tmux-whisper integrations repair"
   echo "  ./install.sh --force  # full local refresh fallback"
 }
