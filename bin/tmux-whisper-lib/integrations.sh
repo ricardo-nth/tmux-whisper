@@ -102,6 +102,49 @@ integration_adapter_source_label() {
   esac
 }
 
+integration_adapter_state() {
+  local source_root="$1"
+  local adapter="$2"
+  local path="$3"
+  local src
+
+  if [[ ! -f "$path" ]]; then
+    printf '%s\n' "missing"
+    return 0
+  fi
+  if [[ ! -x "$path" ]]; then
+    printf '%s\n' "non-executable"
+    return 0
+  fi
+  if [[ -z "$source_root" ]]; then
+    printf '%s\n' "source-unavailable"
+    return 0
+  fi
+
+  src="$(integration_expected_source "$source_root" "$adapter")"
+  if [[ -z "$src" || ! -f "$src" ]]; then
+    printf '%s\n' "source-missing"
+    return 0
+  fi
+  if cmp -s "$src" "$path"; then
+    printf '%s\n' "current"
+  else
+    printf '%s\n' "different"
+  fi
+}
+
+integration_adapter_source_path_label() {
+  local source_root="$1"
+  local adapter="$2"
+  local src
+  src="$(integration_expected_source "$source_root" "$adapter")"
+  if [[ -n "$src" ]]; then
+    printf '%s\n' "$src"
+  else
+    printf '%s\n' "unavailable"
+  fi
+}
+
 integration_check_lines() {
   local binary_path="$1"
   local receipt_path="$2"
@@ -197,11 +240,19 @@ integration_emit_doctor_text() {
   echo "SwiftBar:"
   echo "  enabled: $([[ "${CFG_SWIFTBAR_ENABLED:-1}" == "1" ]] && echo "ON" || echo "OFF")"
   echo "  plugin: $swiftbar_path ($(integration_path_executable_label "$swiftbar_path"))"
+  echo "  plugin state: $(integration_adapter_state "$source_root" swiftbar "$swiftbar_path")"
+  echo "  plugin source: $(integration_adapter_source_path_label "$source_root" swiftbar)"
   echo ""
   echo "Raycast:"
   echo "  inline: $raycast_inline ($(integration_path_executable_label "$raycast_inline"))"
+  echo "  inline state: $(integration_adapter_state "$source_root" raycast-inline "$raycast_inline")"
+  echo "  inline source: $(integration_adapter_source_path_label "$source_root" raycast-inline)"
   echo "  tmux-toggle: $raycast_toggle ($(integration_path_executable_label "$raycast_toggle"))"
+  echo "  tmux-toggle state: $(integration_adapter_state "$source_root" raycast-toggle "$raycast_toggle")"
+  echo "  tmux-toggle source: $(integration_adapter_source_path_label "$source_root" raycast-toggle)"
   echo "  cancel: $raycast_cancel ($(integration_path_executable_label "$raycast_cancel"))"
+  echo "  cancel state: $(integration_adapter_state "$source_root" raycast-cancel "$raycast_cancel")"
+  echo "  cancel source: $(integration_adapter_source_path_label "$source_root" raycast-cancel)"
   echo ""
   if [[ -n "$lines" ]]; then
     echo "Findings:"
@@ -401,10 +452,12 @@ integrations_status_json() {
   local receipt_source="$8"
   local receipt_ref="$9"
   local receipt_commit="${10}"
+  local source_root="${11}"
 
   INTEGRATIONS_BINARY_PATH="$binary_path" \
   INTEGRATIONS_BINARY_EXISTS="$([[ -x "$binary_path" ]] && echo true || echo false)" \
   INTEGRATIONS_CONFIG_DIR="$DICTATE_CONFIG_DIR" \
+  INTEGRATIONS_SOURCE_ROOT="$source_root" \
   INTEGRATIONS_RECEIPT_PATH="$receipt_path" \
   INTEGRATIONS_RECEIPT_EXISTS="$([[ -r "$receipt_path" ]] && echo true || echo false)" \
   INTEGRATIONS_RECEIPT_INSTALLED_AT="$receipt_installed_at" \
@@ -415,15 +468,27 @@ integrations_status_json() {
   INTEGRATIONS_SWIFTBAR_PATH="$swiftbar_path" \
   INTEGRATIONS_SWIFTBAR_EXISTS="$([[ -f "$swiftbar_path" ]] && echo true || echo false)" \
   INTEGRATIONS_SWIFTBAR_EXECUTABLE="$([[ -x "$swiftbar_path" ]] && echo true || echo false)" \
+  INTEGRATIONS_SWIFTBAR_STATE="$(integration_adapter_state "$source_root" swiftbar "$swiftbar_path")" \
+  INTEGRATIONS_SWIFTBAR_SOURCE="$(integration_adapter_source_path_label "$source_root" swiftbar)" \
+  INTEGRATIONS_SWIFTBAR_SOURCE_EXISTS="$([[ -f "$(integration_expected_source "$source_root" swiftbar)" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_INLINE="$raycast_inline" \
   INTEGRATIONS_RAYCAST_INLINE_EXISTS="$([[ -f "$raycast_inline" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_INLINE_EXECUTABLE="$([[ -x "$raycast_inline" ]] && echo true || echo false)" \
+  INTEGRATIONS_RAYCAST_INLINE_STATE="$(integration_adapter_state "$source_root" raycast-inline "$raycast_inline")" \
+  INTEGRATIONS_RAYCAST_INLINE_SOURCE="$(integration_adapter_source_path_label "$source_root" raycast-inline)" \
+  INTEGRATIONS_RAYCAST_INLINE_SOURCE_EXISTS="$([[ -f "$(integration_expected_source "$source_root" raycast-inline)" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_TOGGLE="$raycast_toggle" \
   INTEGRATIONS_RAYCAST_TOGGLE_EXISTS="$([[ -f "$raycast_toggle" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_TOGGLE_EXECUTABLE="$([[ -x "$raycast_toggle" ]] && echo true || echo false)" \
+  INTEGRATIONS_RAYCAST_TOGGLE_STATE="$(integration_adapter_state "$source_root" raycast-toggle "$raycast_toggle")" \
+  INTEGRATIONS_RAYCAST_TOGGLE_SOURCE="$(integration_adapter_source_path_label "$source_root" raycast-toggle)" \
+  INTEGRATIONS_RAYCAST_TOGGLE_SOURCE_EXISTS="$([[ -f "$(integration_expected_source "$source_root" raycast-toggle)" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_CANCEL="$raycast_cancel" \
   INTEGRATIONS_RAYCAST_CANCEL_EXISTS="$([[ -f "$raycast_cancel" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_CANCEL_EXECUTABLE="$([[ -x "$raycast_cancel" ]] && echo true || echo false)" \
+  INTEGRATIONS_RAYCAST_CANCEL_STATE="$(integration_adapter_state "$source_root" raycast-cancel "$raycast_cancel")" \
+  INTEGRATIONS_RAYCAST_CANCEL_SOURCE="$(integration_adapter_source_path_label "$source_root" raycast-cancel)" \
+  INTEGRATIONS_RAYCAST_CANCEL_SOURCE_EXISTS="$([[ -f "$(integration_expected_source "$source_root" raycast-cancel)" ]] && echo true || echo false)" \
   python3 - <<'PYEOF'
 import json
 import os
@@ -438,6 +503,9 @@ payload = {
         "exists": b("INTEGRATIONS_BINARY_EXISTS"),
     },
     "config_dir": os.environ.get("INTEGRATIONS_CONFIG_DIR", ""),
+    "source": {
+        "root": os.environ.get("INTEGRATIONS_SOURCE_ROOT", ""),
+    },
     "receipt": {
         "path": os.environ.get("INTEGRATIONS_RECEIPT_PATH", ""),
         "exists": b("INTEGRATIONS_RECEIPT_EXISTS"),
@@ -452,6 +520,9 @@ payload = {
             "path": os.environ.get("INTEGRATIONS_SWIFTBAR_PATH", ""),
             "exists": b("INTEGRATIONS_SWIFTBAR_EXISTS"),
             "executable": b("INTEGRATIONS_SWIFTBAR_EXECUTABLE"),
+            "state": os.environ.get("INTEGRATIONS_SWIFTBAR_STATE", ""),
+            "source_path": os.environ.get("INTEGRATIONS_SWIFTBAR_SOURCE", ""),
+            "source_exists": b("INTEGRATIONS_SWIFTBAR_SOURCE_EXISTS"),
         },
     },
     "raycast": {
@@ -461,18 +532,27 @@ payload = {
                 "path": os.environ.get("INTEGRATIONS_RAYCAST_INLINE", ""),
                 "exists": b("INTEGRATIONS_RAYCAST_INLINE_EXISTS"),
                 "executable": b("INTEGRATIONS_RAYCAST_INLINE_EXECUTABLE"),
+                "state": os.environ.get("INTEGRATIONS_RAYCAST_INLINE_STATE", ""),
+                "source_path": os.environ.get("INTEGRATIONS_RAYCAST_INLINE_SOURCE", ""),
+                "source_exists": b("INTEGRATIONS_RAYCAST_INLINE_SOURCE_EXISTS"),
             },
             {
                 "name": "tmux-toggle",
                 "path": os.environ.get("INTEGRATIONS_RAYCAST_TOGGLE", ""),
                 "exists": b("INTEGRATIONS_RAYCAST_TOGGLE_EXISTS"),
                 "executable": b("INTEGRATIONS_RAYCAST_TOGGLE_EXECUTABLE"),
+                "state": os.environ.get("INTEGRATIONS_RAYCAST_TOGGLE_STATE", ""),
+                "source_path": os.environ.get("INTEGRATIONS_RAYCAST_TOGGLE_SOURCE", ""),
+                "source_exists": b("INTEGRATIONS_RAYCAST_TOGGLE_SOURCE_EXISTS"),
             },
             {
                 "name": "cancel",
                 "path": os.environ.get("INTEGRATIONS_RAYCAST_CANCEL", ""),
                 "exists": b("INTEGRATIONS_RAYCAST_CANCEL_EXISTS"),
                 "executable": b("INTEGRATIONS_RAYCAST_CANCEL_EXECUTABLE"),
+                "state": os.environ.get("INTEGRATIONS_RAYCAST_CANCEL_STATE", ""),
+                "source_path": os.environ.get("INTEGRATIONS_RAYCAST_CANCEL_SOURCE", ""),
+                "source_exists": b("INTEGRATIONS_RAYCAST_CANCEL_SOURCE_EXISTS"),
             },
         ],
     },
@@ -525,15 +605,16 @@ manage_integrations() {
   raycast_cancel="$DICTATE_CONFIG_DIR/integrations/raycast/tmux-whisper-cancel.sh"
 
   local receipt_installed_at receipt_source receipt_ref receipt_commit
+  local receipt_bin_path source_root
   receipt_installed_at="$(integration_receipt_value installed_at "$receipt_path")"
   receipt_source="$(integration_receipt_value install_source "$receipt_path")"
   receipt_ref="$(integration_receipt_value repo_git_ref "$receipt_path")"
   receipt_commit="$(integration_receipt_value repo_git_commit "$receipt_path")"
+  receipt_bin_path="$(integration_receipt_value bin_path "$receipt_path")"
+  source_root="$(integration_source_root)"
 
   if [[ "$action" == "doctor" || "$action" == "repair" ]]; then
-    local receipt_bin_path source_root findings
-    receipt_bin_path="$(integration_receipt_value bin_path "$receipt_path")"
-    source_root="$(integration_source_root)"
+    local findings
     findings="$(integration_check_lines "$binary_path" "$receipt_path" "$swiftbar_path" \
       "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$receipt_bin_path" "$source_root")"
     if [[ "$action" == "repair" ]]; then
@@ -555,7 +636,7 @@ manage_integrations() {
   if [[ "$json_output" == "1" ]]; then
     integrations_status_json "$binary_path" "$receipt_path" "$swiftbar_path" \
       "$raycast_inline" "$raycast_toggle" "$raycast_cancel" \
-      "$receipt_installed_at" "$receipt_source" "$receipt_ref" "$receipt_commit"
+      "$receipt_installed_at" "$receipt_source" "$receipt_ref" "$receipt_commit" "$source_root"
     return 0
   fi
 
@@ -569,15 +650,24 @@ manage_integrations() {
   if [[ -n "$receipt_ref" || -n "$receipt_commit" ]]; then
     echo "  installed_ref: ${receipt_ref:-unknown} ${receipt_commit:-}"
   fi
+  echo "  source: ${source_root:-unavailable}"
   echo ""
   echo "SwiftBar:"
   echo "  enabled: $([[ "${CFG_SWIFTBAR_ENABLED:-1}" == "1" ]] && echo "ON" || echo "OFF")"
   echo "  plugin: $swiftbar_path ($(integration_path_executable_label "$swiftbar_path"))"
+  echo "  plugin state: $(integration_adapter_state "$source_root" swiftbar "$swiftbar_path")"
+  echo "  plugin source: $(integration_adapter_source_path_label "$source_root" swiftbar)"
   echo ""
   echo "Raycast:"
   echo "  inline: $raycast_inline ($(integration_path_executable_label "$raycast_inline"))"
+  echo "  inline state: $(integration_adapter_state "$source_root" raycast-inline "$raycast_inline")"
+  echo "  inline source: $(integration_adapter_source_path_label "$source_root" raycast-inline)"
   echo "  tmux-toggle: $raycast_toggle ($(integration_path_executable_label "$raycast_toggle"))"
+  echo "  tmux-toggle state: $(integration_adapter_state "$source_root" raycast-toggle "$raycast_toggle")"
+  echo "  tmux-toggle source: $(integration_adapter_source_path_label "$source_root" raycast-toggle)"
   echo "  cancel: $raycast_cancel ($(integration_path_executable_label "$raycast_cancel"))"
+  echo "  cancel state: $(integration_adapter_state "$source_root" raycast-cancel "$raycast_cancel")"
+  echo "  cancel source: $(integration_adapter_source_path_label "$source_root" raycast-cancel)"
   echo ""
   echo "Next:"
   echo "  tmux-whisper integrations doctor"
