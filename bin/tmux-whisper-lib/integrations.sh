@@ -31,6 +31,7 @@ integration_receipt_value() {
       install_source) printf '%s\n' "${install_source:-}" ;;
       repo_git_ref) printf '%s\n' "${repo_git_ref:-}" ;;
       repo_git_commit) printf '%s\n' "${repo_git_commit:-}" ;;
+      repo_root) printf '%s\n' "${repo_root:-}" ;;
       bin_path) printf '%s\n' "${bin_path:-}" ;;
       swiftbar_plugin) printf '%s\n' "${swiftbar_plugin:-}" ;;
       *) ;;
@@ -58,6 +59,182 @@ integration_swiftbar_plugin_path() {
   else
     printf '%s\n' "${DICTATE_SWIFTBAR_PLUGIN_PATH:-$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh}"
   fi
+}
+
+integration_source_root() {
+  local receipt_root candidate
+  receipt_root="$(integration_receipt_value repo_root)"
+  if [[ -n "$receipt_root" && -d "$receipt_root/integrations" ]]; then
+    printf '%s\n' "$receipt_root"
+    return 0
+  fi
+
+  candidate="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || true)"
+  if [[ -n "$candidate" && -d "$candidate/integrations" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  printf '%s\n' ""
+}
+
+integration_expected_source() {
+  local source_root="$1"
+  local adapter="$2"
+  [[ -n "$source_root" ]] || return 0
+  case "$adapter" in
+    raycast-inline) printf '%s\n' "$source_root/integrations/raycast/tmux-whisper-inline.sh" ;;
+    raycast-toggle) printf '%s\n' "$source_root/integrations/raycast/tmux-whisper-toggle.sh" ;;
+    raycast-cancel) printf '%s\n' "$source_root/integrations/raycast/tmux-whisper-cancel.sh" ;;
+    swiftbar) printf '%s\n' "$source_root/integrations/tmux-whisper-status.0.2s.sh" ;;
+    *) ;;
+  esac
+}
+
+integration_check_lines() {
+  local binary_path="$1"
+  local receipt_path="$2"
+  local swiftbar_path="$3"
+  local raycast_inline="$4"
+  local raycast_toggle="$5"
+  local raycast_cancel="$6"
+  local receipt_bin_path="$7"
+  local source_root="$8"
+
+  if [[ ! -x "$binary_path" ]]; then
+    printf '%s\n' "issue|binary|tmux-whisper binary is not executable at $binary_path"
+  fi
+  if [[ ! -r "$receipt_path" ]]; then
+    printf '%s\n' "issue|receipt|install receipt is missing or unreadable at $receipt_path"
+  fi
+  if [[ -n "$receipt_bin_path" && "$receipt_bin_path" != "$binary_path" ]]; then
+    printf '%s\n' "warn|receipt|install receipt binary points at $receipt_bin_path but PATH resolves $binary_path"
+  fi
+
+  if [[ ! -f "$swiftbar_path" ]]; then
+    printf '%s\n' "issue|swiftbar|SwiftBar plugin is missing at $swiftbar_path"
+  elif [[ ! -x "$swiftbar_path" ]]; then
+    printf '%s\n' "issue|swiftbar|SwiftBar plugin is not executable at $swiftbar_path"
+  fi
+
+  local name path
+  for name in inline tmux-toggle cancel; do
+    case "$name" in
+      inline) path="$raycast_inline" ;;
+      tmux-toggle) path="$raycast_toggle" ;;
+      cancel) path="$raycast_cancel" ;;
+    esac
+    if [[ ! -f "$path" ]]; then
+      printf '%s\n' "issue|raycast|Raycast $name script is missing at $path"
+    elif [[ ! -x "$path" ]]; then
+      printf '%s\n' "issue|raycast|Raycast $name script is not executable at $path"
+    fi
+  done
+
+  if [[ -z "$source_root" ]]; then
+    printf '%s\n' "warn|source|adapter source files were not found; run a channel refresh if repair is needed"
+  fi
+}
+
+integration_issue_count() {
+  local lines="$1"
+  printf '%s\n' "$lines" | awk -F'|' '$1 == "issue" { count++ } END { print count + 0 }'
+}
+
+integration_warn_count() {
+  local lines="$1"
+  printf '%s\n' "$lines" | awk -F'|' '$1 == "warn" { count++ } END { print count + 0 }'
+}
+
+integration_emit_doctor_text() {
+  local lines="$1"
+  local binary_path="$2"
+  local receipt_path="$3"
+  local swiftbar_path="$4"
+  local raycast_inline="$5"
+  local raycast_toggle="$6"
+  local raycast_cancel="$7"
+  local source_root="$8"
+  local issue_count warn_count
+  issue_count="$(integration_issue_count "$lines")"
+  warn_count="$(integration_warn_count "$lines")"
+
+  echo "Integration doctor:"
+  if [[ "$issue_count" -eq 0 ]]; then
+    echo "  status: ok ($warn_count warnings)"
+  else
+    echo "  status: needs repair ($issue_count issues, $warn_count warnings)"
+  fi
+  echo "  binary: $binary_path ($(integration_path_executable_label "$binary_path"))"
+  echo "  install receipt: $receipt_path ($(integration_path_exists_label "$receipt_path"))"
+  echo "  source: ${source_root:-unavailable}"
+  echo ""
+  echo "SwiftBar:"
+  echo "  enabled: $([[ "${CFG_SWIFTBAR_ENABLED:-1}" == "1" ]] && echo "ON" || echo "OFF")"
+  echo "  plugin: $swiftbar_path ($(integration_path_executable_label "$swiftbar_path"))"
+  echo ""
+  echo "Raycast:"
+  echo "  inline: $raycast_inline ($(integration_path_executable_label "$raycast_inline"))"
+  echo "  tmux-toggle: $raycast_toggle ($(integration_path_executable_label "$raycast_toggle"))"
+  echo "  cancel: $raycast_cancel ($(integration_path_executable_label "$raycast_cancel"))"
+  echo ""
+  if [[ -n "$lines" ]]; then
+    echo "Findings:"
+    printf '%s\n' "$lines" | while IFS='|' read -r severity component message; do
+      [[ -n "$severity" ]] || continue
+      echo "  - $severity/$component: $message"
+    done
+  else
+    echo "Findings:"
+    echo "  - ok: integration adapters are present and executable"
+  fi
+  echo ""
+  echo "Next:"
+  echo "  tmux-whisper integrations repair --dry-run"
+  echo "  ./install.sh --force  # full local refresh fallback"
+}
+
+integration_emit_repair_dry_run_text() {
+  local lines="$1"
+  local swiftbar_path="$2"
+  local raycast_inline="$3"
+  local raycast_toggle="$4"
+  local raycast_cancel="$5"
+  local source_root="$6"
+  local issue_count warn_count
+  issue_count="$(integration_issue_count "$lines")"
+  warn_count="$(integration_warn_count "$lines")"
+
+  echo "Integration repair dry run:"
+  echo "  files changed: 0"
+  echo "  source: ${source_root:-unavailable}"
+  echo "  findings: $issue_count issues, $warn_count warnings"
+  echo ""
+  echo "Adapter-only refresh plan:"
+
+  local src
+  src="$(integration_expected_source "$source_root" raycast-inline)"
+  echo "  - would install Raycast inline: ${src:-<source unavailable>} -> $raycast_inline"
+  src="$(integration_expected_source "$source_root" raycast-toggle)"
+  echo "  - would install Raycast tmux-toggle: ${src:-<source unavailable>} -> $raycast_toggle"
+  src="$(integration_expected_source "$source_root" raycast-cancel)"
+  echo "  - would install Raycast cancel: ${src:-<source unavailable>} -> $raycast_cancel"
+  src="$(integration_expected_source "$source_root" swiftbar)"
+  echo "  - would install SwiftBar plugin: ${src:-<source unavailable>} -> $swiftbar_path"
+  echo "  - would ensure executable bits on installed adapter scripts"
+  echo ""
+  if [[ -n "$lines" ]]; then
+    echo "Findings to address:"
+    printf '%s\n' "$lines" | while IFS='|' read -r severity component message; do
+      [[ -n "$severity" ]] || continue
+      echo "  - $severity/$component: $message"
+    done
+  else
+    echo "Findings to address:"
+    echo "  - ok: no adapter repair currently needed"
+  fi
+  echo ""
+  echo "Current safe fallback: ./install.sh --force"
 }
 
 integrations_status_json() {
@@ -146,7 +323,11 @@ payload = {
             },
         ],
     },
-    "next": ["run ./install.sh --force to refresh installed adapters"],
+    "next": [
+        "run tmux-whisper integrations doctor to diagnose adapter lifecycle drift",
+        "run tmux-whisper integrations repair --dry-run to preview adapter-only refresh actions",
+        "run ./install.sh --force for the current full local refresh fallback"
+    ],
 }
 print(json.dumps(payload, sort_keys=True))
 PYEOF
@@ -156,23 +337,32 @@ manage_integrations() {
   local action="${1:-status}"
   shift 2>/dev/null || true
   local json_output="0"
+  local dry_run="0"
   case "$action" in
-    ""|show|status) ;;
+    ""|show|status|doctor) ;;
     --json)
       json_output="1"
       action="status"
       ;;
+    repair) ;;
     *)
-      die "usage: tmux-whisper integrations [status|--json]"
+      die "usage: tmux-whisper integrations [status|doctor|repair --dry-run|--json]"
       ;;
   esac
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --json) json_output="1" ;;
-      *) die "usage: tmux-whisper integrations [status|--json]" ;;
+      --dry-run) dry_run="1" ;;
+      *) die "usage: tmux-whisper integrations [status|doctor|repair --dry-run|--json]" ;;
     esac
     shift
   done
+  if [[ "$action" == "repair" && "$dry_run" != "1" ]]; then
+    die "usage: tmux-whisper integrations repair --dry-run"
+  fi
+  if [[ "$json_output" == "1" && "$action" != "status" ]]; then
+    die "usage: tmux-whisper integrations [status|--json]"
+  fi
 
   local binary_path receipt_path swiftbar_path
   local raycast_inline raycast_toggle raycast_cancel
@@ -188,6 +378,22 @@ manage_integrations() {
   receipt_source="$(integration_receipt_value install_source "$receipt_path")"
   receipt_ref="$(integration_receipt_value repo_git_ref "$receipt_path")"
   receipt_commit="$(integration_receipt_value repo_git_commit "$receipt_path")"
+
+  if [[ "$action" == "doctor" || "$action" == "repair" ]]; then
+    local receipt_bin_path source_root findings
+    receipt_bin_path="$(integration_receipt_value bin_path "$receipt_path")"
+    source_root="$(integration_source_root)"
+    findings="$(integration_check_lines "$binary_path" "$receipt_path" "$swiftbar_path" \
+      "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$receipt_bin_path" "$source_root")"
+    if [[ "$action" == "repair" ]]; then
+      integration_emit_repair_dry_run_text "$findings" "$swiftbar_path" \
+        "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$source_root"
+    else
+      integration_emit_doctor_text "$findings" "$binary_path" "$receipt_path" "$swiftbar_path" \
+        "$raycast_inline" "$raycast_toggle" "$raycast_cancel" "$source_root"
+    fi
+    return 0
+  fi
 
   if [[ "$json_output" == "1" ]]; then
     integrations_status_json "$binary_path" "$receipt_path" "$swiftbar_path" \
@@ -216,5 +422,8 @@ manage_integrations() {
   echo "  tmux-toggle: $raycast_toggle ($(integration_path_executable_label "$raycast_toggle"))"
   echo "  cancel: $raycast_cancel ($(integration_path_executable_label "$raycast_cancel"))"
   echo ""
-  echo "Next: run ./install.sh --force to refresh installed adapters"
+  echo "Next:"
+  echo "  tmux-whisper integrations doctor"
+  echo "  tmux-whisper integrations repair --dry-run"
+  echo "  ./install.sh --force  # full local refresh fallback"
 }

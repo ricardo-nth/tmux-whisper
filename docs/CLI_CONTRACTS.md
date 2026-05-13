@@ -43,6 +43,10 @@ These commands are safe to build integrations on:
 
 These are useful but not yet promised as stable contracts:
 
+- `tmux-whisper integrations doctor`
+  - Human-readable integration lifecycle diagnostics for installed binary, receipt, Raycast scripts, SwiftBar plugin, and executable bits.
+- `tmux-whisper integrations repair --dry-run`
+  - Human-readable adapter-only repair preview. This intentionally does not mutate files yet.
 - `tmux-whisper logs follow ... --json`
   - Streaming newline-delimited JSON events. Treat event names as provisional.
 - `tmux-whisper watch ...`

@@ -267,6 +267,17 @@ If needed, set `DICTATE_INSTALL_SWIFTBAR=0` to skip plugin install.
 
 Raycast and SwiftBar often run with a minimal shell environment. If you rely on `CEREBRAS_API_KEY`, custom PATH entries, or env-based overrides, put them in `~/.zshenv` so the integrations can see them consistently.
 
+### Integration lifecycle checks
+
+`tmux-whisper integrations` inspects the installed adapter surface. For v0.7 integration-platform work, lifecycle checks start in dry-run mode:
+
+```bash
+tmux-whisper integrations doctor
+tmux-whisper integrations repair --dry-run
+```
+
+`doctor` checks the installed binary, install receipt, Raycast scripts, SwiftBar plugin, and executable bits. `repair --dry-run` shows the adapter-only refresh plan without changing files; use `./install.sh --force` as the current full local refresh fallback.
+
 ## Sounds
 
 Bundled sample sounds live in `assets/sounds/dictate/` and install by default to:

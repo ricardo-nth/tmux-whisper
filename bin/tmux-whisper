@@ -72,6 +72,8 @@ DIAGNOSTICS:
 
 INTEGRATIONS:
   tmux-whisper integrations [--json] # inspect installed SwiftBar/Raycast adapters
+  tmux-whisper integrations doctor   # diagnose adapter lifecycle drift
+  tmux-whisper integrations repair --dry-run # preview adapter-only repair actions
   tmux-whisper swiftbar           # show SwiftBar runtime integration state
   tmux-whisper swiftbar on|off    # enable/disable SwiftBar runtime integration
   tmux-whisper swiftbar toggle    # toggle SwiftBar runtime integration

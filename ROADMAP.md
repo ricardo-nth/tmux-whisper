@@ -73,13 +73,15 @@ Success criteria:
 
 Focus: integrations as first-class, versioned surfaces.
 
+- Current starting point: `v0.6.0` is stable; v0.7 starts with dry-run lifecycle diagnostics before live adapter repair.
 - Formalize Raycast and SwiftBar integration lifecycle/versioning.
-- Add setup/update helpers for integrations.
+- Add setup/update helpers for integrations, beginning with `tmux-whisper integrations doctor` and `tmux-whisper integrations repair --dry-run`.
 - Document integration compatibility matrix and support boundaries.
 
 Success criteria:
 
 - Integrations can be updated confidently without core regressions.
+- Adapter refresh plans can be inspected safely before they mutate Raycast or SwiftBar files.
 
 ## v1.0.0 - Stable Platform Release
 
