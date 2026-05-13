@@ -507,6 +507,7 @@ installed_at='2026-05-11T00:00:00Z'
 install_source='test'
 repo_git_ref='architecture-test'
 repo_git_commit='abc123'
+repo_root='$ROOT'
 bin_path='$INTEGRATIONS_BIN/tmux-whisper'
 config_dir='$INTEGRATIONS_CFG'
 swiftbar_plugin='$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh'
@@ -517,6 +518,7 @@ assert_contains "integrations_status_receipt" "$integrations_text" "install rece
 assert_contains "integrations_status_swiftbar_off" "$integrations_text" "enabled: OFF"
 assert_contains "integrations_status_swiftbar_path" "$integrations_text" "plugin: $INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh (executable)"
 assert_contains "integrations_status_raycast_inline" "$integrations_text" "inline: $INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-inline.sh (executable)"
+assert_contains "integrations_status_next_doctor" "$integrations_text" "tmux-whisper integrations doctor"
 integrations_json="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations --json)"
 assert_json_equals "integrations_json_command" "$integrations_json" "command" "integrations"
 assert_json_equals "integrations_json_receipt_exists" "$integrations_json" "receipt.exists" "true"
@@ -525,6 +527,22 @@ assert_json_equals "integrations_json_swiftbar_enabled" "$integrations_json" "sw
 assert_json_equals "integrations_json_swiftbar_executable" "$integrations_json" "swiftbar.plugin.executable" "true"
 assert_json_equals "integrations_json_raycast_inline" "$integrations_json" "raycast.scripts.0.name" "inline"
 assert_json_equals "integrations_json_raycast_inline_executable" "$integrations_json" "raycast.scripts.0.executable" "true"
+assert_json_equals "integrations_json_next_doctor" "$integrations_json" "next.0" "run tmux-whisper integrations doctor to diagnose adapter lifecycle drift"
+integrations_doctor="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations doctor)"
+assert_contains "integrations_doctor_header" "$integrations_doctor" "Integration doctor:"
+assert_contains "integrations_doctor_ok" "$integrations_doctor" "status: ok (0 warnings)"
+assert_contains "integrations_doctor_source" "$integrations_doctor" "source: $ROOT"
+assert_contains "integrations_doctor_swiftbar" "$integrations_doctor" "plugin: $INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh (executable)"
+assert_contains "integrations_doctor_next_repair" "$integrations_doctor" "tmux-whisper integrations repair --dry-run"
+integrations_repair_dry_run="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations repair --dry-run)"
+assert_contains "integrations_repair_dry_run_header" "$integrations_repair_dry_run" "Integration repair dry run:"
+assert_contains "integrations_repair_dry_run_no_mutation" "$integrations_repair_dry_run" "files changed: 0"
+assert_contains "integrations_repair_dry_run_raycast_plan" "$integrations_repair_dry_run" "would install Raycast inline: $ROOT/integrations/raycast/tmux-whisper-inline.sh -> $INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-inline.sh"
+assert_contains "integrations_repair_dry_run_swiftbar_plan" "$integrations_repair_dry_run" "would install SwiftBar plugin: $ROOT/integrations/tmux-whisper-status.0.2s.sh -> $INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
+chmod -x "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-cancel.sh"
+integrations_doctor_broken="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations doctor)"
+assert_contains "integrations_doctor_broken_status" "$integrations_doctor_broken" "status: needs repair"
+assert_contains "integrations_doctor_broken_cancel" "$integrations_doctor_broken" "Raycast cancel script is not executable"
 
 # --- Regression 9: script-level behavior for missing tmux-whisper binary is explicit. ---
 INLINE_HOME="$TMP_ROOT/home-inline"
