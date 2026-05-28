@@ -5,6 +5,8 @@
 # @raycast.mode silent
 # @raycast.packageName Tmux Whisper
 # @raycast.description Toggle recording → paste+Enter into tmux pane
+# tmux-whisper.adapter: raycast-toggle
+# tmux-whisper.adapter-version: 1
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 export DICTATE_CLEAN=1

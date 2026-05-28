@@ -164,6 +164,37 @@ integration_adapter_source_path_label() {
   fi
 }
 
+integration_adapter_version() {
+  local path="$1"
+  local version=""
+  if [[ -r "$path" ]]; then
+    version="$(awk -F': ' '$1 == "# tmux-whisper.adapter-version" { print $2; exit }' "$path" 2>/dev/null || true)"
+  fi
+  if [[ -n "$version" ]]; then
+    printf '%s\n' "$version"
+  else
+    printf '%s\n' "unknown"
+  fi
+}
+
+integration_adapter_source_version() {
+  local source_root="$1"
+  local adapter="$2"
+  local src
+  src="$(integration_expected_source "$source_root" "$adapter")"
+  integration_adapter_version "$src"
+}
+
+integration_adapter_version_label() {
+  local path="$1"
+  local source_root="$2"
+  local adapter="$3"
+  local installed_version source_version
+  installed_version="$(integration_adapter_version "$path")"
+  source_version="$(integration_adapter_source_version "$source_root" "$adapter")"
+  printf '%s\n' "$installed_version (source: $source_version)"
+}
+
 integration_check_lines() {
   local binary_path="$1"
   local receipt_path="$2"
@@ -260,17 +291,21 @@ integration_emit_doctor_text() {
   echo "  enabled: $([[ "${CFG_SWIFTBAR_ENABLED:-1}" == "1" ]] && echo "ON" || echo "OFF")"
   echo "  plugin: $swiftbar_path ($(integration_path_executable_label "$swiftbar_path"))"
   echo "  plugin state: $(integration_adapter_state "$source_root" swiftbar "$swiftbar_path")"
+  echo "  plugin version: $(integration_adapter_version_label "$swiftbar_path" "$source_root" swiftbar)"
   echo "  plugin source: $(integration_adapter_source_path_label "$source_root" swiftbar)"
   echo ""
   echo "Raycast:"
   echo "  inline: $raycast_inline ($(integration_path_executable_label "$raycast_inline"))"
   echo "  inline state: $(integration_adapter_state "$source_root" raycast-inline "$raycast_inline")"
+  echo "  inline version: $(integration_adapter_version_label "$raycast_inline" "$source_root" raycast-inline)"
   echo "  inline source: $(integration_adapter_source_path_label "$source_root" raycast-inline)"
   echo "  tmux-toggle: $raycast_toggle ($(integration_path_executable_label "$raycast_toggle"))"
   echo "  tmux-toggle state: $(integration_adapter_state "$source_root" raycast-toggle "$raycast_toggle")"
+  echo "  tmux-toggle version: $(integration_adapter_version_label "$raycast_toggle" "$source_root" raycast-toggle)"
   echo "  tmux-toggle source: $(integration_adapter_source_path_label "$source_root" raycast-toggle)"
   echo "  cancel: $raycast_cancel ($(integration_path_executable_label "$raycast_cancel"))"
   echo "  cancel state: $(integration_adapter_state "$source_root" raycast-cancel "$raycast_cancel")"
+  echo "  cancel version: $(integration_adapter_version_label "$raycast_cancel" "$source_root" raycast-cancel)"
   echo "  cancel source: $(integration_adapter_source_path_label "$source_root" raycast-cancel)"
   echo ""
   if [[ -n "$lines" ]]; then
@@ -488,25 +523,33 @@ integrations_status_json() {
   INTEGRATIONS_SWIFTBAR_EXISTS="$([[ -f "$swiftbar_path" ]] && echo true || echo false)" \
   INTEGRATIONS_SWIFTBAR_EXECUTABLE="$([[ -x "$swiftbar_path" ]] && echo true || echo false)" \
   INTEGRATIONS_SWIFTBAR_STATE="$(integration_adapter_state "$source_root" swiftbar "$swiftbar_path")" \
+  INTEGRATIONS_SWIFTBAR_VERSION="$(integration_adapter_version "$swiftbar_path")" \
   INTEGRATIONS_SWIFTBAR_SOURCE="$(integration_adapter_source_path_label "$source_root" swiftbar)" \
+  INTEGRATIONS_SWIFTBAR_SOURCE_VERSION="$(integration_adapter_source_version "$source_root" swiftbar)" \
   INTEGRATIONS_SWIFTBAR_SOURCE_EXISTS="$([[ -f "$(integration_expected_source "$source_root" swiftbar)" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_INLINE="$raycast_inline" \
   INTEGRATIONS_RAYCAST_INLINE_EXISTS="$([[ -f "$raycast_inline" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_INLINE_EXECUTABLE="$([[ -x "$raycast_inline" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_INLINE_STATE="$(integration_adapter_state "$source_root" raycast-inline "$raycast_inline")" \
+  INTEGRATIONS_RAYCAST_INLINE_VERSION="$(integration_adapter_version "$raycast_inline")" \
   INTEGRATIONS_RAYCAST_INLINE_SOURCE="$(integration_adapter_source_path_label "$source_root" raycast-inline)" \
+  INTEGRATIONS_RAYCAST_INLINE_SOURCE_VERSION="$(integration_adapter_source_version "$source_root" raycast-inline)" \
   INTEGRATIONS_RAYCAST_INLINE_SOURCE_EXISTS="$([[ -f "$(integration_expected_source "$source_root" raycast-inline)" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_TOGGLE="$raycast_toggle" \
   INTEGRATIONS_RAYCAST_TOGGLE_EXISTS="$([[ -f "$raycast_toggle" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_TOGGLE_EXECUTABLE="$([[ -x "$raycast_toggle" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_TOGGLE_STATE="$(integration_adapter_state "$source_root" raycast-toggle "$raycast_toggle")" \
+  INTEGRATIONS_RAYCAST_TOGGLE_VERSION="$(integration_adapter_version "$raycast_toggle")" \
   INTEGRATIONS_RAYCAST_TOGGLE_SOURCE="$(integration_adapter_source_path_label "$source_root" raycast-toggle)" \
+  INTEGRATIONS_RAYCAST_TOGGLE_SOURCE_VERSION="$(integration_adapter_source_version "$source_root" raycast-toggle)" \
   INTEGRATIONS_RAYCAST_TOGGLE_SOURCE_EXISTS="$([[ -f "$(integration_expected_source "$source_root" raycast-toggle)" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_CANCEL="$raycast_cancel" \
   INTEGRATIONS_RAYCAST_CANCEL_EXISTS="$([[ -f "$raycast_cancel" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_CANCEL_EXECUTABLE="$([[ -x "$raycast_cancel" ]] && echo true || echo false)" \
   INTEGRATIONS_RAYCAST_CANCEL_STATE="$(integration_adapter_state "$source_root" raycast-cancel "$raycast_cancel")" \
+  INTEGRATIONS_RAYCAST_CANCEL_VERSION="$(integration_adapter_version "$raycast_cancel")" \
   INTEGRATIONS_RAYCAST_CANCEL_SOURCE="$(integration_adapter_source_path_label "$source_root" raycast-cancel)" \
+  INTEGRATIONS_RAYCAST_CANCEL_SOURCE_VERSION="$(integration_adapter_source_version "$source_root" raycast-cancel)" \
   INTEGRATIONS_RAYCAST_CANCEL_SOURCE_EXISTS="$([[ -f "$(integration_expected_source "$source_root" raycast-cancel)" ]] && echo true || echo false)" \
   python3 - <<'PYEOF'
 import json
@@ -540,7 +583,9 @@ payload = {
             "exists": b("INTEGRATIONS_SWIFTBAR_EXISTS"),
             "executable": b("INTEGRATIONS_SWIFTBAR_EXECUTABLE"),
             "state": os.environ.get("INTEGRATIONS_SWIFTBAR_STATE", ""),
+            "version": os.environ.get("INTEGRATIONS_SWIFTBAR_VERSION", ""),
             "source_path": os.environ.get("INTEGRATIONS_SWIFTBAR_SOURCE", ""),
+            "source_version": os.environ.get("INTEGRATIONS_SWIFTBAR_SOURCE_VERSION", ""),
             "source_exists": b("INTEGRATIONS_SWIFTBAR_SOURCE_EXISTS"),
         },
     },
@@ -552,7 +597,9 @@ payload = {
                 "exists": b("INTEGRATIONS_RAYCAST_INLINE_EXISTS"),
                 "executable": b("INTEGRATIONS_RAYCAST_INLINE_EXECUTABLE"),
                 "state": os.environ.get("INTEGRATIONS_RAYCAST_INLINE_STATE", ""),
+                "version": os.environ.get("INTEGRATIONS_RAYCAST_INLINE_VERSION", ""),
                 "source_path": os.environ.get("INTEGRATIONS_RAYCAST_INLINE_SOURCE", ""),
+                "source_version": os.environ.get("INTEGRATIONS_RAYCAST_INLINE_SOURCE_VERSION", ""),
                 "source_exists": b("INTEGRATIONS_RAYCAST_INLINE_SOURCE_EXISTS"),
             },
             {
@@ -561,7 +608,9 @@ payload = {
                 "exists": b("INTEGRATIONS_RAYCAST_TOGGLE_EXISTS"),
                 "executable": b("INTEGRATIONS_RAYCAST_TOGGLE_EXECUTABLE"),
                 "state": os.environ.get("INTEGRATIONS_RAYCAST_TOGGLE_STATE", ""),
+                "version": os.environ.get("INTEGRATIONS_RAYCAST_TOGGLE_VERSION", ""),
                 "source_path": os.environ.get("INTEGRATIONS_RAYCAST_TOGGLE_SOURCE", ""),
+                "source_version": os.environ.get("INTEGRATIONS_RAYCAST_TOGGLE_SOURCE_VERSION", ""),
                 "source_exists": b("INTEGRATIONS_RAYCAST_TOGGLE_SOURCE_EXISTS"),
             },
             {
@@ -570,7 +619,9 @@ payload = {
                 "exists": b("INTEGRATIONS_RAYCAST_CANCEL_EXISTS"),
                 "executable": b("INTEGRATIONS_RAYCAST_CANCEL_EXECUTABLE"),
                 "state": os.environ.get("INTEGRATIONS_RAYCAST_CANCEL_STATE", ""),
+                "version": os.environ.get("INTEGRATIONS_RAYCAST_CANCEL_VERSION", ""),
                 "source_path": os.environ.get("INTEGRATIONS_RAYCAST_CANCEL_SOURCE", ""),
+                "source_version": os.environ.get("INTEGRATIONS_RAYCAST_CANCEL_SOURCE_VERSION", ""),
                 "source_exists": b("INTEGRATIONS_RAYCAST_CANCEL_SOURCE_EXISTS"),
             },
         ],
@@ -675,17 +726,21 @@ manage_integrations() {
   echo "  enabled: $([[ "${CFG_SWIFTBAR_ENABLED:-1}" == "1" ]] && echo "ON" || echo "OFF")"
   echo "  plugin: $swiftbar_path ($(integration_path_executable_label "$swiftbar_path"))"
   echo "  plugin state: $(integration_adapter_state "$source_root" swiftbar "$swiftbar_path")"
+  echo "  plugin version: $(integration_adapter_version_label "$swiftbar_path" "$source_root" swiftbar)"
   echo "  plugin source: $(integration_adapter_source_path_label "$source_root" swiftbar)"
   echo ""
   echo "Raycast:"
   echo "  inline: $raycast_inline ($(integration_path_executable_label "$raycast_inline"))"
   echo "  inline state: $(integration_adapter_state "$source_root" raycast-inline "$raycast_inline")"
+  echo "  inline version: $(integration_adapter_version_label "$raycast_inline" "$source_root" raycast-inline)"
   echo "  inline source: $(integration_adapter_source_path_label "$source_root" raycast-inline)"
   echo "  tmux-toggle: $raycast_toggle ($(integration_path_executable_label "$raycast_toggle"))"
   echo "  tmux-toggle state: $(integration_adapter_state "$source_root" raycast-toggle "$raycast_toggle")"
+  echo "  tmux-toggle version: $(integration_adapter_version_label "$raycast_toggle" "$source_root" raycast-toggle)"
   echo "  tmux-toggle source: $(integration_adapter_source_path_label "$source_root" raycast-toggle)"
   echo "  cancel: $raycast_cancel ($(integration_path_executable_label "$raycast_cancel"))"
   echo "  cancel state: $(integration_adapter_state "$source_root" raycast-cancel "$raycast_cancel")"
+  echo "  cancel version: $(integration_adapter_version_label "$raycast_cancel" "$source_root" raycast-cancel)"
   echo "  cancel source: $(integration_adapter_source_path_label "$source_root" raycast-cancel)"
   echo ""
   echo "Next:"

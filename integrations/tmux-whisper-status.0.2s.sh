@@ -4,6 +4,8 @@
 # <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
 # <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
 # <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
+# tmux-whisper.adapter: swiftbar
+# tmux-whisper.adapter-version: 1
 
 STATE_FILE="${DICTATE_STATE_FILE:-/tmp/whisper-dictate.state}"
 INLINE_STATE="${DICTATE_INLINE_STATE_FILE:-/tmp/whisper-dictate-inline.state}"
