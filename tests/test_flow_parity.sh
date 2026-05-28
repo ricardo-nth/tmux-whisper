@@ -84,6 +84,45 @@ assert_equals() {
   pass "$name"
 }
 
+assert_number_ge() {
+  local name="$1"
+  local actual="$2"
+  local expected="$3"
+  if (( actual < expected )); then
+    echo "Expected >= $expected" >&2
+    echo "Actual:   $actual" >&2
+    fail "$name"
+  fi
+  pass "$name"
+}
+
+assert_refresh_count_at_least() {
+  local name="$1"
+  local expected="$2"
+  local actual=0
+  if [[ -f "${DICTATE_SWIFTBAR_REFRESH_LOG:-}" ]]; then
+    actual="$(grep -c 'refresh plugin=tmux-whisper-status.0.2s.sh' "$DICTATE_SWIFTBAR_REFRESH_LOG" 2>/dev/null || echo 0)"
+  fi
+  assert_number_ge "$name" "$actual" "$expected"
+}
+
+wait_for_refresh_count_at_least() {
+  local expected="$1"
+  local tries="${2:-120}"
+  local i actual
+  for ((i = 0; i < tries; i++)); do
+    actual=0
+    if [[ -f "${DICTATE_SWIFTBAR_REFRESH_LOG:-}" ]]; then
+      actual="$(grep -c 'refresh plugin=tmux-whisper-status.0.2s.sh' "$DICTATE_SWIFTBAR_REFRESH_LOG" 2>/dev/null || echo 0)"
+    fi
+    if (( actual >= expected )); then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
 wait_for_file_contains() {
   local file="$1"
   local needle="$2"
@@ -468,11 +507,13 @@ setup_case() {
   export DICTATE_INLINE_STATE_FILE="$CASE_DIR/inline.state"
   export DICTATE_PROCESSING_DIR="$CASE_DIR/processing"
   export DICTATE_PROCESSED_FLAG="$CASE_DIR/processed.flag"
+  export DICTATE_CANCEL_FLAG="$CASE_DIR/cancelled.flag"
   export DICTATE_PROCESSING_LONG_FLAG="$CASE_DIR/processing-long.flag"
   export DICTATE_TMPDIR="$CASE_DIR/tmp"
   export DICTATE_RECORD_LOG="$CASE_DIR/logs/record.log"
   export DICTATE_TRANSCRIBE_LOG="$CASE_DIR/logs/transcribe.log"
   export DICTATE_TMUX_JOBS_DIR="$CASE_DIR/tmux-jobs"
+  export DICTATE_SWIFTBAR_REFRESH_LOG="$CASE_DIR/logs/swiftbar-refresh.log"
   export DICTATE_TMUX_WHISPERD_BIN="$STUB_DIR/tmux-whisperd"
   export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
   export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/${socket_tag}.sock"
@@ -526,6 +567,7 @@ run_tmux_round() {
   local start_out
   start_out="$("$DICTATE_BIN" toggle)"
   assert_contains "tmux_start_${mode}" "$start_out" "RECORDING"
+  assert_refresh_count_at_least "tmux_start_refresh_${mode}" 1
   wait_for_file_contains "$DICTATE_TEST_FFMPEG_LOG" "aresample=async=1000:first_pts=0" || fail "tmux_capture_async_resampler_${mode}"
   pass "tmux_capture_async_resampler_${mode}"
 
@@ -541,8 +583,11 @@ run_tmux_round() {
   local stop_out
   stop_out="$("$DICTATE_BIN" stop)"
   assert_contains "tmux_stop_${mode}" "$stop_out" "STOPPED"
+  assert_refresh_count_at_least "tmux_stop_refresh_${mode}" 3
 
   wait_for_file_contains "$DICTATE_TEST_TMUX_LOG" "tmux delete-buffer" || fail "tmux_background_complete_${mode}"
+  wait_for_refresh_count_at_least 4 || fail "tmux_complete_refresh_wait_${mode}"
+  assert_refresh_count_at_least "tmux_complete_refresh_${mode}" 4
   wait_for_absent "$job_file" || fail "tmux_job_removed_${mode}"
 
   assert_file_contains "tmux_paste_${mode}" "$DICTATE_TEST_TMUX_LOG" "tmux paste-buffer"
@@ -617,6 +662,7 @@ run_inline_toggle_round() {
   local start_out
   start_out="$("$DICTATE_BIN" inline toggle)"
   assert_contains "inline_toggle_start" "$start_out" "RECORDING"
+  assert_refresh_count_at_least "inline_toggle_start_refresh" 1
   wait_for_file_contains "$DICTATE_TEST_FFMPEG_LOG" "aresample=async=1000:first_pts=0" || fail "inline_toggle_async_resampler"
   pass "inline_toggle_async_resampler"
 
@@ -626,9 +672,12 @@ run_inline_toggle_round() {
   local stop_out
   stop_out="$("$DICTATE_BIN" inline toggle)"
   assert_contains "inline_toggle_stop" "$stop_out" "STOPPED"
+  assert_refresh_count_at_least "inline_toggle_stop_refresh" 3
 
   wait_for_absent "$DICTATE_INLINE_STATE_FILE" || fail "inline_toggle_state_removed"
   wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "inline background transcript" || fail "inline_toggle_background_complete"
+  wait_for_refresh_count_at_least 4 || fail "inline_toggle_complete_refresh_wait"
+  assert_refresh_count_at_least "inline_toggle_complete_refresh" 4
   wait_for_file_contains "$DICTATE_TEST_OSASCRIPT_LOG" 'keystroke "v" using command down' || fail "inline_toggle_osascript_paste"
   pass "inline_toggle_osascript_paste"
   wait_for_file_contains "$DICTATE_TEST_OSASCRIPT_LOG" 'key code 36' || fail "inline_toggle_send_enter"
@@ -679,6 +728,21 @@ run_inline_toggle_process_sound_immediate_round() {
   stop_line="$(grep -n 'stop_recording:' "$inline_record_log" | head -n 1 | cut -d: -f1)"
   [[ -n "$process_line" && -n "$stop_line" && "$process_line" -lt "$stop_line" ]] || fail "inline_toggle_process_sound_before_grace"
   pass "inline_toggle_process_sound_before_grace"
+}
+
+run_inline_cancel_refresh_round() {
+  setup_case "inline-cancel-refresh"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+
+  local start_out cancel_out
+  start_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_cancel_refresh_start" "$start_out" "RECORDING"
+
+  cancel_out="$("$DICTATE_BIN" cancel)"
+  assert_contains "inline_cancel_refresh_cancelled" "$cancel_out" "CANCELLED"
+  [[ -f "${DICTATE_CANCEL_FLAG:-/tmp/dictate-cancelled.flag}" ]] || fail "inline_cancel_refresh_flag"
+  pass "inline_cancel_refresh_flag"
+  assert_refresh_count_at_least "inline_cancel_refresh_requested" 2
 }
 
 run_inline_processing_marker_until_paste_round() {
@@ -1107,6 +1171,7 @@ run_inline_auto_mode_round
 run_inline_toggle_round
 run_inline_toggle_grace_override_round
 run_inline_toggle_process_sound_immediate_round
+run_inline_cancel_refresh_round
 run_inline_processing_marker_immediate_after_stop_round
 run_inline_processing_marker_until_paste_round
 run_inline_audio_cache_note_round

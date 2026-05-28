@@ -86,6 +86,7 @@ state_file_summary_tsv() {
     st_state="active"
   else
     st_state="stale"
+    rm -f "$file" 2>/dev/null || true
   fi
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
@@ -1684,7 +1685,7 @@ status() {
 
   load_backend_runtime_cache >/dev/null 2>&1 || true
   local inline_state="$INLINE_STATE_FILE"
-  local proc_dir="/tmp/dictate-processing"
+  local proc_dir="${DICTATE_PROCESSING_DIR:-/tmp/dictate-processing}"
 
   onoff() {
     [[ "${1:-0}" == "1" ]] && echo "ON" || echo "OFF"
@@ -1735,6 +1736,7 @@ status() {
           live=$((live + 1))
         else
           stale=$((stale + 1))
+          rm -f "$pf" 2>/dev/null || true
         fi
       done
     fi

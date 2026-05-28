@@ -77,7 +77,9 @@ is_recent_file() {
   [[ -n "$f" && -n "$max_age_s" && -f "$f" ]] || return 1
   local now mtime age
   now="$(date +%s)"
-  mtime="$(stat -f %m "$f" 2>/dev/null || echo 0)"
+  mtime="$(stat -f %m "$f" 2>/dev/null || true)"
+  [[ "$mtime" =~ ^[0-9]+$ ]] || mtime="$(stat -c %Y "$f" 2>/dev/null || true)"
+  [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
   age=$((now - mtime))
   [[ "$age" -le "$max_age_s" ]]
 }
@@ -404,10 +406,10 @@ count_tmux_jobs() {
   echo "$rec $proc"
 }
 
-# Check if just processed (within last 1 second)
+# Check if just processed (within the brief handoff window)
 just_processed() {
   if [[ -f "$PROCESSED_FLAG" ]]; then
-    if is_recent_file "$PROCESSED_FLAG" 1; then
+    if is_recent_file "$PROCESSED_FLAG" 2; then
       return 0
     fi
     rm -f "$PROCESSED_FLAG" 2>/dev/null || true
@@ -415,10 +417,10 @@ just_processed() {
   return 1
 }
 
-# Check if just cancelled (within last 1 second)
+# Check if just cancelled (within the brief handoff window)
 just_cancelled() {
   if [[ -f "$CANCEL_FLAG" ]]; then
-    if is_recent_file "$CANCEL_FLAG" 1; then
+    if is_recent_file "$CANCEL_FLAG" 2; then
       return 0
     fi
     rm -f "$CANCEL_FLAG" 2>/dev/null || true
@@ -504,13 +506,20 @@ current_mode_icon="$(mode_icon "$saved_mode")"
 mode_display="$(mode_display_name "$saved_mode")"
 
 # Check if recording (either tmux or inline mode)
-if [[ -f "$STATE_FILE" ]] || [[ -f "$INLINE_STATE" ]]; then
-  source "$STATE_FILE" 2>/dev/null || source "$INLINE_STATE" 2>/dev/null
-  # SwiftBar may run before the recording process is fully “visible”; use a short
-  # grace window for freshly-written state files so the icon flips immediately.
-  state_seen="$STATE_FILE"
-  [[ -f "$INLINE_STATE" ]] && state_seen="$INLINE_STATE"
-  if kill -0 "$pid" 2>/dev/null || is_recent_file "$state_seen" 2; then
+recording_state_file=""
+for candidate_state in "$INLINE_STATE" "$STATE_FILE"; do
+  [[ -f "$candidate_state" ]] || continue
+  unset pid wav target_pane target_app model_id language
+  # shellcheck disable=SC1090
+  source "$candidate_state" 2>/dev/null || true
+  if kill -0 "${pid:-0}" 2>/dev/null || is_recent_file "$candidate_state" 2; then
+    recording_state_file="$candidate_state"
+    break
+  fi
+  rm -f "$candidate_state" "${wav:-}" 2>/dev/null || true
+done
+
+if [[ -n "$recording_state_file" ]]; then
     # Recording state
     compose_status_icon "$ICON_RECORDING" "$current_mode_icon"
     echo "---"
@@ -533,10 +542,6 @@ if [[ -f "$STATE_FILE" ]] || [[ -f "$INLINE_STATE" ]]; then
     echo "Stop Recording | bash=$DICTATE_BIN param1=stop terminal=false refresh=true"
     echo "Cancel Recording | bash=$DICTATE_BIN param1=cancel terminal=false refresh=true"
     exit 0
-  else
-    # Stale state file with no live pid; clean it up.
-    rm -f "$STATE_FILE" "$INLINE_STATE" 2>/dev/null || true
-  fi
 fi
 
 # Processing count can be mildly expensive; avoid unless needed.
