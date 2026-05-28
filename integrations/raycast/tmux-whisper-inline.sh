@@ -5,6 +5,8 @@
 # @raycast.mode silent
 # @raycast.packageName Tmux Whisper
 # @raycast.description Toggle recording → paste into frontmost app
+# tmux-whisper.adapter: raycast-inline
+# tmux-whisper.adapter-version: 1
 
 set -euo pipefail
 
