@@ -7,20 +7,23 @@
 # @raycast.description Cancel current recording (discard without pasting)
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
-SWIFTBAR_PLUGIN_ID="tmux-whisper-status.0.2s.sh"
 
 if [[ -f "$HOME/.zshenv" ]]; then
   source "$HOME/.zshenv"
 fi
 
 # Cancel any active inline recording
-STATE_FILE="/tmp/whisper-dictate-inline.state"
-TMUX_STATE="/tmp/whisper-dictate.state"
-CANCEL_FLAG="/tmp/dictate-cancelled.flag"
+STATE_FILE="${DICTATE_INLINE_STATE_FILE:-/tmp/whisper-dictate-inline.state}"
+TMUX_STATE="${DICTATE_STATE_FILE:-/tmp/whisper-dictate.state}"
+CANCEL_FLAG="${DICTATE_CANCEL_FLAG:-/tmp/dictate-cancelled.flag}"
+PROCESSING_DIR="${DICTATE_PROCESSING_DIR:-/tmp/dictate-processing}"
 SOUNDS_DIR="${SOUNDS_DIR:-$HOME/.local/share/sounds}"
 
 refresh_swiftbar() {
-  /usr/bin/open -g "swiftbar://refreshplugin?plugin=${SWIFTBAR_PLUGIN_ID}" 2>/dev/null || true
+  local dictate_bin="${DICTATE_BIN:-$(command -v tmux-whisper 2>/dev/null || true)}"
+  dictate_bin="${dictate_bin:-$HOME/.local/bin/tmux-whisper}"
+  [[ -x "$dictate_bin" ]] || return 0
+  "$dictate_bin" swiftbar refresh >/dev/null 2>&1 || true
 }
 
 cancel_recording() {
@@ -46,7 +49,7 @@ cancel_recording() {
   fi
   
   # Clear any processing markers
-  rm -f /tmp/dictate-processing/* 2>/dev/null || true
+  rm -f "$PROCESSING_DIR"/* 2>/dev/null || true
   
   # Set cancel flag for SwiftBar (shows cancel icon briefly)
   touch "$CANCEL_FLAG"

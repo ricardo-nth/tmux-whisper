@@ -650,10 +650,60 @@ mkdir -p "$TOGGLE_HOME"
 toggle_out="$(HOME="$TOGGLE_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" bash "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" 2>&1 || true)"
 assert_contains "raycast_toggle_missing_binary_runtime" "$toggle_out" "tmux-whisper-toggle: Tmux Whisper binary not found."
 
+RAYCAST_REFRESH_HOME="$TMP_ROOT/home-raycast-refresh"
+RAYCAST_REFRESH_BIN="$RAYCAST_REFRESH_HOME/.local/bin"
+RAYCAST_REFRESH_LOG="$TMP_ROOT/raycast-refresh.log"
+mkdir -p "$RAYCAST_REFRESH_BIN" "$RAYCAST_REFRESH_HOME/.config"
+cat >"$RAYCAST_REFRESH_BIN/tmux-whisper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${DICTATE_TEST_RAYCAST_REFRESH_LOG:?}"
+exit 0
+EOF
+chmod +x "$RAYCAST_REFRESH_BIN/tmux-whisper"
+HOME="$RAYCAST_REFRESH_HOME" PATH="$RAYCAST_REFRESH_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$RAYCAST_REFRESH_BIN/tmux-whisper" DICTATE_TEST_RAYCAST_REFRESH_LOG="$RAYCAST_REFRESH_LOG" bash "$ROOT/integrations/raycast/tmux-whisper-inline.sh" >/dev/null 2>&1
+assert_file_contains "raycast_inline_uses_cli_refresh" "$RAYCAST_REFRESH_LOG" "swiftbar refresh"
+
+RAYCAST_CANCEL_STATE="$TMP_ROOT/raycast-cancel-inline.state"
+printf 'pid=\nwav=%q\n' "$TMP_ROOT/raycast-cancel.wav" >"$RAYCAST_CANCEL_STATE"
+HOME="$RAYCAST_REFRESH_HOME" PATH="$RAYCAST_REFRESH_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$RAYCAST_REFRESH_BIN/tmux-whisper" DICTATE_INLINE_STATE_FILE="$RAYCAST_CANCEL_STATE" DICTATE_STATE_FILE="$TMP_ROOT/raycast-cancel-tmux.state" DICTATE_CANCEL_FLAG="$TMP_ROOT/raycast-cancel.flag" DICTATE_PROCESSING_DIR="$TMP_ROOT/raycast-processing" DICTATE_TEST_RAYCAST_REFRESH_LOG="$RAYCAST_REFRESH_LOG" bash "$ROOT/integrations/raycast/tmux-whisper-cancel.sh" >/dev/null 2>&1 || true
+assert_file_contains "raycast_cancel_uses_cli_refresh" "$RAYCAST_REFRESH_LOG" "swiftbar refresh"
+
 SWIFTBAR_HOME="$TMP_ROOT/home-swiftbar"
 mkdir -p "$SWIFTBAR_HOME"
 swiftbar_out="$(HOME="$SWIFTBAR_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" DICTATE_STATE_FILE="$SWIFTBAR_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_missing_binary_runtime" "$swiftbar_out" "Tmux Whisper binary not found"
+
+IDLE_STOP_HOME="$TMP_ROOT/home-idle-stop"
+IDLE_STOP_BIN="$IDLE_STOP_HOME/.local/bin"
+IDLE_STOP_CFG="$IDLE_STOP_HOME/.config/dictate"
+mkdir -p "$IDLE_STOP_BIN" "$IDLE_STOP_CFG"
+install_test_runtime "$IDLE_STOP_BIN"
+cat >"$IDLE_STOP_BIN/tmux" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$IDLE_STOP_BIN/tmux"
+cat >"$IDLE_STOP_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[integrations.swiftbar]
+enabled = true
+EOF
+
+idle_stop_out="$(HOME="$IDLE_STOP_HOME" PATH="$IDLE_STOP_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$IDLE_STOP_CFG" DICTATE_CONFIG_FILE="$IDLE_STOP_CFG/config.toml" DICTATE_STATE_FILE="$IDLE_STOP_HOME/tmux.state" DICTATE_INLINE_STATE_FILE="$IDLE_STOP_HOME/inline.state" DICTATE_ERROR_FLAG="$IDLE_STOP_HOME/error.flag" DICTATE_SWIFTBAR_REFRESH_LOG="$IDLE_STOP_HOME/refresh.log" tmux-whisper stop 2>&1 || true)"
+assert_contains "idle_tmux_stop_reports_not_recording" "$idle_stop_out" "not recording. Run: tmux-whisper start"
+assert_file_not_exists "idle_tmux_stop_no_error_flag" "$IDLE_STOP_HOME/error.flag"
+assert_file_not_exists "idle_tmux_stop_no_swiftbar_refresh" "$IDLE_STOP_HOME/refresh.log"
+
+idle_inline_stop_out="$(HOME="$IDLE_STOP_HOME" PATH="$IDLE_STOP_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$IDLE_STOP_CFG" DICTATE_CONFIG_FILE="$IDLE_STOP_CFG/config.toml" DICTATE_STATE_FILE="$IDLE_STOP_HOME/tmux.state" DICTATE_INLINE_STATE_FILE="$IDLE_STOP_HOME/inline.state" DICTATE_ERROR_FLAG="$IDLE_STOP_HOME/error.flag" DICTATE_SWIFTBAR_REFRESH_LOG="$IDLE_STOP_HOME/refresh.log" tmux-whisper inline stop 2>&1 || true)"
+assert_contains "idle_inline_stop_reports_not_recording" "$idle_inline_stop_out" "not recording. Run: tmux-whisper inline start"
+assert_file_not_exists "idle_inline_stop_no_error_flag" "$IDLE_STOP_HOME/error.flag"
+assert_file_not_exists "idle_inline_stop_no_swiftbar_refresh" "$IDLE_STOP_HOME/refresh.log"
 
 # --- Regression 10: SwiftBar runtime integration toggle works end-to-end. ---
 SWIFTBAR_TOGGLE_HOME="$TMP_ROOT/home-swiftbar-toggle"
@@ -738,6 +788,24 @@ swiftbar_processing_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBA
 assert_contains "swiftbar_inline_processing_marker_state" "$swiftbar_processing_out" "Processing (1)"
 rm -f "$SWIFTBAR_MODES_HOME/dictate-processing/inline-test"
 assert_contains "swiftbar_tmux_target_present" "$swiftbar_modes_out" "param1=tmux param2=target"
+
+printf 'pid=999999\nwav=%q\n' "$SWIFTBAR_MODES_HOME/stale.wav" >"$SWIFTBAR_MODES_HOME/swiftbar-inline.state"
+touch -t 202001010000 "$SWIFTBAR_MODES_HOME/swiftbar-inline.state" 2>/dev/null || true
+swiftbar_stale_recording_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail DICTATE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_MODES_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_MODES_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_MODES_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_MODES_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_stale_recording_ready" "$swiftbar_stale_recording_out" "Ready"
+assert_file_not_exists "swiftbar_stale_recording_cleaned" "$SWIFTBAR_MODES_HOME/swiftbar-inline.state"
+
+mkdir -p "$SWIFTBAR_MODES_HOME/dictate-processing"
+printf 'pid=999999\nkind=inline\n' >"$SWIFTBAR_MODES_HOME/dictate-processing/inline-stale"
+touch "$SWIFTBAR_MODES_HOME/dictate-cancelled.flag"
+swiftbar_cancel_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail DICTATE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_MODES_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_MODES_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_MODES_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_MODES_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_recent_cancel_visible" "$swiftbar_cancel_out" "Cancelled"
+touch -t 202001010000 "$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" "$SWIFTBAR_MODES_HOME/dictate-just-processed" 2>/dev/null || true
+swiftbar_stale_marker_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail DICTATE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_MODES_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_MODES_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_MODES_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_MODES_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_stale_processing_ready" "$swiftbar_stale_marker_out" "Ready"
+assert_file_not_exists "swiftbar_stale_processing_cleaned" "$SWIFTBAR_MODES_HOME/dictate-processing/inline-stale"
+assert_file_not_exists "swiftbar_old_cancel_cleaned" "$SWIFTBAR_MODES_HOME/dictate-cancelled.flag"
+assert_file_not_exists "swiftbar_old_processed_cleaned" "$SWIFTBAR_MODES_HOME/dictate-just-processed"
 
 # --- Regression 12: budget profile auto-selection is based on transcript length, not mode name. ---
 BUDGET_HOME="$TMP_ROOT/home-budget"

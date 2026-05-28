@@ -12,6 +12,7 @@ fi
 
 STATE_FILE="${DICTATE_STATE_FILE:-/tmp/whisper-dictate.state}"
 INLINE_STATE_FILE="${DICTATE_INLINE_STATE_FILE:-/tmp/whisper-dictate-inline.state}"
+ERROR_FLAG="${DICTATE_ERROR_FLAG:-/tmp/dictate-error.flag}"
 TMPDIR="${DICTATE_TMPDIR:-/tmp}"
 RECORD_LOG="${DICTATE_RECORD_LOG:-$TMPDIR/whisper-dictate.record.log}"
 TRANSCRIBE_LOG="${DICTATE_TRANSCRIBE_LOG:-$TMPDIR/whisper-dictate.transcribe.log}"
@@ -77,6 +78,7 @@ INTEGRATIONS:
   tmux-whisper swiftbar           # show SwiftBar runtime integration state
   tmux-whisper swiftbar on|off    # enable/disable SwiftBar runtime integration
   tmux-whisper swiftbar toggle    # toggle SwiftBar runtime integration
+  tmux-whisper swiftbar refresh   # best-effort event refresh for SwiftBar plugin
 
 TEXT CLEANUP:
   tmux-whisper silence-trim       # show silence-trim status
@@ -399,6 +401,7 @@ processing_marker_stop_by_session() {
 signal_just_processed() {
   touch "$PROCESSED_FLAG" 2>/dev/null || true
   rm -f "$PROCESSING_LONG_FLAG" 2>/dev/null || true
+  swiftbar_refresh
 }
 
 generate_inline_session_id() {
@@ -4915,6 +4918,7 @@ start() {
     "$pid" "$wav" "$target_pane" "$model_id" "${DICTATE_LANGUAGE:-en}" "$job_id" "$record_started_ms" \
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "0" "$startup_audio_source" >"$STATE_FILE"
 
+  swiftbar_refresh
   local target_label
   target_label="$(tmux_pane_cwd_label "$target_pane")"
   echo "🎙️ RECORDING → ${target_label:-target}"
@@ -4936,6 +4940,7 @@ stop() {
   local stop_requested_ms
   stop_requested_ms="$(now_ms)"
   rm -f "$STATE_FILE"
+  swiftbar_refresh
 
   [[ -n "${pid:-}" && -n "${wav:-}" && -n "${target_pane:-}" && -n "${model_id:-}" ]] || die "state file invalid; try: tmux-whisper start"
   local job_id="${job_id:-}"
@@ -4971,6 +4976,7 @@ stop() {
       echo "updated_at=$(date +%s)"
     } >"$job_file" 2>/dev/null || true
   fi
+  swiftbar_refresh
 
   (
     trap '' HUP
@@ -5011,6 +5017,8 @@ stop() {
     if [[ "$transcribe_rc" -ne 0 ]]; then
       echo "[tmux-async] transcribe failed rc=$transcribe_rc"
       rm -f "$wav" 2>/dev/null || true
+      touch "$ERROR_FLAG" 2>/dev/null || true
+      swiftbar_refresh
       total_ms=$(( $(now_ms) - flow_started_ms ))
       append_bench_entry "tmux" "transcribe_failed" "$model_id" "$tmux_mode" "$do_postprocess" "0" "0" "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
@@ -5041,6 +5049,7 @@ stop() {
       if keep_logs_enabled; then
         echo "[transcribe] empty after artifact cleanup; skipping paste/send" >>"$TRANSCRIBE_LOG"
       fi
+      signal_just_processed
       exit 0
     fi
 
@@ -5050,8 +5059,8 @@ stop() {
     if [[ "$do_postprocess" == "1" ]]; then
       stage_started_ms="$(now_ms)"
       # Signal processing for SwiftBar
-      local proc_file="/tmp/dictate-processing/tmux-$$"
-      mkdir -p /tmp/dictate-processing
+      local proc_file="$PROCESSING_DIR/tmux-$$"
+      mkdir -p "$PROCESSING_DIR"
       touch "$proc_file"
 
       # Force tmux mode (default: code)
@@ -5066,7 +5075,7 @@ stop() {
       fi
       rm -f "$proc_file"
       # Signal "just processed" for SwiftBar
-      touch /tmp/dictate-just-processed
+      signal_just_processed
       postprocess_ms=$(( $(now_ms) - stage_started_ms ))
     elif bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
       txt="$(printf "%s" "$txt" | apply_vocab_corrections "$tmux_mode")"
@@ -5118,6 +5127,7 @@ stop() {
 
     # Sound when done
     play_sound stop
+    signal_just_processed
 
     success="1"
     if [[ "$success" == "1" ]] && ! keep_logs_enabled; then
@@ -5173,10 +5183,11 @@ cancel() {
   fi
   
   # Clear any processing markers
-  rm -f /tmp/dictate-processing/* 2>/dev/null || true
+  rm -f "$PROCESSING_DIR"/* 2>/dev/null || true
   
   # Set cancel flag for SwiftBar (shows cancel icon briefly)
-  touch /tmp/dictate-cancelled.flag
+  touch "${DICTATE_CANCEL_FLAG:-/tmp/dictate-cancelled.flag}" 2>/dev/null || true
+  swiftbar_refresh
   
   play_sound cancel  # audible feedback that we cancelled
   echo "🚫 CANCELLED (recording discarded)"
@@ -5298,6 +5309,8 @@ process_inline_recording() {
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "record_failed" \
       "$record_ms" "0" "0" "0" "0" "$total_ms" "$inline_session_id"
+    touch "$ERROR_FLAG" 2>/dev/null || true
+    swiftbar_refresh
     return 1
   fi
   if ! keep_logs_enabled; then
@@ -5329,6 +5342,8 @@ process_inline_recording() {
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "transcribe_failed" \
       "$record_ms" "$transcribe_ms" "0" "0" "0" "$total_ms" "$inline_session_id"
+    touch "$ERROR_FLAG" 2>/dev/null || true
+    swiftbar_refresh
     return 1
   fi
   
@@ -5357,6 +5372,7 @@ process_inline_recording() {
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "no_speech" \
       "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" "$inline_session_id"
+    signal_just_processed
     return 1
   fi
 
@@ -5376,6 +5392,7 @@ process_inline_recording() {
     ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" ) >/dev/null 2>&1 &
     archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "superseded_pre_postprocess" \
       "$record_ms" "$transcribe_ms" "$clean_ms" "0" "0" "$total_ms" "$inline_session_id"
+    signal_just_processed
     return 0
   fi
 
@@ -5410,6 +5427,7 @@ process_inline_recording() {
     ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" ) >/dev/null 2>&1 &
     archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "superseded_post_postprocess" \
       "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "0" "$total_ms" "$inline_session_id"
+    signal_just_processed
     return 0
   fi
   
@@ -5425,6 +5443,8 @@ process_inline_recording() {
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
     archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "clipboard_failed" \
       "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
+    touch "$ERROR_FLAG" 2>/dev/null || true
+    swiftbar_refresh
     return 1
   fi
   
@@ -5472,6 +5492,8 @@ process_inline_recording() {
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
       archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "autosend_failed_paste" \
         "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
+      touch "$ERROR_FLAG" 2>/dev/null || true
+      swiftbar_refresh
       return 1
     fi
     sleep_ms "$send_delay_ms"
@@ -5485,6 +5507,8 @@ process_inline_recording() {
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
       archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "autosend_failed_send" \
         "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
+      touch "$ERROR_FLAG" 2>/dev/null || true
+      swiftbar_refresh
       return 1
     fi
     echo "✅ Sent ($(inline_send_mode_desc "$inline_send_mode"))"
@@ -5499,6 +5523,8 @@ process_inline_recording() {
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
       archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "paste_failed" \
         "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
+      touch "$ERROR_FLAG" 2>/dev/null || true
+      swiftbar_refresh
       return 1
     fi
     echo "✅ Pasted (no Enter)"
@@ -5657,6 +5683,7 @@ inline_start() {
 
   maybe_warmup_swift_parakeet_in_background
 
+  swiftbar_refresh
   play_sound start
   echo "🎙️ RECORDING → inline"
 }
@@ -5686,6 +5713,7 @@ inline_stop() {
   processing_marker_start "inline" "${inline_session_id:-}" "$$" 2>/dev/null || true
   inline_pending_proc_file="$PROCESSING_MARKER_FILE"
   rm -f "$INLINE_STATE_FILE"
+  swiftbar_refresh
 
   local inline_record_log inline_process_sound
   inline_record_log="$TMPDIR/whisper-dictate-inline.record.log"
@@ -5717,6 +5745,7 @@ inline_stop() {
   inline_bg_pid="$!"
   processing_marker_start "inline" "${inline_session_id:-}" "$inline_bg_pid" 2>/dev/null || true
   processing_marker_stop "$inline_pending_proc_file"
+  swiftbar_refresh
 
   echo "⏹️ STOPPED → transcribing → inline"
 }
@@ -5729,6 +5758,7 @@ inline_toggle() {
       inline_stop
     else
       rm -f "$INLINE_STATE_FILE" "${wav:-}" 2>/dev/null || true
+      swiftbar_refresh
       inline_start
     fi
   else
@@ -5793,6 +5823,7 @@ inline() {
     -ac 1 -ar 16000 -c:a pcm_s16le \
     "$wav" >>"$record_log" 2>&1 &
   ffmpeg_pid="$!"
+  swiftbar_refresh
   trap 'inline_interrupted=1; echo ""; terminate_recording_pid "$ffmpeg_pid" "$inline_stop_grace_ms" "$record_log"' INT TERM
   wait "$ffmpeg_pid" || true
   trap - INT TERM
@@ -7262,6 +7293,10 @@ manage_swiftbar() {
         echo "Hint: install plugin with ./install.sh --force"
       fi
       ;;
+    refresh)
+      swiftbar_refresh
+      echo "SwiftBar refresh requested"
+      ;;
     on|off)
       config_set "integrations.swiftbar.enabled" "bool" "$([[ "$action" == "on" ]] && echo "true" || echo "false")"
       config_load
@@ -7270,6 +7305,7 @@ manage_swiftbar() {
         echo "Hint: plugin file missing at $plugin_path"
         echo "Install with: ./install.sh --force"
       fi
+      swiftbar_refresh
       ;;
     toggle)
       if [[ "$enabled" == "1" ]]; then
@@ -7279,7 +7315,7 @@ manage_swiftbar() {
       fi
       ;;
     *)
-      die "usage: tmux-whisper swiftbar [show|on|off|toggle]"
+      die "usage: tmux-whisper swiftbar [show|on|off|toggle|refresh]"
       ;;
   esac
 }
