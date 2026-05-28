@@ -237,10 +237,6 @@ EOF
 die() {
   local msg="tmux-whisper: $*"
   echo "$msg" >&2
-  touch "${ERROR_FLAG:-/tmp/dictate-error.flag}" 2>/dev/null || true
-  if declare -F swiftbar_refresh >/dev/null 2>&1; then
-    swiftbar_refresh
-  fi
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
     tmux display-message -d 5000 "$msg" 2>/dev/null || true
   fi

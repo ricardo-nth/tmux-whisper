@@ -674,6 +674,37 @@ mkdir -p "$SWIFTBAR_HOME"
 swiftbar_out="$(HOME="$SWIFTBAR_HOME" PATH="$STUB_BIN:/usr/bin:/bin" DICTATE_BIN="$TMP_ROOT/not-found-dictate" DICTATE_STATE_FILE="$SWIFTBAR_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_missing_binary_runtime" "$swiftbar_out" "Tmux Whisper binary not found"
 
+IDLE_STOP_HOME="$TMP_ROOT/home-idle-stop"
+IDLE_STOP_BIN="$IDLE_STOP_HOME/.local/bin"
+IDLE_STOP_CFG="$IDLE_STOP_HOME/.config/dictate"
+mkdir -p "$IDLE_STOP_BIN" "$IDLE_STOP_CFG"
+install_test_runtime "$IDLE_STOP_BIN"
+cat >"$IDLE_STOP_BIN/tmux" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$IDLE_STOP_BIN/tmux"
+cat >"$IDLE_STOP_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[integrations.swiftbar]
+enabled = true
+EOF
+
+idle_stop_out="$(HOME="$IDLE_STOP_HOME" PATH="$IDLE_STOP_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$IDLE_STOP_CFG" DICTATE_CONFIG_FILE="$IDLE_STOP_CFG/config.toml" DICTATE_STATE_FILE="$IDLE_STOP_HOME/tmux.state" DICTATE_INLINE_STATE_FILE="$IDLE_STOP_HOME/inline.state" DICTATE_ERROR_FLAG="$IDLE_STOP_HOME/error.flag" DICTATE_SWIFTBAR_REFRESH_LOG="$IDLE_STOP_HOME/refresh.log" tmux-whisper stop 2>&1 || true)"
+assert_contains "idle_tmux_stop_reports_not_recording" "$idle_stop_out" "not recording. Run: tmux-whisper start"
+assert_file_not_exists "idle_tmux_stop_no_error_flag" "$IDLE_STOP_HOME/error.flag"
+assert_file_not_exists "idle_tmux_stop_no_swiftbar_refresh" "$IDLE_STOP_HOME/refresh.log"
+
+idle_inline_stop_out="$(HOME="$IDLE_STOP_HOME" PATH="$IDLE_STOP_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$IDLE_STOP_CFG" DICTATE_CONFIG_FILE="$IDLE_STOP_CFG/config.toml" DICTATE_STATE_FILE="$IDLE_STOP_HOME/tmux.state" DICTATE_INLINE_STATE_FILE="$IDLE_STOP_HOME/inline.state" DICTATE_ERROR_FLAG="$IDLE_STOP_HOME/error.flag" DICTATE_SWIFTBAR_REFRESH_LOG="$IDLE_STOP_HOME/refresh.log" tmux-whisper inline stop 2>&1 || true)"
+assert_contains "idle_inline_stop_reports_not_recording" "$idle_inline_stop_out" "not recording. Run: tmux-whisper inline start"
+assert_file_not_exists "idle_inline_stop_no_error_flag" "$IDLE_STOP_HOME/error.flag"
+assert_file_not_exists "idle_inline_stop_no_swiftbar_refresh" "$IDLE_STOP_HOME/refresh.log"
+
 # --- Regression 10: SwiftBar runtime integration toggle works end-to-end. ---
 SWIFTBAR_TOGGLE_HOME="$TMP_ROOT/home-swiftbar-toggle"
 SWIFTBAR_TOGGLE_BIN="$SWIFTBAR_TOGGLE_HOME/.local/bin"
