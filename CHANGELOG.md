@@ -45,6 +45,7 @@
 - **Completed**: `tmux-whisper integrations [--json]` now inspects the installed binary, install receipt, SwiftBar plugin, and Raycast scripts as a first integration-adapter status surface
 - **Completed**: `tmux-whisper integrations repair` now applies an adapter-only Raycast/SwiftBar refresh with missing-directory creation, executable-bit repair, changed-file reporting, and backups for replaced adapter files, while `repair --dry-run` remains non-mutating
 - **Completed**: integration status/doctor now reports per-adapter source provenance states (`current`, `missing`, `non-executable`, or `different`) for Raycast scripts and the SwiftBar plugin before any SwiftBar behavior changes
+- **Completed**: `docs/INTEGRATIONS.md` now documents the supported integration compatibility matrix, install-channel differences, environment expectations, and stable-vs-experimental boundaries for v0.7 work
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
 - **Distribution channels**:
   - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`

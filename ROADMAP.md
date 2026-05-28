@@ -77,7 +77,7 @@ Focus: integrations as first-class, versioned surfaces.
 - Formalize Raycast and SwiftBar integration lifecycle/versioning.
 - Add setup/update helpers for integrations, beginning with `tmux-whisper integrations doctor`, `tmux-whisper integrations repair --dry-run`, and adapter-only `tmux-whisper integrations repair`.
 - Report per-adapter provenance/drift state so installed Raycast and SwiftBar files can be inspected before behavior-level SwiftBar work begins.
-- Document integration compatibility matrix and support boundaries.
+- Keep the integration compatibility matrix and support boundaries documented in `docs/INTEGRATIONS.md`.
 
 Success criteria:
 
