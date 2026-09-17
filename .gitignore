@@ -13,3 +13,12 @@ tmux-whisperd/.build/
 # Editor/OS
 .vscode/
 .idea/
+
+# Experimental native companion (local build only)
+integrations/native-macos/.build/
+
+# SwiftPM workspace metadata
+/.build/
+
+# Python preview fixture cache
+__pycache__/

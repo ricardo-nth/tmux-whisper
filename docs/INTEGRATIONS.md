@@ -76,3 +76,7 @@ When adding integration behavior, prefer one of these shapes:
 - expose a small documented command
 - keep adapter scripts thin
 - add deterministic tests that do not require live Raycast, live SwiftBar, a real microphone, or real transcription
+
+## Experimental native macOS companion
+
+An opt-in local AppKit prototype is available under [`integrations/native-macos`](../integrations/native-macos/README.md). It consumes `status --json` and invokes existing inline controls. It is not installed by the normal installer or integration repair, and does not replace SwiftBar or Raycast. Build/run instructions and acceptance limits live in its README.
