@@ -360,6 +360,11 @@ GitHub Actions runs the same checks on push and pull requests.
 
 `tmux-whisper doctor` now includes config schema status (`meta.config_version`) and expects an exact schema match for this binary.
 
+`tmux-whisper version` reports the CLI version, expected config schema, and
+resolved running binary. `tmux-whisper version --json` also includes the
+install receipt's provenance when available. The receipt records how an install
+was created; it does not identify a source checkout as the running binary.
+
 ## Changelog
 
 `CHANGELOG.md` in this repo mirrors the detailed project history from local development, including the active TODO/next queue.
