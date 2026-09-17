@@ -17,13 +17,13 @@ Use this document to decide whether an integration issue belongs in the supporte
 | Surface | Status | Install/update path | Notes |
 | --- | --- | --- | --- |
 | `tmux-whisper` CLI | Stable daily surface | Homebrew, bootstrap, or local `./install.sh --force` | Source of truth for tmux, inline, config, history, logs, status, doctor, and integration checks. |
-| tmux dictation | Stable primary workflow | Requires `tmux` plus the installed CLI | The main supported workflow. Use `tmux-whisper status`, `history sessions`, `bench`, and `logs` for support. |
-| CLI inline dictation | Supported convenience workflow | Installed CLI | Uses macOS paste/send automation and remains secondary to tmux-first behavior. |
+| CLI inline dictation | Stable daily workflow | Installed CLI | Uses macOS paste/send automation. It is the primary dictation path for frontmost-app capture and optional auto-send. |
+| tmux dictation | Stable terminal workflow | Requires `tmux` plus the installed CLI | Provides the differentiated tmux capture and queue workflow. Use `tmux-whisper status`, `history sessions`, `bench`, and `logs` for support. |
 | Raycast inline script | Supported adapter | `./install.sh --force` or `tmux-whisper integrations repair` | Should stay thin and delegate to the installed CLI/runtime rather than carrying independent state logic. |
 | Raycast tmux-toggle script | Supported adapter | `./install.sh --force` or `tmux-whisper integrations repair` | Requires `tmux`; uses the same runtime state as the CLI tmux flow. |
 | Raycast cancel script | Supported adapter | `./install.sh --force` or `tmux-whisper integrations repair` | Cancels active tmux or inline state through the shared runtime markers. |
 | SwiftBar plugin | Supported adapter | `./install.sh --force` or `tmux-whisper integrations repair` | Polls runtime state and may receive best-effort refresh requests. The CLI remains usable with SwiftBar off or absent. |
-| Native macOS companion | Experimental/future | None yet | Keep separate from v0.7 adapter lifecycle work until the CLI and shipped adapters are stable. |
+| Native macOS companion | Experimental/future | None yet | A future prototype will consume stable CLI state and usage contracts; keep it separate from v0.7 adapter lifecycle work. |
 | Alternate backend experiments | Experimental/future | None supported | Parakeet/CoreML is the active runtime path; alternate engines belong outside the near-term support boundary. |
 
 ## Environment Expectations
