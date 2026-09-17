@@ -29,6 +29,7 @@
 - **Completed**: `tmux-whisper watch [--interval SECONDS] [--iterations N]` now composes `status`, latest history, and bench data into a live text-first operator view instead of forcing a dashboard/TUI jump
 - **Completed**: `tmux-whisper status --preset compact` and `watch --preset compact` now give terminal operators a tighter summary surface for narrow panes, quick checks, and future plugin-style shells without changing the JSON contracts underneath
 - **Completed**: filtered bench inspection, history session summaries, and command cross-links now connect `bench`, `history sessions`, `logs`, `status`, and `watch` into a more navigable operator workflow
+- **Completed**: `tmux-whisper usage [--json]` now keeps a crash-safe, transcript-free aggregate for successful inline and tmux deliveries, with explicit coverage and signed typing-equivalent estimates suitable for later SwiftBar/native presentation
 - **Completed**: `docs/CLI_CONTRACTS.md` now marks stable JSON read surfaces versus experimental streaming/watch/benchmark output so future wrappers can build on the CLI without guessing
 - **Completed**: mode/config UX validation polish in `tmux-whisper doctor`, including flow-aware checks, surgical fix hints, and text/JSON parity
 - **Completed**: public command/help/docs now standardize on `tmux-whisper ...`; internal `dictate` config/temp paths remain intentionally unchanged for now

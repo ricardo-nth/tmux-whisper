@@ -1134,6 +1134,85 @@ histobs_last_json="$(HOME="$HISTOBS_HOME" PATH="$HISTOBS_BIN:/usr/bin:/bin" DICT
 assert_json_equals "history_last_json_app" "$histobs_last_json" "entry.app" "Ghostty"
 assert_json_equals "history_last_json_budget_profile" "$histobs_last_json" "entry.postprocess_budget.profile" "long"
 
+# --- Regression 12a: durable usage only records delivered inline/tmux summaries. ---
+USAGE_HOME="$TMP_ROOT/home-usage"
+USAGE_BIN="$USAGE_HOME/.local/bin"
+USAGE_CFG="$USAGE_HOME/.config/dictate"
+USAGE_FILE="$USAGE_CFG/usage.json"
+mkdir -p "$USAGE_BIN" "$USAGE_CFG"
+install_test_runtime "$USAGE_BIN"
+cat >"$USAGE_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+EOF
+
+usage_record() {
+  local flow="$1"
+  local text="$2"
+  local record_ms="$3"
+  local full_elapsed_ms="$4"
+  local ledger_file="${5:-$USAGE_FILE}"
+  HOME="$USAGE_HOME" PATH="$USAGE_BIN:/usr/bin:/bin" DICTATE_USAGE_NOW=2026-09-17T12:00:00Z \
+    DICTATE_CONFIG_DIR="$USAGE_CFG" DICTATE_USAGE_SUMMARY_FILE="$ledger_file" \
+    bash -c 'need() { command -v "$1" >/dev/null 2>&1; }; source "$1"; usage_record_delivery "$2" "$3" "$4" "$5"' bash \
+      "$USAGE_BIN/tmux-whisper-lib/history.sh" "$flow" "$text" "$record_ms" "$full_elapsed_ms"
+}
+
+# These direct helper calls model the two production call sites after delivery;
+# cancelled, failed, no-speech, superseded, and replay paths do not call it.
+usage_record inline "private inline words" 2000 5000
+usage_record tmux "private tmux words" 3000 4000
+usage_record inline "extra private" 1000 7000
+
+usage_text="$(HOME="$USAGE_HOME" PATH="$USAGE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$USAGE_CFG" DICTATE_CONFIG_FILE="$USAGE_CFG/config.toml" DICTATE_USAGE_SUMMARY_FILE="$USAGE_FILE" tmux-whisper usage)"
+assert_contains "usage_text_header" "$usage_text" "Dictation usage (tracked deliveries only)"
+assert_contains "usage_text_flow_counts" "$usage_text" "delivered_dictations: 3 (inline=2, tmux=1)"
+assert_contains "usage_text_wpm" "$usage_text" "typing_equivalent: 12.0s @ 40 wpm assumed"
+assert_contains "usage_text_negative_estimate" "$usage_text" "estimated_time_difference: -4.0s"
+assert_contains "usage_text_coverage" "$usage_text" "transcript history is not backfilled"
+usage_json="$(HOME="$USAGE_HOME" PATH="$USAGE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$USAGE_CFG" DICTATE_CONFIG_FILE="$USAGE_CFG/config.toml" DICTATE_USAGE_SUMMARY_FILE="$USAGE_FILE" tmux-whisper usage --json)"
+assert_json_equals "usage_json_command" "$usage_json" "command" "usage"
+assert_json_equals "usage_json_count" "$usage_json" "delivered_dictations.count" "3"
+assert_json_equals "usage_json_inline_count" "$usage_json" "delivered_dictations.by_flow.inline" "2"
+assert_json_equals "usage_json_tmux_count" "$usage_json" "delivered_dictations.by_flow.tmux" "1"
+assert_json_equals "usage_json_words" "$usage_json" "processed_words" "8"
+assert_json_equals "usage_json_recording" "$usage_json" "recording_duration_ms" "6000"
+assert_json_equals "usage_json_full_elapsed" "$usage_json" "full_elapsed_duration_ms" "16000"
+assert_json_equals "usage_json_typing_wpm" "$usage_json" "typing_assumption.wpm" "40"
+assert_json_equals "usage_json_typing_equivalent" "$usage_json" "typing_assumption.typing_equivalent_duration_ms" "12000"
+assert_json_equals "usage_json_signed_difference" "$usage_json" "estimated_time_difference_ms" "-4000"
+assert_json_equals "usage_json_coverage_start" "$usage_json" "coverage.tracking_started_at" "2026-09-17T12:00:00Z"
+assert_json_equals "usage_json_no_backfill" "$usage_json" "coverage.history_backfill" "false"
+if rg -q 'private inline|private tmux|extra private' "$USAGE_FILE"; then
+  echo "Expected usage ledger to remain transcript-free" >&2
+  exit 1
+fi
+
+# A fresh ledger exercises the positive side of the signed estimate.
+USAGE_POSITIVE_FILE="$USAGE_CFG/usage-positive.json"
+usage_record inline "one two three four five six seven eight nine ten" 1000 5000 "$USAGE_POSITIVE_FILE"
+usage_positive_json="$(HOME="$USAGE_HOME" PATH="$USAGE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$USAGE_CFG" DICTATE_CONFIG_FILE="$USAGE_CFG/config.toml" DICTATE_USAGE_SUMMARY_FILE="$USAGE_POSITIVE_FILE" tmux-whisper usage --json)"
+assert_json_equals "usage_positive_signed_difference" "$usage_positive_json" "estimated_time_difference_ms" "10000"
+
+# Independent delivery workers must not lose updates, and an abandoned temporary
+# write must never change what readers see.
+USAGE_CONCURRENT_FILE="$USAGE_CFG/usage-concurrent.json"
+usage_record inline "one two three" 1000 3000 "$USAGE_CONCURRENT_FILE" &
+usage_left_pid=$!
+usage_record tmux "four five six seven" 2000 4000 "$USAGE_CONCURRENT_FILE" &
+usage_right_pid=$!
+wait "$usage_left_pid"
+wait "$usage_right_pid"
+printf '%s\n' '{"partial":' >"$USAGE_CONCURRENT_FILE.tmp-interrupted"
+usage_concurrent_json="$(HOME="$USAGE_HOME" PATH="$USAGE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$USAGE_CFG" DICTATE_CONFIG_FILE="$USAGE_CFG/config.toml" DICTATE_USAGE_SUMMARY_FILE="$USAGE_CONCURRENT_FILE" tmux-whisper usage --json)"
+assert_json_equals "usage_concurrent_count" "$usage_concurrent_json" "delivered_dictations.count" "2"
+assert_json_equals "usage_concurrent_inline" "$usage_concurrent_json" "delivered_dictations.by_flow.inline" "1"
+assert_json_equals "usage_concurrent_tmux" "$usage_concurrent_json" "delivered_dictations.by_flow.tmux" "1"
+assert_json_equals "usage_concurrent_words" "$usage_concurrent_json" "processed_words" "7"
+
 # --- Regression 12b: logs command should expose paths, tail views, and JSON output cleanly. ---
 LOGS_HOME="$TMP_ROOT/home-logs"
 LOGS_BIN="$LOGS_HOME/.local/bin"

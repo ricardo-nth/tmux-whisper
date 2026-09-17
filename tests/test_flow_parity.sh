@@ -597,6 +597,12 @@ run_tmux_round() {
   else
     assert_file_contains "tmux_codex_tab_${mode}" "$DICTATE_TEST_TMUX_LOG" "tmux send-keys -t %1 C-i"
   fi
+
+  # This reads the durable ledger after a real successful tmux delivery, not
+  # transcript history. The production write happens before job completion.
+  local usage_json
+  usage_json="$("$DICTATE_BIN" usage --json)"
+  assert_contains "tmux_usage_delivery_${mode}" "$usage_json" '"tmux": 1'
 }
 
 run_inline_vocab_round() {
@@ -617,6 +623,12 @@ run_inline_vocab_round() {
   local copied
   copied="$(cat "$DICTATE_TEST_PBCOPY_OUT")"
   assert_contains "inline_vocab_corrections" "$copied" "Codex and Tmux"
+
+  # Foreground inline delivery returns only after the confirmed-delivery ledger
+  # update; the history write is deliberately still asynchronous.
+  local usage_json
+  usage_json="$("$DICTATE_BIN" usage --json)"
+  assert_contains "inline_usage_delivery" "$usage_json" '"inline": 1'
 }
 
 run_inline_cmd_enter_round() {

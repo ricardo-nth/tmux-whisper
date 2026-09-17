@@ -70,6 +70,10 @@ if [[ "$output" != *"tmux-whisper history sessions [N] [--json]"* ]]; then
   echo "Expected help output to document history sessions" >&2
   exit 1
 fi
+if [[ "$output" != *"tmux-whisper usage [--json]"* ]]; then
+  echo "Expected help output to document durable usage summary" >&2
+  exit 1
+fi
 if [[ "$output" != *"DICTATE_HISTORY_RETENTION_DAYS=7"* ]]; then
   echo "Expected help output to document history JSON retention" >&2
   exit 1
