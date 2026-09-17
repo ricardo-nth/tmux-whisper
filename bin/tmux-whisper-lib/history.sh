@@ -259,6 +259,208 @@ history_format_signed_duration_ms() {
   fi
 }
 
+# Durable, transcript-free accounting for successful deliveries. This ledger is
+# intentionally separate from history/: transcript retention can prune history
+# without changing the usage total or implying older data was recovered.
+usage_summary_file() {
+  printf '%s\n' "${DICTATE_USAGE_SUMMARY_FILE:-$DICTATE_CONFIG_DIR/usage.json}"
+}
+
+# Record exactly one completed delivery. Python's advisory lock serializes
+# concurrent inline/tmux workers; writing a fsynced temporary file and replacing
+# it means readers only ever see a complete previous or next JSON document.
+# Usage: usage_record_delivery <inline|tmux> <processed_text> <record_ms> <full_elapsed_ms>
+usage_record_delivery() {
+  local flow="${1:-}"
+  local processed="${2:-}"
+  local record_ms="${3:-0}"
+  local full_elapsed_ms="${4:-0}"
+  [[ "$flow" == "inline" || "$flow" == "tmux" ]] || return 1
+  [[ "$record_ms" =~ ^[0-9]+$ ]] || return 1
+  [[ "$full_elapsed_ms" =~ ^[0-9]+$ ]] || return 1
+  need python3
+
+  python3 -c '
+import datetime
+import fcntl
+import json
+import os
+import re
+import sys
+import tempfile
+
+path, flow, record_ms, full_elapsed_ms = sys.argv[1:]
+processed = sys.stdin.read()
+
+def now_iso():
+    override = os.environ.get("DICTATE_USAGE_NOW", "").strip()
+    if override:
+        return override
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+def as_nonnegative_int(value, name):
+    if isinstance(value, bool):
+        raise ValueError(f"usage summary {name} must be an integer")
+    value = int(value)
+    if value < 0:
+        raise ValueError(f"usage summary {name} must not be negative")
+    return value
+
+os.makedirs(os.path.dirname(path) or ".", mode=0o700, exist_ok=True)
+lock_path = path + ".lock"
+with open(lock_path, "a+", encoding="utf-8") as lock:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except Exception as exc:
+            raise SystemExit(f"tmux-whisper: usage summary is unreadable; refusing to overwrite it: {exc}")
+    else:
+        payload = {
+            "schema_version": 1,
+            "tracking_started_at": now_iso(),
+            "delivered_dictations": {"count": 0, "by_flow": {"inline": 0, "tmux": 0}},
+            "processed_words": 0,
+            "recording_duration_ms": 0,
+            "full_elapsed_duration_ms": 0,
+        }
+
+    if payload.get("schema_version") != 1 or not isinstance(payload.get("delivered_dictations"), dict):
+        raise SystemExit("tmux-whisper: unsupported usage summary schema; refusing to overwrite it")
+    deliveries = payload["delivered_dictations"]
+    by_flow = deliveries.get("by_flow")
+    if not isinstance(by_flow, dict):
+        raise SystemExit("tmux-whisper: usage summary is missing flow counts; refusing to overwrite it")
+
+    deliveries["count"] = as_nonnegative_int(deliveries.get("count", 0), "delivered_dictations.count") + 1
+    by_flow["inline"] = as_nonnegative_int(by_flow.get("inline", 0), "delivered_dictations.by_flow.inline")
+    by_flow["tmux"] = as_nonnegative_int(by_flow.get("tmux", 0), "delivered_dictations.by_flow.tmux")
+    by_flow[flow] += 1
+    words = len(re.findall(r"\b\w+\b", processed, flags=re.UNICODE))
+    payload["processed_words"] = as_nonnegative_int(payload.get("processed_words", 0), "processed_words") + words
+    payload["recording_duration_ms"] = as_nonnegative_int(payload.get("recording_duration_ms", 0), "recording_duration_ms") + int(record_ms)
+    payload["full_elapsed_duration_ms"] = as_nonnegative_int(payload.get("full_elapsed_duration_ms", 0), "full_elapsed_duration_ms") + int(full_elapsed_ms)
+
+    fd, tmp_path = tempfile.mkstemp(prefix=os.path.basename(path) + ".tmp-", dir=os.path.dirname(path) or ".")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+        try:
+            directory_fd = os.open(os.path.dirname(path) or ".", os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            pass
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+' "$(usage_summary_file)" "$flow" "$record_ms" "$full_elapsed_ms" <<<"$processed"
+}
+
+# Print a stable, content-free usage summary suitable for a menu-bar wrapper.
+usage_summary() {
+  local json_output="${1:-0}"
+  local summary_file
+  summary_file="$(usage_summary_file)"
+  local typing_wpm
+  typing_wpm="$(history_typing_wpm_assumed)"
+  need python3
+
+  python3 - "$summary_file" "$typing_wpm" "$json_output" <<'PYEOF'
+import json
+import os
+import sys
+
+path, wpm_raw, json_raw = sys.argv[1:]
+wpm = int(wpm_raw)
+json_output = json_raw == "1"
+
+def nonnegative(value, default=0):
+    try:
+        value = int(value)
+        return value if value >= 0 else default
+    except Exception:
+        return default
+
+if os.path.exists(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            stored = json.load(fh)
+    except Exception as exc:
+        raise SystemExit(f"tmux-whisper: usage summary is unreadable: {exc}")
+    if stored.get("schema_version") != 1 or not isinstance(stored.get("delivered_dictations"), dict):
+        raise SystemExit("tmux-whisper: unsupported usage summary schema")
+    tracking_started_at = stored.get("tracking_started_at") or None
+    deliveries = stored["delivered_dictations"]
+    by_flow = deliveries.get("by_flow") if isinstance(deliveries.get("by_flow"), dict) else {}
+    count = nonnegative(deliveries.get("count"))
+    inline = nonnegative(by_flow.get("inline"))
+    tmux = nonnegative(by_flow.get("tmux"))
+    words = nonnegative(stored.get("processed_words"))
+    recording_ms = nonnegative(stored.get("recording_duration_ms"))
+    full_elapsed_ms = nonnegative(stored.get("full_elapsed_duration_ms"))
+else:
+    tracking_started_at = None
+    count = inline = tmux = words = recording_ms = full_elapsed_ms = 0
+
+typing_equivalent_ms = int(round((words * 60000) / wpm)) if words else 0
+estimated_time_difference_ms = typing_equivalent_ms - full_elapsed_ms
+payload = {
+    "command": "usage",
+    "schema_version": 1,
+    "coverage": {
+        "tracking_started_at": tracking_started_at,
+        "status": "active" if tracking_started_at else "not_started",
+        "scope": "successful_delivered_dictations_recorded_since_tracking_started",
+        "history_backfill": False,
+        "retention_independent": True,
+    },
+    "delivered_dictations": {"count": count, "by_flow": {"inline": inline, "tmux": tmux}},
+    "processed_words": words,
+    "recording_duration_ms": recording_ms,
+    "full_elapsed_duration_ms": full_elapsed_ms,
+    "typing_assumption": {"wpm": wpm, "typing_equivalent_duration_ms": typing_equivalent_ms},
+    "estimated_time_difference_ms": estimated_time_difference_ms,
+}
+
+def fmt(ms):
+    sign = "-" if ms < 0 else ""
+    ms = abs(ms)
+    seconds = ms / 1000
+    if seconds < 60:
+        return f"{sign}{seconds:.1f}s"
+    total_seconds = round(seconds)
+    hours, rem = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours:
+        return f"{sign}{hours}h {minutes:02d}m {seconds:02d}s"
+    return f"{sign}{minutes}m {seconds:02d}s"
+
+if json_output:
+    print(json.dumps(payload, indent=2, sort_keys=True))
+elif not tracking_started_at:
+    print("No successful delivered dictations recorded yet.")
+    print("Tracking starts with the next delivery; transcript history is not backfilled.")
+else:
+    print("Dictation usage (tracked deliveries only)")
+    print(f"  tracking_started_at: {tracking_started_at}")
+    print(f"  delivered_dictations: {count} (inline={inline}, tmux={tmux})")
+    print(f"  processed_words: {words}")
+    print(f"  recording_duration: {fmt(recording_ms)}")
+    print(f"  full_elapsed_duration: {fmt(full_elapsed_ms)}")
+    print(f"  typing_equivalent: {fmt(typing_equivalent_ms)} @ {wpm} wpm assumed")
+    print(f"  estimated_time_difference: {fmt(estimated_time_difference_ms) if estimated_time_difference_ms <= 0 else '+' + fmt(estimated_time_difference_ms)} (typing equivalent minus full elapsed)")
+    print("  coverage: new successful deliveries since tracking_started_at; transcript history is not backfilled.")
+PYEOF
+}
+
 # List recent history entries
 list_history() {
   local limit="${1:-20}"

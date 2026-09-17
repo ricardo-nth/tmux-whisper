@@ -4,11 +4,11 @@ Local-first dictation for macOS using a warm Swift/CoreML Parakeet backend by de
 
 ## Core USP
 
-Tmux Whisper is **tmux-first**.
+Tmux Whisper is **inline-first for daily dictation, with tmux as a first-class differentiator**.
 
-- Primary workflow: record in a tmux pane, let transcription/process run, and keep working in other panes/windows.
-- Inline dictation is supported, but it is a secondary convenience path.
-- Design priority is reliability and flow inside terminal/tmux environments over maximum raw transcription speed.
+- Primary daily workflow: record and deliver into the frontmost app with inline dictation.
+- Tmux workflow: record in a pane, let transcription/process run, and keep working in other panes/windows.
+- Design priority is reliable local dictation, while retaining the asynchronous terminal/tmux flow that desktop-only tools do not offer.
 
 ## What You Get
 
@@ -141,20 +141,34 @@ Use `tmux-whisper debug` if you are ever unsure which binary/channel you are run
 
 ```bash
 tmux-whisper debug
-tmux-whisper            # tmux-first toggle mode
-tmux-whisper devices
 tmux-whisper inline
+tmux-whisper            # tmux toggle mode
+tmux-whisper devices
 tmux-whisper mode auto
 tmux-whisper postprocess on
 ```
 
-### Tmux-first daily loop
+### Tmux workflow
 
 - Start from the tmux pane you want to send back into.
 - Run `tmux-whisper`, speak, then stop.
 - Let processing finish while you keep working in tmux.
 
 If you are not inside tmux, use `tmux-whisper inline` or the Raycast inline integration instead.
+
+### Durable usage summary
+
+`tmux-whisper usage` reports a small local, transcript-free aggregate for
+successful deliveries; `tmux-whisper usage --json` is the stable surface for a
+future SwiftBar or native menu. It preserves aggregate counts after normal
+transcript-history pruning, but deliberately starts tracking only after the
+feature is installed. It never backfills old or pruned history.
+
+The estimate shows the typing pace assumption (`DICTATE_HISTORY_TYPING_WPM`,
+default `40`) and a signed difference between typing-equivalent time and full
+recording-to-delivery elapsed time. It is an estimate, not a claim of lifetime
+hours saved. Changing that WPM setting recalculates the estimate while leaving
+the recorded delivery and duration totals unchanged.
 
 ## Upgrade and Repair
 
