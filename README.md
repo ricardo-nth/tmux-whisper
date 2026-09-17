@@ -4,11 +4,11 @@ Local-first dictation for macOS using a warm Swift/CoreML Parakeet backend by de
 
 ## Core USP
 
-Tmux Whisper is **tmux-first**.
+Tmux Whisper is **inline-first for daily dictation, with tmux as a first-class differentiator**.
 
-- Primary workflow: record in a tmux pane, let transcription/process run, and keep working in other panes/windows.
-- Inline dictation is supported, but it is a secondary convenience path.
-- Design priority is reliability and flow inside terminal/tmux environments over maximum raw transcription speed.
+- Primary daily workflow: record and deliver into the frontmost app with inline dictation.
+- Tmux workflow: record in a pane, let transcription/process run, and keep working in other panes/windows.
+- Design priority is reliable local dictation, while retaining the asynchronous terminal/tmux flow that desktop-only tools do not offer.
 
 ## What You Get
 
@@ -141,14 +141,14 @@ Use `tmux-whisper debug` if you are ever unsure which binary/channel you are run
 
 ```bash
 tmux-whisper debug
-tmux-whisper            # tmux-first toggle mode
-tmux-whisper devices
 tmux-whisper inline
+tmux-whisper            # tmux toggle mode
+tmux-whisper devices
 tmux-whisper mode auto
 tmux-whisper postprocess on
 ```
 
-### Tmux-first daily loop
+### Tmux workflow
 
 - Start from the tmux pane you want to send back into.
 - Run `tmux-whisper`, speak, then stop.
