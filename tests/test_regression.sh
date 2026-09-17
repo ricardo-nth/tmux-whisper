@@ -1759,7 +1759,10 @@ exit 0
 EOF
 chmod +x "$AUDIOCACHE_BIN/ffmpeg"
 
-audiocache_debug="$(HOME="$AUDIOCACHE_HOME" PATH="$AUDIOCACHE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$AUDIOCACHE_CFG" DICTATE_CONFIG_FILE="$AUDIOCACHE_CFG/config.toml" tmux-whisper debug)"
+# This case verifies a stale index against the device list. Do not inherit the
+# recording fast-path override from a developer shell, which deliberately skips
+# that validation for warm caches.
+audiocache_debug="$(HOME="$AUDIOCACHE_HOME" PATH="$AUDIOCACHE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_AUDIO_CACHE_SKIP_VALIDATE=0 DICTATE_CONFIG_DIR="$AUDIOCACHE_CFG" DICTATE_CONFIG_FILE="$AUDIOCACHE_CFG/config.toml" tmux-whisper debug)"
 assert_contains "audio_cache_stale_refreshed" "$audiocache_debug" "Resolved audio index: 0 (source: detect:source(mac):match(mac):name(MacBook Air Microphone))"
 assert_contains "audio_cache_note_present" "$audiocache_debug" "Audio cache note: stale cache invalidated: cached idx=1 name=MacBook Air Microphone match=mac at=2026-03-20T08:47:56Z; re-resolved idx=0 match=mac name=MacBook Air Microphone"
 assert_file_contains "audio_cache_rewritten_index" "$AUDIOCACHE_CACHE/audio-index.sh" "CACHED_AUDIO_INDEX=0"
@@ -1772,7 +1775,7 @@ CACHED_AUDIO_INDEX=1
 CACHED_AUDIO_AT=2026-03-20T08:47:56Z
 EOF
 
-audiocache_debug_json="$(HOME="$AUDIOCACHE_HOME" PATH="$AUDIOCACHE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$AUDIOCACHE_CFG" DICTATE_CONFIG_FILE="$AUDIOCACHE_CFG/config.toml" tmux-whisper debug --json)"
+audiocache_debug_json="$(HOME="$AUDIOCACHE_HOME" PATH="$AUDIOCACHE_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_AUDIO_CACHE_SKIP_VALIDATE=0 DICTATE_CONFIG_DIR="$AUDIOCACHE_CFG" DICTATE_CONFIG_FILE="$AUDIOCACHE_CFG/config.toml" tmux-whisper debug --json)"
 assert_json_equals "audio_cache_json_index" "$audiocache_debug_json" "audio_resolution.index" "0"
 assert_json_equals "audio_cache_json_note" "$audiocache_debug_json" "audio_resolution.cache_note" "stale cache invalidated: cached idx=1 name=MacBook Air Microphone match=mac at=2026-03-20T08:47:56Z; re-resolved idx=0 match=mac name=MacBook Air Microphone"
 
