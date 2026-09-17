@@ -719,6 +719,33 @@ assert_contains "idle_inline_stop_reports_not_recording" "$idle_inline_stop_out"
 assert_file_not_exists "idle_inline_stop_no_error_flag" "$IDLE_STOP_HOME/error.flag"
 assert_file_not_exists "idle_inline_stop_no_swiftbar_refresh" "$IDLE_STOP_HOME/refresh.log"
 
+# A freshly truncated marker can be an active writer between open and publish.
+# Doctor must leave it alone so the recording control is not lost.
+PENDING_INLINE_STATE="$IDLE_STOP_HOME/pending-inline.state"
+: >"$PENDING_INLINE_STATE"
+pending_state_doctor_json="$(HOME="$IDLE_STOP_HOME" PATH="$IDLE_STOP_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$IDLE_STOP_CFG" DICTATE_CONFIG_FILE="$IDLE_STOP_CFG/config.toml" DICTATE_STATE_FILE="$IDLE_STOP_HOME/tmux.state" DICTATE_INLINE_STATE_FILE="$PENDING_INLINE_STATE" DICTATE_PROCESSING_DIR="$IDLE_STOP_HOME/dictate-processing" DICTATE_TMUX_JOBS_DIR="$IDLE_STOP_HOME/dictate-tmux-jobs" tmux-whisper doctor --json)"
+assert_json_equals "doctor_fresh_incomplete_state_pending" "$pending_state_doctor_json" "state_files.inline.state" "pending"
+assert_file_exists "doctor_fresh_incomplete_state_preserved" "$PENDING_INLINE_STATE"
+
+# Exercise the race directly: a concurrent status read must not remove the
+# marker between a legacy writer's truncation and its atomic replacement.
+CONCURRENT_INLINE_STATE="$IDLE_STOP_HOME/concurrent-inline.state"
+CONCURRENT_STATE_SEEN="$IDLE_STOP_HOME/concurrent-state-seen"
+: >"$CONCURRENT_INLINE_STATE"
+(
+  sleep 0.15
+  [[ -f "$CONCURRENT_INLINE_STATE" ]] && : >"$CONCURRENT_STATE_SEEN"
+  printf 'pid=%s\n' "$$" >"${CONCURRENT_INLINE_STATE}.tmp"
+  mv -f "${CONCURRENT_INLINE_STATE}.tmp" "$CONCURRENT_INLINE_STATE"
+) &
+concurrent_writer_pid="$!"
+while kill -0 "$concurrent_writer_pid" 2>/dev/null; do
+  HOME="$IDLE_STOP_HOME" PATH="$IDLE_STOP_BIN:$STUB_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$IDLE_STOP_CFG" DICTATE_CONFIG_FILE="$IDLE_STOP_CFG/config.toml" DICTATE_STATE_FILE="$IDLE_STOP_HOME/tmux.state" DICTATE_INLINE_STATE_FILE="$CONCURRENT_INLINE_STATE" DICTATE_PROCESSING_DIR="$IDLE_STOP_HOME/dictate-processing" DICTATE_TMUX_JOBS_DIR="$IDLE_STOP_HOME/dictate-tmux-jobs" tmux-whisper status --json >/dev/null
+done
+wait "$concurrent_writer_pid"
+assert_file_exists "status_concurrent_state_not_pruned_before_publish" "$CONCURRENT_STATE_SEEN"
+assert_file_contains "status_concurrent_state_published" "$CONCURRENT_INLINE_STATE" "pid=$$"
+
 # --- Regression 10: SwiftBar runtime integration toggle works end-to-end. ---
 SWIFTBAR_TOGGLE_HOME="$TMP_ROOT/home-swiftbar-toggle"
 SWIFTBAR_TOGGLE_BIN="$SWIFTBAR_TOGGLE_HOME/.local/bin"
@@ -803,11 +830,20 @@ assert_contains "swiftbar_inline_processing_marker_state" "$swiftbar_processing_
 rm -f "$SWIFTBAR_MODES_HOME/dictate-processing/inline-test"
 assert_contains "swiftbar_tmux_target_present" "$swiftbar_modes_out" "param1=tmux param2=target"
 
+touch "$SWIFTBAR_MODES_HOME/stale.wav"
 printf 'pid=999999\nwav=%q\n' "$SWIFTBAR_MODES_HOME/stale.wav" >"$SWIFTBAR_MODES_HOME/swiftbar-inline.state"
 touch -t 202001010000 "$SWIFTBAR_MODES_HOME/swiftbar-inline.state" 2>/dev/null || true
 swiftbar_stale_recording_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail DICTATE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar-inline.state" DICTATE_PROCESSING_DIR="$SWIFTBAR_MODES_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_MODES_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_MODES_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_MODES_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_stale_recording_ready" "$swiftbar_stale_recording_out" "Ready"
 assert_file_not_exists "swiftbar_stale_recording_cleaned" "$SWIFTBAR_MODES_HOME/swiftbar-inline.state"
+assert_file_exists "swiftbar_stale_recording_wav_preserved" "$SWIFTBAR_MODES_HOME/stale.wav"
+
+printf 'pid=%s\n' "$$" >"$SWIFTBAR_MODES_HOME/swiftbar-inline.state"
+touch "$SWIFTBAR_MODES_HOME/dictate-error.flag"
+swiftbar_live_recording_out="$(HOME="$SWIFTBAR_MODES_HOME" XDG_CONFIG_HOME="$SWIFTBAR_MODES_HOME/.config" PATH="$SWIFTBAR_MODES_BIN:$STUB_BIN:/usr/bin:/bin" SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_MODES_HOME/.cache/swiftbar" DICTATE_BIN="$SWIFTBAR_MODES_BIN/tmux-whisper" DICTATE_TEST_FRONT_APP=Mail DICTATE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar.state" DICTATE_INLINE_STATE_FILE="$SWIFTBAR_MODES_HOME/swiftbar-inline.state" DICTATE_ERROR_FLAG="$SWIFTBAR_MODES_HOME/dictate-error.flag" DICTATE_PROCESSING_DIR="$SWIFTBAR_MODES_HOME/dictate-processing" DICTATE_PROCESSED_FLAG="$SWIFTBAR_MODES_HOME/dictate-just-processed" DICTATE_CANCEL_FLAG="$SWIFTBAR_MODES_HOME/dictate-cancelled.flag" DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_MODES_HOME/dictate-inline-processing-long.flag" DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_MODES_HOME/dictate-tmux-jobs" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_live_recording_precedes_recent_error" "$swiftbar_live_recording_out" "Recording..."
+assert_not_contains "swiftbar_live_recording_hides_recent_error" "$swiftbar_live_recording_out" "Error occurred"
+rm -f "$SWIFTBAR_MODES_HOME/swiftbar-inline.state" "$SWIFTBAR_MODES_HOME/dictate-error.flag"
 
 mkdir -p "$SWIFTBAR_MODES_HOME/dictate-processing"
 printf 'pid=999999\nkind=inline\n' >"$SWIFTBAR_MODES_HOME/dictate-processing/inline-stale"

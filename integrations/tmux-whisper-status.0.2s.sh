@@ -485,21 +485,6 @@ if just_cancelled; then
   exit 0
 fi
 
-# Check for recent error
-if [[ -f "$ERROR_FLAG" ]]; then
-  if is_recent_file "$ERROR_FLAG" 10; then
-    echo "$ICON_ERROR"
-    echo "---"
-    echo "Error occurred | color=red"
-    echo "Check: /tmp/dictate-raycast-inline.log | size=11"
-    echo "---"
-    echo "Clear Error | bash=/bin/rm param1=-f param2=$ERROR_FLAG terminal=false refresh=true"
-    exit 0
-  else
-    rm -f "$ERROR_FLAG"
-  fi
-fi
-
 saved_mode_raw="$(read_saved_mode_raw)"
 saved_mode="$(resolve_inline_mode "$saved_mode_raw")"
 
@@ -518,7 +503,8 @@ for candidate_state in "$INLINE_STATE" "$STATE_FILE"; do
     recording_state_file="$candidate_state"
     break
   fi
-  rm -f "$candidate_state" "${wav:-}" 2>/dev/null || true
+  # The marker is stale, but its WAV may still be useful for manual recovery.
+  rm -f "$candidate_state" 2>/dev/null || true
 done
 
 if [[ -n "$recording_state_file" ]]; then
@@ -544,6 +530,21 @@ if [[ -n "$recording_state_file" ]]; then
     echo "Stop Recording | bash=$DICTATE_BIN param1=stop terminal=false refresh=true"
     echo "Cancel Recording | bash=$DICTATE_BIN param1=cancel terminal=false refresh=true"
     exit 0
+fi
+
+# A live recording always takes precedence over a prior processing failure.
+if [[ -f "$ERROR_FLAG" ]]; then
+  if is_recent_file "$ERROR_FLAG" 10; then
+    echo "$ICON_ERROR"
+    echo "---"
+    echo "Error occurred | color=red"
+    echo "Check: /tmp/dictate-raycast-inline.log | size=11"
+    echo "---"
+    echo "Clear Error | bash=/bin/rm param1=-f param2=$ERROR_FLAG terminal=false refresh=true"
+    exit 0
+  else
+    rm -f "$ERROR_FLAG"
+  fi
 fi
 
 # Processing count can be mildly expensive; avoid unless needed.

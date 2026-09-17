@@ -22,6 +22,18 @@ XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEFAULT_SWIFT_PARAKEET_MODELS_DIR="$XDG_DATA_HOME/tmux-whisper/models"
 DICTATE_CONFIG_SCHEMA_VERSION=1
 
+# Readers such as SwiftBar and `tmux-whisper doctor` inspect these files while
+# recording starts. Publish a complete replacement so they never observe the
+# empty file created by shell output redirection.
+atomic_write_state_file() {
+  local state_file="${1:-}"
+  shift || true
+  [[ -n "$state_file" ]] || return 1
+
+  local state_tmp="${state_file}.tmp.$$"
+  (umask 077; printf "$@" >"$state_tmp") && mv -f "$state_tmp" "$state_file"
+}
+
 usage() {
   cat <<'EOF'
 tmux-whisper: local dictation for macOS with a warm Swift/CoreML Parakeet backend, tmux routing, and mode-aware cleanup.
@@ -4914,9 +4926,10 @@ start() {
   record_started_ms="$(now_ms)"
   startup_total_ms=$(( record_started_ms - startup_started_ms ))
   (( startup_total_ms < 0 )) && startup_total_ms=0
-  printf 'pid=%q\nwav=%q\ntarget_pane=%q\nmodel_id=%q\nlanguage=%q\njob_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\n' \
+  rm -f "$ERROR_FLAG" 2>/dev/null || true
+  atomic_write_state_file "$STATE_FILE" 'pid=%q\nwav=%q\ntarget_pane=%q\nmodel_id=%q\nlanguage=%q\njob_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\n' \
     "$pid" "$wav" "$target_pane" "$model_id" "${DICTATE_LANGUAGE:-en}" "$job_id" "$record_started_ms" \
-    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "0" "$startup_audio_source" >"$STATE_FILE"
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "0" "$startup_audio_source"
 
   swiftbar_refresh
   local target_label
@@ -5676,10 +5689,11 @@ inline_start() {
     die "recording failed (ffmpeg exited immediately)"
   fi
 
-  printf 'pid=%q\nwav=%q\ntarget_app=%q\nmodel_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\ninline_session_id=%q\ncontrol_fifo=%q\ncontrol_keeper_pid=%q\n' \
+  rm -f "$ERROR_FLAG" 2>/dev/null || true
+  atomic_write_state_file "$INLINE_STATE_FILE" 'pid=%q\nwav=%q\ntarget_app=%q\nmodel_id=%q\nrecord_started_ms=%q\nstartup_total_ms=%q\nstartup_audio_ms=%q\nstartup_ffmpeg_live_ms=%q\nstartup_target_ms=%q\nstartup_audio_source=%q\ninline_session_id=%q\ncontrol_fifo=%q\ncontrol_keeper_pid=%q\n' \
     "$pid" "$wav" "$target_app" "$model_id" "$record_started_ms" \
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "${startup_audio_source};selector=${audio_selector_kind}" "$inline_session_id" \
-    "${control_fifo:-}" "${control_keeper_pid:-}" >"$INLINE_STATE_FILE"
+    "${control_fifo:-}" "${control_keeper_pid:-}"
 
   maybe_warmup_swift_parakeet_in_background
 
