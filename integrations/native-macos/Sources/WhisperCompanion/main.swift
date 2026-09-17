@@ -66,21 +66,21 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let self else { return }
                 switch result {
                 case .success(let value):
-                    status = value
-                    lastRead = Date()
-                    readError = nil
-                    refreshUsage()
+                    self.status = value
+                    self.lastRead = Date()
+                    self.readError = nil
+                    self.refreshUsage()
                 case .failure(let error):
-                    status = nil
-                    readError = error.localizedDescription
+                    self.status = nil
+                    self.readError = error.localizedDescription
                 }
-                refreshing = false
-                render()
-                if showMenuAfterRead {
-                    showMenuAfterRead = false
+                self.refreshing = false
+                self.render()
+                if self.showMenuAfterRead {
+                    self.showMenuAfterRead = false
                     DispatchQueue.main.async { [weak self] in
                         guard let self, let screen = NSScreen.main else { return }
-                        menu.popUp(positioning: nil,
+                        self.menu.popUp(positioning: nil,
                                    at: NSPoint(x: screen.visibleFrame.maxX - 380,
                                                y: screen.visibleFrame.maxY - 12), in: nil)
                     }
@@ -92,7 +92,7 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func refreshUsage(force: Bool = false) {
         guard !usageRefreshing, let client = cli else { return }
         if !force, let lastUsageAttempt, Date().timeIntervalSince(lastUsageAttempt) < 30 { return }
-        usageRefreshing = true
+        self.usageRefreshing = true
         lastUsageAttempt = Date()
         Task.detached { [weak self] in
             let result: Result<UsageSummary, Error>
@@ -101,13 +101,13 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Self.deliver { [weak self] in
                 guard let self else { return }
                 switch result {
-                case .success(let value): usage = value; usageError = nil
+                case .success(let value): self.usage = value; self.usageError = nil
                 case .failure:
-                    usage = nil
-                    usageError = "Usage unavailable. Update the CLI or refresh to retry."
+                    self.usage = nil
+                    self.usageError = "Usage unavailable. Update the CLI or refresh to retry."
                 }
-                usageRefreshing = false
-                render()
+                self.usageRefreshing = false
+                self.render()
             }
         }
     }
@@ -166,10 +166,19 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.toolTip = "Tmux Whisper Companion — \(status?.summary.headline ?? "Checking CLI…")"
         let policy = status?.policy
         let enabled = fresh && !busy
-        let signature = [state, status?.summary.headline ?? "", status?.summary.nextAction ?? "",
-                         readError ?? "", actionError ?? "", usageText, usage?.coverage.trackingStartedAt ?? "", String(busy), String(enabled),
-                         String(policy?.canStartInline ?? false), String(policy?.canStopInline ?? false),
-                         String(policy?.canCancelInline ?? false)].joined(separator: "\n")
+        var signatureParts: [String] = [state]
+        signatureParts.append(status?.summary.headline ?? "")
+        signatureParts.append(status?.summary.nextAction ?? "")
+        signatureParts.append(readError ?? "")
+        signatureParts.append(actionError ?? "")
+        signatureParts.append(usageText)
+        signatureParts.append(usage?.coverage.trackingStartedAt ?? "")
+        signatureParts.append(String(busy))
+        signatureParts.append(String(enabled))
+        signatureParts.append(String(policy?.canStartInline ?? false))
+        signatureParts.append(String(policy?.canStopInline ?? false))
+        signatureParts.append(String(policy?.canCancelInline ?? false))
+        let signature = signatureParts.joined(separator: "\n")
         guard signature != renderedMenu else { return }
         renderedMenu = signature
         // Avoid rebuilding unchanged menus so keyboard selection survives polling.
