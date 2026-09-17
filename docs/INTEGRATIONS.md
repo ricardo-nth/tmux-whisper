@@ -66,7 +66,7 @@ Use the full local installer when the binary, libraries, config defaults, sounds
 
 ## Stable Vs Experimental Surfaces
 
-Stable surfaces are documented CLI commands, the JSON read contracts in `docs/CLI_CONTRACTS.md`, installer-managed adapter paths, and the integration doctor/repair lifecycle.
+Supported surfaces are documented CLI commands, installer-managed adapter paths, and the integration doctor/repair lifecycle. Their human-readable output is for operators and is not a stable parsing contract; integrations should consume the stable JSON read contracts in `docs/CLI_CONTRACTS.md`.
 
 Experimental surfaces are menu layout details, native companion ideas, alternate backend experiments, and any direct parsing of private state files when a CLI read contract exists.
 
