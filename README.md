@@ -160,9 +160,10 @@ If you are not inside tmux, use `tmux-whisper inline` or the Raycast inline inte
 
 `tmux-whisper usage` reports a small local, transcript-free aggregate for
 successful deliveries; `tmux-whisper usage --json` is the stable surface for a
-future SwiftBar or native menu. It preserves aggregate counts after normal
-transcript-history pruning, but deliberately starts tracking only after the
-feature is installed. It never backfills old or pruned history.
+SwiftBar menu and for the experimental native companion. SwiftBar already
+consumes this contract; the native companion remains outside the stable release
+scope. The aggregate survives normal transcript-history pruning, but begins
+only after the feature is installed and never backfills old or pruned history.
 
 The estimate shows the typing pace assumption (`DICTATE_HISTORY_TYPING_WPM`,
 default `40`) and a signed difference between typing-equivalent time and full

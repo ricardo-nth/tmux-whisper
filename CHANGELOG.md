@@ -8,6 +8,7 @@
 - **SwiftBar reliability**: lifecycle paths refresh recording, processing, cancel, and error states, and stale markers fall back safely to polling. The plugin uses shared mode policy rather than duplicating CLI rules.
 - **Usage accounting and SwiftBar metrics**: `tmux-whisper usage [--json]` stores transcript-free aggregates for successful inline and tmux deliveries, with coverage and a signed typing-time estimate. SwiftBar shows those figures in its ready menu while keeping active states responsive.
 - **CLI contracts**: `docs/CLI_CONTRACTS.md` identifies stable JSON read surfaces for adapters and scripts.
+- **Swift chunking**: `DICTATE_SWIFT_PARAKEET_CHUNKING=1` remains opt-in and quarantined. Reconsider or remove it only when real dictation evidence establishes a long-audio need beyond the stable single-pass and tail-rescue path.
 - **Native companion**: the native macOS menu-bar companion remains an experimental draft prototype. It is pending a real spoken-dictation test and is not part of this release scope.
 
 ### Release checks still required

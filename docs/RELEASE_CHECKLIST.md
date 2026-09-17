@@ -19,6 +19,7 @@
 - [ ] Verify delivered-usage accounting:
   - [ ] Record and successfully deliver one inline dictation and one tmux dictation.
   - [ ] Confirm `tmux-whisper usage --json` advances the relevant delivery/word totals without exposing transcript text, and reports its coverage start and typing-time assumption.
+  - [ ] Capture `tmux-whisper usage --json`, cancel an inline or tmux recording, then confirm the delivery and word totals did not advance.
 - [ ] Verify SwiftBar in the installed environment:
   - [ ] Confirm ready-state usage metrics match `tmux-whisper usage --json` after its normal cache interval.
   - [ ] Watch an inline recording through recording, processing, and ready transitions; confirm the frontmost app is not considered safe to move away from until paste/autosend completes.
