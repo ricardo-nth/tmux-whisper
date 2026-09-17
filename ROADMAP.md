@@ -74,24 +74,23 @@ Success criteria:
 
 Focus: integrations as first-class, versioned surfaces.
 
-- Current starting point: `v0.6.0` is stable; v0.7 starts with dry-run lifecycle diagnostics before live adapter repair.
-- Formalize Raycast and SwiftBar integration lifecycle/versioning.
-- Add setup/update helpers for integrations, beginning with `tmux-whisper integrations doctor`, `tmux-whisper integrations repair --dry-run`, and adapter-only `tmux-whisper integrations repair`.
-- Report per-adapter provenance/drift state so installed Raycast and SwiftBar files can be inspected before behavior-level SwiftBar work begins.
+- `v0.6.0` remains stable. v0.7 lifecycle diagnostics, version reporting, dry-run repair, and adapter-only repair are complete.
+- Raycast and SwiftBar now report adapter versions plus `current`, `missing`, `non-executable`, or `different` provenance states.
+- SwiftBar lifecycle refresh and stale-marker recovery are complete; validate recording, processing, cancel, and error transitions in daily use before widening the adapter scope.
 - Keep the integration compatibility matrix and support boundaries documented in `docs/INTEGRATIONS.md`.
 
 Success criteria:
 
-- Integrations can be updated confidently without core regressions.
-- Adapter refresh plans can be inspected safely before they mutate Raycast or SwiftBar files.
+- Adapter lifecycle/version checks and refresh plans can be inspected before mutation.
+- Daily inline dictation remains the primary workflow, while tmux stays the differentiated asynchronous terminal workflow.
 
 ## Next Milestones: Usage Visibility and Native Companion
 
 Focus: turn trusted local usage data into small, useful surfaces without changing the working capture and transcription flow.
 
-- **Durable CLI usage metrics** ([#29](https://github.com/ricardo-nth/tmux-whisper/issues/29)): persist privacy-preserving aggregates for successfully delivered dictations, then expose a text and JSON summary with clearly stated coverage and estimated typing-time assumptions.
-- **SwiftBar usage metrics** ([#31](https://github.com/ricardo-nth/tmux-whisper/issues/31)): show the CLI usage summary in the existing menu while preserving clear active recording and processing state.
-- **Native Swift menu bar companion prototype** ([#30](https://github.com/ricardo-nth/tmux-whisper/issues/30)): explore a first-party menu bar surface that consumes stable CLI state and metrics, with its own icon and basic controls, while Raycast and SwiftBar remain available during the prototype.
+- **Durable CLI usage metrics** ([#29](https://github.com/ricardo-nth/tmux-whisper/issues/29)): complete. The CLI persists privacy-preserving aggregates for successful deliveries and exposes coverage plus estimated typing-time assumptions in text and JSON.
+- **SwiftBar usage metrics** ([#31](https://github.com/ricardo-nth/tmux-whisper/issues/31)): complete. The ready menu consumes the CLI usage summary while recording and processing remain clear.
+- **Native Swift menu bar companion prototype** ([#30](https://github.com/ricardo-nth/tmux-whisper/issues/30)): experimental draft. Keep Raycast and SwiftBar available while it awaits a real spoken-dictation test; do not include it in the v0.7 release decision.
 
 Success criteria:
 

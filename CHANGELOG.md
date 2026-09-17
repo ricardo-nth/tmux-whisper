@@ -1,74 +1,20 @@
 # Tmux Whisper changelog
 
-## Current working version
+## v0.7.0 — Unreleased
 
-- **Stable release**: `v0.6.0` (tagged on 2026-05-13; Homebrew formula updated)
-- **Active development track**: `v0.7.x` (integration platform)
-- **Completed**: FFmpeg AVFoundation capture now uses async resampling so WAV duration tracks wall-clock recording time instead of drifting short
-- **Completed**: Swift tail rescue now re-transcribes the final seconds of longer WAVs and merges that text back into the full-file transcript, fixing cases where Parakeet's full-file pass omits words that are present in the recorded WAV
-- **Completed**: Swift audio chunking is now opt-in via `DICTATE_SWIFT_PARAKEET_CHUNKING=1` instead of default, keeping the stable single-pass path for daily dictation
-- **Watch**: treat Swift chunking as quarantined experimental code; if tail rescue solves the observed clipping without a clear long-audio need for chunking, remove the chunking path rather than carrying a dormant complexity branch
-- **Completed**: experimental Swift chunking skips sub-1s tail fragments instead of asking the daemon to transcribe invalid audio
-- **Completed**: inline/Raycast FFmpeg shutdown now sends a controlled `q` over a private FIFO before falling back to SIGINT, preserving most of the stop-grace tail that SIGINT was dropping
-- **Completed**: trailing-word clipping hardening in the stop/transcribe path
-- **Completed**: inline/Raycast stop breadcrumbs when `keep_logs` is enabled
-- **Completed**: FFmpeg capture/shutdown diagnostics now archive WAV duration, byte counts, grace timing, and SIGINT/TERM exit timing for clipped-run forensics
-- **Completed**: inline/Raycast processing cue now plays immediately on stop, before the grace window finishes recording
-- **Completed**: inline `keep_logs` now archives per-run WAV + record/transcribe logs under `history/inline-debug` for clipped-run forensics
-- **Completed**: history now records inline audio artifact metadata while pruning archived debug WAVs after `history.audio_retention_days`, keeping stats/roundup inputs without unbounded audio growth
-- **Completed**: `whisper.cpp` removal; runtime, config, and operator docs are now Parakeet-only
-- **Completed**: operator CLI foundation for `status`, `debug`, `doctor`, `history`, and `last` with machine-readable JSON output
-- **Completed**: richer operator summaries for runtime state and recent history; these now become the base layer for a CLI-first operator expansion rather than a near-term dashboard/TUI
-- **Completed**: `tmux-whisper history list [N] --json` now exposes recent dictation summaries as machine-readable arrays, seeding the next operator-grade CLI layer
-- **Completed**: `tmux-whisper history search <query> [N] [--json]` now turns saved dictation history into a usable lookup surface for operators and agents
-- **Completed**: `tmux-whisper history export [N|all] [--json]` now exports full recent/history entries for shell pipelines, handoff artifacts, and agent-readable replay/debug flows
-- **Completed**: `tmux-whisper bench [N] --json` and `bench export [N|all] [--json]` now give operator timing data both summary-level JSON and full-row export paths instead of one text-only view
-- **Completed**: `tmux-whisper logs` now has proper CLI subcommands for `path`, `tail`, `follow`, and `--json`, so log inspection no longer depends on scraping one fixed human-only dump
-- **Completed**: `tmux-whisper devices --json` now turns AVFoundation device enumeration into a machine-readable support/debug surface instead of a text-only listing
-- **Completed**: `tmux-whisper config [--json]`, `config path [--json]`, and `config get <path> [--json]` now make config inspection first-class for humans, shell tooling, and future agents
-- **Completed**: `tmux-whisper watch [--interval SECONDS] [--iterations N]` now composes `status`, latest history, and bench data into a live text-first operator view instead of forcing a dashboard/TUI jump
-- **Completed**: `tmux-whisper status --preset compact` and `watch --preset compact` now give terminal operators a tighter summary surface for narrow panes, quick checks, and future plugin-style shells without changing the JSON contracts underneath
-- **Completed**: filtered bench inspection, history session summaries, and command cross-links now connect `bench`, `history sessions`, `logs`, `status`, and `watch` into a more navigable operator workflow
-- **Completed**: `tmux-whisper usage [--json]` now keeps a crash-safe, transcript-free aggregate for successful inline and tmux deliveries, with explicit coverage and signed typing-equivalent estimates suitable for later SwiftBar/native presentation
-- **Completed**: SwiftBar now presents the durable CLI usage summary in its ready menu with tracked words, coverage start, and a signed typing-time difference, while caching reads outside the 0.2-second state path
-- **Completed**: `docs/CLI_CONTRACTS.md` now marks stable JSON read surfaces versus experimental streaming/watch/benchmark output so future wrappers can build on the CLI without guessing
-- **Completed**: mode/config UX validation polish in `tmux-whisper doctor`, including flow-aware checks, surgical fix hints, and text/JSON parity
-- **Completed**: public command/help/docs now standardize on `tmux-whisper ...`; internal `dictate` config/temp paths remain intentionally unchanged for now
-- **Completed**: vocab safety follow-up now adds dry-run import paths plus backup/literal-match guardrails for vocab import and removal flows
-- **Completed**: config repair flow now provides canonical `config defaults`, in-place `config repair [--dry-run]`, and install-time seeding from one default template
-- **Completed**: malformed `config.toml` now degrades into explicit `debug`/`doctor`/`status` warnings, and `config repair` can reset invalid TOML safely with a backup
-- **Completed**: real-world docs refresh now clarifies install channels, tmux-first setup, integration environment expectations, and channel-specific upgrade/repair flows
-- **Completed**: bootstrap/install reproducibility pass now supports explicit bootstrap `--ref`, `--repo`, and `--archive-url` flags, records the installed source in `install-receipt.env`, and documents pinned setup across machines
-- **Completed**: stale cached AVFoundation audio-index invalidations now leave lightweight breadcrumbs in `debug`, `debug --json`, and active record logs when device order changes force a re-resolve
-- **Completed**: inline/Raycast fresh audio-cache hits now use a lighter mtime-based fast path and refresh cache timestamps in the background, reducing rare hotkey-to-start-cue stalls
-- **Completed**: SwiftBar inline processing now stays active until transcription, paste, and optional autosend finish, so the menu-bar state reflects when the frontmost window is safe to move away from
-- **Completed**: internal architecture deepening extracted config snapshots, audio source resolution, mode policy, and recording helpers into `bin/tmux-whisper-lib/` modules instead of keeping those seams embedded in the main CLI
-- **Completed**: SwiftBar now consumes the shared mode policy module for mode names, flow allowance, and app-driven inline mode detection instead of mirroring the same rules locally
-- **Completed**: `tmux-whisper integrations [--json]` now inspects the installed binary, install receipt, SwiftBar plugin, and Raycast scripts as a first integration-adapter status surface
-- **Completed**: `tmux-whisper integrations repair` now applies an adapter-only Raycast/SwiftBar refresh with missing-directory creation, executable-bit repair, changed-file reporting, and backups for replaced adapter files, while `repair --dry-run` remains non-mutating
-- **Completed**: integration status/doctor now reports per-adapter source provenance states (`current`, `missing`, `non-executable`, or `different`) for Raycast scripts and the SwiftBar plugin before any SwiftBar behavior changes
-- **Completed**: `docs/INTEGRATIONS.md` now documents the supported integration compatibility matrix, install-channel differences, environment expectations, and stable-vs-experimental boundaries for v0.7 work
-- **Completed**: SwiftBar state reliability now uses a shared best-effort `tmux-whisper swiftbar refresh` surface from CLI lifecycle paths and Raycast wrappers, refreshes recording/processing/cancel/error transitions, and prunes stale recording or processing markers so the menu falls back to polling without getting stuck
-- **Completed**: Raycast and SwiftBar adapter files now carry explicit adapter-version metadata, and `tmux-whisper integrations --json` plus doctor/status output report installed/source versions for faster lifecycle review
-- **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
-- **Distribution channels**:
-  - Homebrew (stable): `brew install ricardo-nth/tap/tmux-whisper`
-  - Bootstrap/local install (testing): `bootstrap.sh` or `./install.sh --force`
+`v0.6.0` remains the current stable release (tagged on 2026-05-13; Homebrew formula updated). This section prepares the next release; it does not announce a tag or a Homebrew update.
 
-### Residual v0.6 polish only (after the stable cut, if still needed)
+- **Integration lifecycle**: `tmux-whisper integrations`, `integrations doctor`, and adapter-only `integrations repair` now inspect and refresh Raycast and SwiftBar adapters. They report source provenance and explicit adapter versions; `repair --dry-run` previews changes before mutation.
+- **SwiftBar reliability**: lifecycle paths refresh recording, processing, cancel, and error states, and stale markers fall back safely to polling. The plugin uses shared mode policy rather than duplicating CLI rules.
+- **Usage accounting and SwiftBar metrics**: `tmux-whisper usage [--json]` stores transcript-free aggregates for successful inline and tmux deliveries, with coverage and a signed typing-time estimate. SwiftBar shows those figures in its ready menu while keeping active states responsive.
+- **CLI contracts**: `docs/CLI_CONTRACTS.md` identifies stable JSON read surfaces for adapters and scripts.
+- **Swift chunking**: `DICTATE_SWIFT_PARAKEET_CHUNKING=1` remains opt-in and quarantined. Reconsider or remove it only when real dictation evidence establishes a long-audio need beyond the stable single-pass and tail-rescue path.
+- **Native companion**: the native macOS menu-bar companion remains an experimental draft prototype. It is pending a real spoken-dictation test and is not part of this release scope.
 
-- keep the operator CLI as the primary support surface: inspect reliability from `status`, `history sessions`, `bench`, and `logs` before adding any new UI layer
-- keep filtered bench inspection, history session summaries, and compact/watch/log workflows evolving from real usage rather than opening a dashboard/TUI track
-- if any CLI-first polish remains after the stable cut, keep it small and evidence-led so it does not blur into v0.7 integration work
+### Release checks still required
 
-### Planned next (v0.7 integration platform)
-
-- begin v0.7 from a dedicated integration-platform branch now that `v0.6.0` is tagged and the Homebrew formula is updated
-- keep proving `tmux-whisper integrations doctor`, `repair --dry-run`, and adapter-only `repair` in daily use before widening lifecycle actions
-- extend `tmux-whisper integrations [--json]` from inspection/provenance into broader install/update actions only after the current repair lifecycle is proven
-- add integration setup/update helpers that can verify or reinstall Raycast scripts and SwiftBar plugin files without forcing a full app reinstall
-- explore the native macOS companion path separately from the CLI: lightweight menu-bar app, push-style state updates, and later Swift/Core Audio capture options
-- document integration compatibility and support boundaries: supported macOS assumptions, required PATH/env behavior, Homebrew vs bootstrap/local differences, and stable vs experimental integration surfaces
+- Exercise the integration lifecycle, adapter versions, usage accounting, SwiftBar state transitions, and real daily inline and tmux deliveries using `docs/RELEASE_CHECKLIST.md`.
+- Tagging, publication, and the Homebrew formula update happen only after those checks pass and remain separate release actions.
 
 ## 2026-05-09
 

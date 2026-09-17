@@ -160,9 +160,10 @@ If you are not inside tmux, use `tmux-whisper inline` or the Raycast inline inte
 
 `tmux-whisper usage` reports a small local, transcript-free aggregate for
 successful deliveries; `tmux-whisper usage --json` is the stable surface for a
-future SwiftBar or native menu. It preserves aggregate counts after normal
-transcript-history pruning, but deliberately starts tracking only after the
-feature is installed. It never backfills old or pruned history.
+SwiftBar menu and for the experimental native companion. SwiftBar already
+consumes this contract; the native companion remains outside the stable release
+scope. The aggregate survives normal transcript-history pruning, but begins
+only after the feature is installed and never backfills old or pruned history.
 
 The estimate shows the typing pace assumption (`DICTATE_HISTORY_TYPING_WPM`,
 default `40`) and a signed difference between typing-equivalent time and full
@@ -236,7 +237,7 @@ tmux-whisper doctor
 tmux-whisper status
 ```
 
-Common real-world fixes are documented in [docs/TROUBLESHOOTING.md](/Users/admin/Documents/Projects/tmux-whspr/tmux-whisper/docs/TROUBLESHOOTING.md), including:
+Common real-world fixes are documented in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md), including:
 
 - install-channel refresh and upgrade drift
 - invalid config repair
@@ -260,7 +261,7 @@ Recommended setup:
 
 - create three Raycast Script Commands that point at those installed files
 - use `tmux-whisper-inline.sh` for frontmost-app paste/send
-- use `tmux-whisper-toggle.sh` for tmux-first recording from a hotkey
+- use `tmux-whisper-toggle.sh` for pane-targeted tmux recording from a hotkey
 - use `tmux-whisper-cancel.sh` for discard/cancel behavior
 
 ### SwiftBar
@@ -365,7 +366,7 @@ GitHub Actions runs the same checks on push and pull requests.
 
 ## Roadmap
 
-See `ROADMAP.md` for current milestone direction (tmux-first hardening -> UX maturity -> integration platform -> stable release).
+See `ROADMAP.md` for the current direction: inline daily dictation, a differentiated tmux workflow, and versioned integration adapters.
 
 ## Contributing
 
