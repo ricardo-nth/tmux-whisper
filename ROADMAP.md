@@ -1,10 +1,10 @@
 # Roadmap
 
-This roadmap reflects the current product direction: **tmux-first reliability** for daily terminal work, with inline and integrations as supporting paths.
+This roadmap reflects the current product direction: reliable local dictation through the CLI, with **inline dictation** as the primary daily path and tmux as a distinctive terminal workflow.
 
 ## Principles
 
-- Keep core behavior stable in tmux-first workflows.
+- Keep core behavior stable across inline and tmux workflows.
 - Improve UX without introducing fragile complexity.
 - Ship stable releases via Homebrew; use local/bootstrap installs for active testing.
 
@@ -40,7 +40,7 @@ Recent progress (2026-02-19):
 - `tmux-whisper config defaults` and `config repair [--dry-run]` now provide a forward-safe config migration path, including reset/backup handling for malformed TOML.
 - Vocab safety flow now includes invalid-line previews, guarded dedupe backups, and export snapshots.
 - Added dedicated troubleshooting guide: `docs/TROUBLESHOOTING.md`.
-- Active docs now better reflect real-world use: install channel choice, tmux-first setup, integration env expectations, and upgrade/repair flow.
+- Active docs now better reflect real-world use: install channel choice, inline and tmux setup, integration environment expectations, and upgrade/repair flow.
 - Added runtime SwiftBar integration toggle (`tmux-whisper swiftbar on|off|toggle`) so integration can be managed without reinstalling.
 - Public-facing command language is now standardized on `tmux-whisper` across the active docs/operator surface, while config/sound paths remain intentionally under `dictate` for now.
 - Stale cached AVFoundation audio-index invalidations now leave lightweight breadcrumbs in `debug`, `debug --json`, and active record logs when device-order changes force a re-resolve.
@@ -59,7 +59,7 @@ Focus: turn the existing operator summary layer into a first-class terminal prod
 - Keep pushing from parity into workflow depth: export/search/follow/watch commands should build on the read-only contracts rather than bypass them.
 - Add export-friendly and watch/tail-style workflows that keep tmux/terminal users inside the CLI.
 - Use filtered bench inspection and history session summaries as the main reliability investigation surface for FFmpeg drift soak, morning-delay warm-cache behavior, and SwiftBar/sound-start timing.
-- Keep tmux-first workflow as the primary operating model.
+- Treat inline dictation as the primary daily operating model while keeping tmux workflows first-class for terminal users.
 - Treat any future TUI as a later convenience layer built on stable CLI contracts, not as the next milestone.
 
 Success criteria:
@@ -77,12 +77,26 @@ Focus: integrations as first-class, versioned surfaces.
 - Formalize Raycast and SwiftBar integration lifecycle/versioning.
 - Add setup/update helpers for integrations, beginning with `tmux-whisper integrations doctor`, `tmux-whisper integrations repair --dry-run`, and adapter-only `tmux-whisper integrations repair`.
 - Report per-adapter provenance/drift state so installed Raycast and SwiftBar files can be inspected before behavior-level SwiftBar work begins.
-- Document integration compatibility matrix and support boundaries.
+- Keep the integration compatibility matrix and support boundaries documented in `docs/INTEGRATIONS.md`.
 
 Success criteria:
 
 - Integrations can be updated confidently without core regressions.
 - Adapter refresh plans can be inspected safely before they mutate Raycast or SwiftBar files.
+
+## Next Milestones: Usage Visibility and Native Companion
+
+Focus: turn trusted local usage data into small, useful surfaces without changing the working capture and transcription flow.
+
+- **Durable CLI usage metrics** ([#29](https://github.com/ricardo-nth/tmux-whisper/issues/29)): persist privacy-preserving aggregates for successfully delivered dictations, then expose a text and JSON summary with clearly stated coverage and estimated typing-time assumptions.
+- **SwiftBar usage metrics** ([#31](https://github.com/ricardo-nth/tmux-whisper/issues/31)): show the CLI usage summary in the existing menu while preserving clear active recording and processing state.
+- **Native Swift menu bar companion prototype** ([#30](https://github.com/ricardo-nth/tmux-whisper/issues/30)): explore a first-party menu bar surface that consumes stable CLI state and metrics, with its own icon and basic controls, while Raycast and SwiftBar remain available during the prototype.
+
+Success criteria:
+
+- Usage figures remain accurate after transcript history is pruned and never imply recovery of older untracked dictations.
+- Menu surfaces consume documented CLI contracts instead of calculating their own totals or duplicating capture logic.
+- The native prototype is exercised with real local dictation before any decision to expand its scope.
 
 ## v1.0.0 - Stable Platform Release
 
@@ -103,7 +117,7 @@ Success criteria:
 Reasoning:
 
 - Prior attempts were slower or required disproportionate complexity for this project's goals.
-- Near-term effort is better spent on reliability and UX of the tmux-first core.
+- Near-term effort is better spent on reliability and UX of the local inline and tmux workflows.
 
 Future options (post-stability):
 

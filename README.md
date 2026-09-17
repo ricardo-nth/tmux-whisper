@@ -232,6 +232,8 @@ Common real-world fixes are documented in [docs/TROUBLESHOOTING.md](/Users/admin
 
 ## Integrations
 
+Raycast and SwiftBar are optional adapters around the CLI. Tmux Whisper remains usable without either one. For the supported integration matrix, install-channel expectations, environment boundaries, and stable-vs-experimental surface definitions, see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
+
 ### Raycast
 
 Installer-managed Raycast scripts live at:
