@@ -144,7 +144,10 @@ usage_file_signature() {
   # inode, mtime, and size are cheap to read at every redraw. The CLI publishes
   # usage.json with an atomic replacement, so inode catches back-to-back
   # deliveries that happen in one timestamp tick with the same byte length.
-  stat -f '%i:%m:%z' "$file" 2>/dev/null || stat -c '%i:%Y:%s' "$file" 2>/dev/null || printf '%s\n' "unreadable"
+  # GNU `stat -f` reports filesystem fields, not file fields. Prefer GNU's
+  # file format and fall back to macOS's BSD form so unrelated cache writes
+  # cannot alter this file identity.
+  stat -c '%i:%Y:%s' "$file" 2>/dev/null || stat -f '%i:%m:%z' "$file" 2>/dev/null || printf '%s\n' "unreadable"
 }
 
 format_usage_duration() {
