@@ -5,11 +5,79 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DICTATE_BIN="$ROOT/bin/tmux-whisper"
 TMP_ROOT="$(mktemp -d)"
 STUB_DIR="$TMP_ROOT/stubs"
+STUB_REGISTRY_DIR="$TMP_ROOT/stub-daemons"
 mkdir -p "$STUB_DIR"
+
+stub_process_matches_registry() {
+  local pid="$1"
+  local socket_path="$2"
+  local proc_cmd
+
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  [[ "$socket_path" == "$TMP_ROOT/"* ]] || return 1
+  proc_cmd="$(/bin/ps -ww -p "$pid" -o command= 2>/dev/null || true)"
+  [[ "$proc_cmd" == *"$socket_path"* ]]
+}
+
+cleanup_stub_daemons() {
+  local sf pid socket_path tries
+
+  [[ -d "$STUB_REGISTRY_DIR" ]] || return 0
+  while IFS= read -r sf; do
+    [[ -f "$sf" ]] || continue
+    unset pid socket_path
+    # shellcheck disable=SC1090
+    . "$sf" 2>/dev/null || true
+    stub_process_matches_registry "${pid:-}" "${socket_path:-}" || continue
+
+    kill -TERM "$pid" 2>/dev/null || true
+    for ((tries = 0; tries < 20; tries++)); do
+      ! stub_process_matches_registry "$pid" "$socket_path" && break
+      sleep 0.05
+    done
+    if stub_process_matches_registry "$pid" "$socket_path"; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  done < <(find "$STUB_REGISTRY_DIR" -type f -name '*.state' 2>/dev/null || true)
+}
+
+assert_no_registered_stub_processes() {
+  local sf pid socket_path
+
+  [[ -d "$STUB_REGISTRY_DIR" ]] || return 0
+  while IFS= read -r sf; do
+    [[ -f "$sf" ]] || continue
+    unset pid socket_path
+    # shellcheck disable=SC1090
+    . "$sf" 2>/dev/null || true
+    if stub_process_matches_registry "${pid:-}" "${socket_path:-}"; then
+      fail "stub_daemon_cleanup pid=${pid} socket=${socket_path}"
+    fi
+  done < <(find "$STUB_REGISTRY_DIR" -type f -name '*.state' 2>/dev/null || true)
+  pass "stub_daemon_cleanup"
+}
+
+assert_registered_stub_process() {
+  local sf pid socket_path
+
+  [[ -d "$STUB_REGISTRY_DIR" ]] || fail "stub_daemon_registry_created"
+  while IFS= read -r sf; do
+    [[ -f "$sf" ]] || continue
+    unset pid socket_path
+    # shellcheck disable=SC1090
+    . "$sf" 2>/dev/null || true
+    if stub_process_matches_registry "${pid:-}" "${socket_path:-}"; then
+      pass "stub_daemon_registry_records_live_stub"
+      return 0
+    fi
+  done < <(find "$STUB_REGISTRY_DIR" -type f -name '*.state' 2>/dev/null || true)
+  fail "stub_daemon_registry_records_live_stub"
+}
 
 cleanup() {
   set +e
   if [[ -d "$TMP_ROOT" ]]; then
+    cleanup_stub_daemons
     while IFS= read -r sf; do
       [[ -f "$sf" ]] || continue
       unset pid wav
@@ -350,7 +418,12 @@ case "$cmd" in
       esac
     done
     [[ -n "$socket_path" ]] || { echo "missing socket path" >&2; exit 2; }
-    python3 - "$socket_path" <<'PYEOF'
+    registry_dir="${DICTATE_TEST_STUB_REGISTRY_DIR:-}"
+    if [[ -n "$registry_dir" ]]; then
+      mkdir -p "$registry_dir"
+      printf 'pid=%q\nsocket_path=%q\n' "$$" "$socket_path" >"$registry_dir/$$.state"
+    fi
+    exec python3 - "$socket_path" <<'PYEOF'
 import json
 import os
 import socket
@@ -515,6 +588,7 @@ setup_case() {
   export DICTATE_TMUX_JOBS_DIR="$CASE_DIR/tmux-jobs"
   export DICTATE_SWIFTBAR_REFRESH_LOG="$CASE_DIR/logs/swiftbar-refresh.log"
   export DICTATE_TMUX_WHISPERD_BIN="$STUB_DIR/tmux-whisperd"
+  export DICTATE_TEST_STUB_REGISTRY_DIR="$STUB_REGISTRY_DIR"
   export DICTATE_SWIFT_PARAKEET_MODEL_PATH="$CASE_DIR/swift-model"
   export DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/${socket_tag}.sock"
   export DICTATE_KEEP_LOGS=1
@@ -1206,5 +1280,9 @@ run_tmux_audio_cache_note_round
 run_status_postprocess_round
 run_status_model_mode_round
 run_status_backend_round
+
+assert_registered_stub_process
+cleanup_stub_daemons
+assert_no_registered_stub_processes
 
 echo "Flow parity tests passed."
