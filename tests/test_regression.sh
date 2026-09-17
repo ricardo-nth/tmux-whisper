@@ -129,6 +129,17 @@ assert_file_not_exists() {
   echo "PASS: $name"
 }
 
+assert_not_symlink() {
+  local name="$1"
+  local file="$2"
+  if [[ -L "$file" ]]; then
+    echo "FAIL: $name" >&2
+    echo "Expected regular file, found symlink: $file" >&2
+    exit 1
+  fi
+  echo "PASS: $name"
+}
+
 assert_file_executable() {
   local name="$1"
   local file="$2"
@@ -526,7 +537,7 @@ assert_file_contains "swiftbar_enabled_config_parse" "$ROOT/integrations/tmux-wh
 assert_file_contains "raycast_inline_adapter_version_source" "$ROOT/integrations/raycast/tmux-whisper-inline.sh" "tmux-whisper.adapter-version: 1"
 assert_file_contains "raycast_toggle_adapter_version_source" "$ROOT/integrations/raycast/tmux-whisper-toggle.sh" "tmux-whisper.adapter-version: 1"
 assert_file_contains "raycast_cancel_adapter_version_source" "$ROOT/integrations/raycast/tmux-whisper-cancel.sh" "tmux-whisper.adapter-version: 1"
-assert_file_contains "swiftbar_adapter_version_source" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "tmux-whisper.adapter-version: 1"
+assert_file_contains "swiftbar_adapter_version_source" "$ROOT/integrations/tmux-whisper-status.0.2s.sh" "tmux-whisper.adapter-version: 2"
 
 # --- Regression 8b: integration status inspects installed adapter paths. ---
 INTEGRATIONS_HOME="$TMP_ROOT/home-integrations"
@@ -566,7 +577,7 @@ assert_contains "integrations_status_receipt" "$integrations_text" "install rece
 assert_contains "integrations_status_swiftbar_off" "$integrations_text" "enabled: OFF"
 assert_contains "integrations_status_swiftbar_path" "$integrations_text" "plugin: $INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh (executable)"
 assert_contains "integrations_status_swiftbar_state" "$integrations_text" "plugin state: current"
-assert_contains "integrations_status_swiftbar_version" "$integrations_text" "plugin version: 1 (source: 1)"
+assert_contains "integrations_status_swiftbar_version" "$integrations_text" "plugin version: 2 (source: 2)"
 assert_contains "integrations_status_raycast_inline" "$integrations_text" "inline: $INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-inline.sh (executable)"
 assert_contains "integrations_status_raycast_inline_state" "$integrations_text" "inline state: current"
 assert_contains "integrations_status_raycast_inline_version" "$integrations_text" "inline version: 1 (source: 1)"
@@ -580,8 +591,8 @@ assert_json_equals "integrations_json_receipt_ref" "$integrations_json" "receipt
 assert_json_equals "integrations_json_swiftbar_enabled" "$integrations_json" "swiftbar.enabled" "false"
 assert_json_equals "integrations_json_swiftbar_executable" "$integrations_json" "swiftbar.plugin.executable" "true"
 assert_json_equals "integrations_json_swiftbar_state" "$integrations_json" "swiftbar.plugin.state" "current"
-assert_json_equals "integrations_json_swiftbar_version" "$integrations_json" "swiftbar.plugin.version" "1"
-assert_json_equals "integrations_json_swiftbar_source_version" "$integrations_json" "swiftbar.plugin.source_version" "1"
+assert_json_equals "integrations_json_swiftbar_version" "$integrations_json" "swiftbar.plugin.version" "2"
+assert_json_equals "integrations_json_swiftbar_source_version" "$integrations_json" "swiftbar.plugin.source_version" "2"
 assert_json_equals "integrations_json_swiftbar_source" "$integrations_json" "swiftbar.plugin.source_path" "$ROOT/integrations/tmux-whisper-status.0.2s.sh"
 assert_json_equals "integrations_json_raycast_inline" "$integrations_json" "raycast.scripts.0.name" "inline"
 assert_json_equals "integrations_json_raycast_inline_executable" "$integrations_json" "raycast.scripts.0.executable" "true"
@@ -599,7 +610,7 @@ assert_contains "integrations_doctor_ok" "$integrations_doctor" "status: ok (0 w
 assert_contains "integrations_doctor_source" "$integrations_doctor" "source: $ROOT"
 assert_contains "integrations_doctor_swiftbar" "$integrations_doctor" "plugin: $INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh (executable)"
 assert_contains "integrations_doctor_swiftbar_state" "$integrations_doctor" "plugin state: current"
-assert_contains "integrations_doctor_swiftbar_version" "$integrations_doctor" "plugin version: 1 (source: 1)"
+assert_contains "integrations_doctor_swiftbar_version" "$integrations_doctor" "plugin version: 2 (source: 2)"
 assert_contains "integrations_doctor_raycast_inline_state" "$integrations_doctor" "inline state: current"
 assert_contains "integrations_doctor_raycast_inline_version" "$integrations_doctor" "inline version: 1 (source: 1)"
 assert_contains "integrations_doctor_next_repair" "$integrations_doctor" "tmux-whisper integrations repair --dry-run"
@@ -857,7 +868,123 @@ assert_file_not_exists "swiftbar_stale_processing_cleaned" "$SWIFTBAR_MODES_HOME
 assert_file_not_exists "swiftbar_old_cancel_cleaned" "$SWIFTBAR_MODES_HOME/dictate-cancelled.flag"
 assert_file_not_exists "swiftbar_old_processed_cleaned" "$SWIFTBAR_MODES_HOME/dictate-just-processed"
 
-# --- Regression 12: budget profile auto-selection is based on transcript length, not mode name. ---
+# --- Regression 12: SwiftBar consumes cached stable CLI usage JSON. ---
+SWIFTBAR_USAGE_HOME="$TMP_ROOT/home-swiftbar-usage"
+SWIFTBAR_USAGE_BIN="$SWIFTBAR_USAGE_HOME/.local/bin"
+SWIFTBAR_USAGE_CFG="$SWIFTBAR_USAGE_HOME/.config/dictate"
+SWIFTBAR_USAGE_CACHE="$SWIFTBAR_USAGE_HOME/.cache/swiftbar"
+SWIFTBAR_USAGE_CALL_LOG="$SWIFTBAR_USAGE_HOME/usage-calls.log"
+SWIFTBAR_USAGE_JSON="$SWIFTBAR_USAGE_HOME/usage-response.json"
+mkdir -p "$SWIFTBAR_USAGE_BIN" "$SWIFTBAR_USAGE_CFG" "$SWIFTBAR_USAGE_CACHE"
+cat >"$SWIFTBAR_USAGE_CFG/config.toml" <<'EOF'
+[meta]
+config_version = 1
+
+[audio]
+source = "auto"
+
+[integrations.swiftbar]
+enabled = true
+EOF
+cat >"$SWIFTBAR_USAGE_BIN/tmux-whisper" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "usage" && "${2:-}" == "--json" ]]; then
+  printf 'usage\n' >>"${DICTATE_USAGE_CALL_LOG:?}"
+  cat "${DICTATE_USAGE_STUB_JSON:?}"
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$SWIFTBAR_USAGE_BIN/tmux-whisper"
+cat >"$SWIFTBAR_USAGE_JSON" <<'EOF'
+{"command":"usage","schema_version":1,"coverage":{"status":"active","tracking_started_at":"2026-09-17T09:00:00Z"},"delivered_dictations":{"count":4},"processed_words":1234,"estimated_time_difference_ms":150000}
+EOF
+swiftbar_usage_env=(
+  HOME="$SWIFTBAR_USAGE_HOME"
+  XDG_CONFIG_HOME="$SWIFTBAR_USAGE_HOME/.config"
+  PATH="$SWIFTBAR_USAGE_BIN:$STUB_BIN:/usr/bin:/bin"
+  SWIFTBAR_PLUGIN_CACHE_PATH="$SWIFTBAR_USAGE_CACHE"
+  DICTATE_BIN="$SWIFTBAR_USAGE_BIN/tmux-whisper"
+  DICTATE_INTERNAL_LIB_DIR="$ROOT/bin/tmux-whisper-lib"
+  DICTATE_USAGE_CALL_LOG="$SWIFTBAR_USAGE_CALL_LOG"
+  DICTATE_USAGE_STUB_JSON="$SWIFTBAR_USAGE_JSON"
+  DICTATE_USAGE_SUMMARY_FILE="$SWIFTBAR_USAGE_HOME/usage.json"
+  DICTATE_STATE_FILE="$SWIFTBAR_USAGE_HOME/tmux.state"
+  DICTATE_INLINE_STATE_FILE="$SWIFTBAR_USAGE_HOME/inline.state"
+  DICTATE_PROCESSING_DIR="$SWIFTBAR_USAGE_HOME/dictate-processing"
+  DICTATE_PROCESSED_FLAG="$SWIFTBAR_USAGE_HOME/dictate-just-processed"
+  DICTATE_CANCEL_FLAG="$SWIFTBAR_USAGE_HOME/dictate-cancelled.flag"
+  DICTATE_PROCESSING_LONG_FLAG="$SWIFTBAR_USAGE_HOME/dictate-inline-processing-long.flag"
+  DICTATE_TMUX_JOBS_DIR="$SWIFTBAR_USAGE_HOME/dictate-tmux-jobs"
+)
+swiftbar_usage_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_words" "$swiftbar_usage_out" "Usage (tracked): 1234 words · 4 deliveries"
+assert_contains "swiftbar_usage_tracking_period" "$swiftbar_usage_out" "Tracking since: 2026-09-17T09:00:00Z"
+assert_contains "swiftbar_usage_labeled_difference" "$swiftbar_usage_out" "Estimated typing-time difference: +2m 30s (typing - dictation)"
+assert_file_contains "swiftbar_usage_cli_contract_called" "$SWIFTBAR_USAGE_CALL_LOG" "usage"
+assert_file_exists "swiftbar_config_private_cache_created" "$SWIFTBAR_USAGE_CACHE/dictate-config.cache"
+assert_file_exists "swiftbar_usage_private_cache_created" "$SWIFTBAR_USAGE_CACHE/tmux-whisper-usage.cache"
+swiftbar_cache_mode="$(stat -c '%a' "$SWIFTBAR_USAGE_CACHE" 2>/dev/null || stat -f '%Lp' "$SWIFTBAR_USAGE_CACHE" 2>/dev/null)"
+assert_equals "swiftbar_sourced_caches_private_permissions" "$swiftbar_cache_mode" "700"
+swiftbar_usage_cached_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_cache_keeps_menu" "$swiftbar_usage_cached_out" "Usage (tracked): 1234 words"
+usage_call_count="$(wc -l <"$SWIFTBAR_USAGE_CALL_LOG" | tr -d ' ')"
+assert_equals "swiftbar_usage_cache_avoids_hot_path_cli" "$usage_call_count" "1"
+
+# A cache file left behind from a formerly shared directory must never be
+# sourced. The plugin ignores it and atomically replaces it with a regular,
+# private cache file after reading the CLI contract again.
+printf '%s\n' 'USAGE_MENU_STATE=not_started' >"$SWIFTBAR_USAGE_HOME/untrusted-cache"
+ln -sf "$SWIFTBAR_USAGE_HOME/untrusted-cache" "$SWIFTBAR_USAGE_CACHE/tmux-whisper-usage.cache"
+swiftbar_usage_symlink_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_symlink_not_sourced" "$swiftbar_usage_symlink_out" "Usage (tracked): 1234 words"
+assert_not_symlink "swiftbar_usage_symlink_replaced" "$SWIFTBAR_USAGE_CACHE/tmux-whisper-usage.cache"
+usage_call_count="$(wc -l <"$SWIFTBAR_USAGE_CALL_LOG" | tr -d ' ')"
+assert_equals "swiftbar_usage_symlink_refreshes_contract" "$usage_call_count" "2"
+
+# Atomic usage-ledger replacements can share a whole-second mtime and byte
+# length. The inode in the cache signature still makes the new total visible.
+printf '%s' 'old' >"$SWIFTBAR_USAGE_HOME/usage.json"
+touch -t 202609170900 "$SWIFTBAR_USAGE_HOME/usage.json"
+swiftbar_usage_ledger_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_ledger_first_signature" "$swiftbar_usage_ledger_out" "Usage (tracked): 1234 words"
+printf '%s' 'new' >"$SWIFTBAR_USAGE_HOME/usage.json.replacement"
+touch -t 202609170900 "$SWIFTBAR_USAGE_HOME/usage.json.replacement"
+mv -f "$SWIFTBAR_USAGE_HOME/usage.json.replacement" "$SWIFTBAR_USAGE_HOME/usage.json"
+swiftbar_usage_ledger_replaced_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_ledger_same_tick_replaced" "$swiftbar_usage_ledger_replaced_out" "Usage (tracked): 1234 words"
+usage_call_count="$(wc -l <"$SWIFTBAR_USAGE_CALL_LOG" | tr -d ' ')"
+assert_equals "swiftbar_usage_ledger_inode_invalidates_cache" "$usage_call_count" "4"
+
+# The just-processed handoff bypasses the cache so an event refresh reports a
+# newly completed dictation immediately, even inside the normal cache window.
+touch "$SWIFTBAR_USAGE_HOME/dictate-just-processed"
+swiftbar_usage_fresh_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_post_delivery_refresh" "$swiftbar_usage_fresh_out" "Usage (tracked): 1234 words"
+usage_call_count="$(wc -l <"$SWIFTBAR_USAGE_CALL_LOG" | tr -d ' ')"
+assert_equals "swiftbar_usage_post_delivery_bypasses_cache" "$usage_call_count" "5"
+# A cache-directory write is unrelated to the usage ledger or completion
+# marker. It must not alter their signatures and force another CLI read.
+printf '%s\n' 'unrelated cache write' >"$SWIFTBAR_USAGE_CACHE/unrelated-cache-file"
+swiftbar_usage_post_delivery_cached_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_post_delivery_cache_keeps_menu" "$swiftbar_usage_post_delivery_cached_out" "Usage (tracked): 1234 words"
+usage_call_count="$(wc -l <"$SWIFTBAR_USAGE_CALL_LOG" | tr -d ' ')"
+assert_equals "swiftbar_usage_unrelated_cache_write_keeps_completion_cache" "$usage_call_count" "5"
+
+# Missing and malformed summaries are non-fatal and leave the rest of the
+# ready-state controls visible. A failed refresh must replace older cached
+# metrics, and is briefly cached so polling does not hammer the CLI.
+printf '%s\n' '{"command":"usage","schema_version":1,"coverage":{"status":"future"},"delivered_dictations":{"count":true},"processed_words":1.5,"estimated_time_difference_ms":0}' >"$SWIFTBAR_USAGE_JSON"
+touch "$SWIFTBAR_USAGE_HOME/usage.json"
+swiftbar_usage_bad_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_malformed_nonfatal" "$swiftbar_usage_bad_out" "Usage summary unavailable (will retry)"
+assert_contains "swiftbar_usage_malformed_keeps_controls" "$swiftbar_usage_bad_out" "Inline"
+swiftbar_usage_bad_cached_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
+assert_contains "swiftbar_usage_failure_cache_keeps_fallback" "$swiftbar_usage_bad_cached_out" "Usage summary unavailable (will retry)"
+usage_call_count="$(wc -l <"$SWIFTBAR_USAGE_CALL_LOG" | tr -d ' ')"
+assert_equals "swiftbar_usage_failure_cache_avoids_hot_path_cli" "$usage_call_count" "6"
+
+# --- Regression 13: budget profile auto-selection is based on transcript length, not mode name. ---
 BUDGET_HOME="$TMP_ROOT/home-budget"
 BUDGET_BIN="$BUDGET_HOME/.local/bin"
 BUDGET_CFG="$BUDGET_HOME/.config/dictate"

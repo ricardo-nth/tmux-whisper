@@ -5,7 +5,7 @@
 # <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
 # <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
 # tmux-whisper.adapter: swiftbar
-# tmux-whisper.adapter-version: 1
+# tmux-whisper.adapter-version: 2
 
 STATE_FILE="${DICTATE_STATE_FILE:-/tmp/whisper-dictate.state}"
 INLINE_STATE="${DICTATE_INLINE_STATE_FILE:-/tmp/whisper-dictate-inline.state}"
@@ -46,15 +46,62 @@ if [[ -z "${CEREBRAS_API_KEY:-}" && -f "${ZDOTDIR:-$HOME}/.zshrc" ]]; then
   eval "$(grep '^export CEREBRAS_API_KEY=' "${ZDOTDIR:-$HOME}/.zshrc" 2>/dev/null || true)"
 fi
 
-# Keep caches out of /tmp to avoid unpredictable OS cleanup causing slow (re)parsing.
-CACHE_DIR="${SWIFTBAR_PLUGIN_CACHE_PATH:-/tmp}"
-mkdir -p "$CACHE_DIR" 2>/dev/null || true
+# The plugin sources both cache files, so never use SwiftBar's shared /tmp
+# fallback. Honour an explicitly supplied private cache directory for test
+# isolation; otherwise use a private per-user config cache.
+ensure_private_cache_dir() {
+  local dir="${1:-}" mode
+  [[ -n "$dir" && ! -L "$dir" ]] || return 1
+  mkdir -p -m 700 "$dir" 2>/dev/null || return 1
+  chmod 700 "$dir" 2>/dev/null || return 1
+  [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]] || return 1
+  # GNU stat accepts `-f` as a filesystem-format option, so try its file-mode
+  # form first and use macOS's `-f` form only when that is unavailable.
+  mode="$(stat -c '%a' "$dir" 2>/dev/null || stat -f '%Lp' "$dir" 2>/dev/null || true)"
+  [[ "$mode" == "700" || "$mode" == "0700" ]]
+}
+
+DEFAULT_CACHE_DIR="$CONFIG_DIR/.cache/swiftbar"
+CACHE_DIR="${SWIFTBAR_PLUGIN_CACHE_PATH:-$DEFAULT_CACHE_DIR}"
+CACHE_DIR_READY="0"
+if ensure_private_cache_dir "$CACHE_DIR"; then
+  CACHE_DIR_READY="1"
+elif [[ "$CACHE_DIR" != "$DEFAULT_CACHE_DIR" ]] && ensure_private_cache_dir "$DEFAULT_CACHE_DIR"; then
+  CACHE_DIR="$DEFAULT_CACHE_DIR"
+  CACHE_DIR_READY="1"
+fi
 CONFIG_CACHE="$CACHE_DIR/dictate-config.cache"
+USAGE_CACHE="$CACHE_DIR/tmux-whisper-usage.cache"
+# The plugin is polled every 0.2 seconds. Keep the durable CLI read off that
+# hot path, but always invalidate immediately when its atomic ledger changes.
+USAGE_CACHE_TTL_SECONDS="${DICTATE_SWIFTBAR_USAGE_CACHE_TTL_SECONDS:-30}"
+[[ "$USAGE_CACHE_TTL_SECONDS" =~ ^[0-9]+$ ]] || USAGE_CACHE_TTL_SECONDS=30
+USAGE_FAILURE_CACHE_TTL_SECONDS="${DICTATE_SWIFTBAR_USAGE_FAILURE_CACHE_TTL_SECONDS:-2}"
+[[ "$USAGE_FAILURE_CACHE_TTL_SECONDS" =~ ^[0-9]+$ ]] || USAGE_FAILURE_CACHE_TTL_SECONDS=2
 
 shopt -s nullglob
 
 safe_key() {
   printf "%s" "${1:-}" | sed -E 's/[^A-Za-z0-9_]/_/g'
+}
+
+safe_cache_file() {
+  local file="${1:-}"
+  [[ -f "$file" && ! -L "$file" && -O "$file" ]]
+}
+
+write_usage_cache() {
+  local tmp
+  tmp="$(mktemp "$CACHE_DIR/.tmux-whisper-usage.cache.XXXXXX" 2>/dev/null)" || return 1
+  chmod 600 "$tmp" 2>/dev/null || return 1
+  cat >"$tmp" && mv -f "$tmp" "$USAGE_CACHE"
+}
+
+write_config_cache() {
+  local tmp
+  tmp="$(mktemp "$CACHE_DIR/.dictate-config.cache.XXXXXX" 2>/dev/null)" || return 1
+  chmod 600 "$tmp" 2>/dev/null || return 1
+  cat >"$tmp" && mv -f "$tmp" "$CONFIG_CACHE"
 }
 
 short_path_tail() {
@@ -86,15 +133,158 @@ is_recent_file() {
   [[ "$age" -le "$max_age_s" ]]
 }
 
+usage_summary_file() {
+  printf '%s\n' "${DICTATE_USAGE_SUMMARY_FILE:-$DICTATE_CONFIG_DIR/usage.json}"
+}
+
+usage_file_signature() {
+  local file="${1:-}"
+  [[ -f "$file" ]] || { printf '%s\n' "missing"; return 0; }
+
+  # inode, mtime, and size are cheap to read at every redraw. The CLI publishes
+  # usage.json with an atomic replacement, so inode catches back-to-back
+  # deliveries that happen in one timestamp tick with the same byte length.
+  # GNU `stat -f` reports filesystem fields, not file fields. Prefer GNU's
+  # file format and fall back to macOS's BSD form so unrelated cache writes
+  # cannot alter this file identity.
+  stat -c '%i:%Y:%s' "$file" 2>/dev/null || stat -f '%i:%m:%z' "$file" 2>/dev/null || printf '%s\n' "unreadable"
+}
+
+format_usage_duration() {
+  local value="${1:-0}"
+  [[ "$value" =~ ^-?[0-9]+$ ]] || { printf '%s\n' "?"; return 0; }
+  local sign=""
+  if [[ "$value" == -* ]]; then
+    sign="-"
+    value="${value#-}"
+  elif [[ "$value" -gt 0 ]]; then
+    sign="+"
+  fi
+  local seconds=$((value / 1000)) hours minutes
+  hours=$((seconds / 3600))
+  minutes=$(((seconds % 3600) / 60))
+  seconds=$((seconds % 60))
+  if [[ "$hours" -gt 0 ]]; then
+    printf '%s%dh %02dm\n' "$sign" "$hours" "$minutes"
+  elif [[ "$minutes" -gt 0 ]]; then
+    printf '%s%dm %02ds\n' "$sign" "$minutes" "$seconds"
+  else
+    printf '%s%ds\n' "$sign" "$seconds"
+  fi
+}
+
+# Load the stable `tmux-whisper usage --json` contract into a small, safe
+# cache. The first argument is a completed-delivery marker signature: it causes
+# one fresh CLI read, then remains cached for that same marker.
+# Usage failures are deliberately non-fatal: recording/processing controls
+# must never depend on an operator summary being available.
+load_usage_summary() {
+  local completion_signature="${1:-}" usage_file signature now cache_fresh="0"
+  usage_file="$(usage_summary_file)"
+  signature="$(usage_file_signature "$usage_file")"
+  now="$(date +%s)"
+  USAGE_MENU_STATE="unavailable"
+  unset USAGE_TRACKING_STARTED_AT USAGE_DELIVERIES USAGE_WORDS USAGE_TIME_DIFFERENCE_MS
+  [[ "$CACHE_DIR_READY" == "1" ]] || return 0
+
+  if safe_cache_file "$USAGE_CACHE"; then
+    # shellcheck disable=SC1090
+    source "$USAGE_CACHE" 2>/dev/null || true
+    if [[ "${USAGE_CACHE_SIGNATURE:-}" == "$signature" && "${USAGE_CACHE_EXPIRES_AT:-0}" =~ ^[0-9]+$ && "${USAGE_CACHE_EXPIRES_AT:-0}" -ge "$now" && ( -z "$completion_signature" || "${USAGE_CACHE_COMPLETION_SIGNATURE:-}" == "$completion_signature" ) ]]; then
+      cache_fresh="1"
+    fi
+  fi
+  [[ "$cache_fresh" == "1" ]] && return 0
+
+  # A stale cache must not survive an unavailable or malformed fresh read.
+  USAGE_MENU_STATE="unavailable"
+  unset USAGE_TRACKING_STARTED_AT USAGE_DELIVERIES USAGE_WORDS USAGE_TIME_DIFFERENCE_MS
+
+  local usage_json parsed expires
+  usage_json="$("$DICTATE_BIN" usage --json 2>/dev/null)" || usage_json=""
+  parsed="$(python3 - "$usage_json" <<'PYEOF' 2>/dev/null || true
+import json, shlex, sys
+
+try:
+    payload = json.loads(sys.argv[1])
+    coverage = payload["coverage"]
+    deliveries = payload["delivered_dictations"]
+    if payload.get("command") != "usage" or payload.get("schema_version") != 1:
+        raise ValueError("unexpected usage contract")
+    if not isinstance(coverage, dict) or not isinstance(deliveries, dict):
+        raise ValueError("invalid usage sections")
+    state = coverage.get("status")
+    if state not in {"active", "not_started"}:
+        raise ValueError("invalid usage status")
+    started = coverage.get("tracking_started_at") if state == "active" else ""
+    if state == "active" and (not isinstance(started, str) or not started):
+        raise ValueError("invalid tracking timestamp")
+    def integer(value, name, *, nonnegative=False):
+        if isinstance(value, bool) or not isinstance(value, int) or (nonnegative and value < 0):
+            raise ValueError(f"invalid {name}")
+        return value
+    values = {
+        "USAGE_MENU_STATE": state,
+        "USAGE_TRACKING_STARTED_AT": started,
+        "USAGE_DELIVERIES": integer(deliveries.get("count", 0), "delivery count", nonnegative=True),
+        "USAGE_WORDS": integer(payload.get("processed_words", 0), "word count", nonnegative=True),
+        "USAGE_TIME_DIFFERENCE_MS": integer(payload.get("estimated_time_difference_ms", 0), "time difference"),
+    }
+    for key, value in values.items():
+        print(f"{key}={shlex.quote(str(value))}")
+except Exception:
+    pass
+PYEOF
+  )"
+  if [[ -z "$parsed" ]]; then
+    expires=$((now + USAGE_FAILURE_CACHE_TTL_SECONDS))
+    {
+      echo "# Autogenerated SwiftBar usage cache"
+      printf 'USAGE_CACHE_SIGNATURE=%q\n' "$signature"
+      printf 'USAGE_CACHE_COMPLETION_SIGNATURE=%q\n' "$completion_signature"
+      printf 'USAGE_CACHE_EXPIRES_AT=%q\n' "$expires"
+      echo "USAGE_MENU_STATE=unavailable"
+    } | write_usage_cache >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  expires=$((now + USAGE_CACHE_TTL_SECONDS))
+  {
+    echo "# Autogenerated SwiftBar usage cache"
+    printf 'USAGE_CACHE_SIGNATURE=%q\n' "$signature"
+    printf 'USAGE_CACHE_COMPLETION_SIGNATURE=%q\n' "$completion_signature"
+    printf 'USAGE_CACHE_EXPIRES_AT=%q\n' "$expires"
+    printf '%s\n' "$parsed"
+  } | write_usage_cache >/dev/null 2>&1 || true
+  eval "$parsed"
+}
+
+emit_usage_summary_menu() {
+  case "${USAGE_MENU_STATE:-unavailable}" in
+    active)
+      echo "Usage (tracked): ${USAGE_WORDS:-0} words · ${USAGE_DELIVERIES:-0} deliveries | size=11 color=gray"
+      echo "Tracking since: ${USAGE_TRACKING_STARTED_AT:-unknown} | size=11 color=gray"
+      echo "Estimated typing-time difference: $(format_usage_duration "${USAGE_TIME_DIFFERENCE_MS:-0}") (typing - dictation) | size=11 color=gray"
+      ;;
+    not_started)
+      echo "Usage tracking starts with the next delivered dictation | size=11 color=gray"
+      ;;
+    *)
+      echo "Usage summary unavailable (will retry) | size=11 color=gray"
+      ;;
+  esac
+}
+
 load_config() {
   command -v python3 >/dev/null 2>&1 || return 0
+  [[ "$CACHE_DIR_READY" == "1" ]] || return 0
 
   local cache_sig="missing"
   if [[ -f "$CONFIG_TOML" ]]; then
     cache_sig="$(cksum <"$CONFIG_TOML" 2>/dev/null | awk '{print $1 ":" $2}' || true)"
     [[ -n "$cache_sig" ]] || cache_sig="missing"
   fi
-  if [[ -f "$CONFIG_CACHE" ]]; then
+  if safe_cache_file "$CONFIG_CACHE"; then
     # shellcheck disable=SC1090
     source "$CONFIG_CACHE" 2>/dev/null || true
     if [[ "${CFG_CACHE_SIG:-}" == "$cache_sig" && -n "${CFG_AUDIO_SILENCE_TRIM:-}" && -n "${CFG_CLEAN_REPEATS_LEVEL:-}" && -n "${CFG_INLINE_PROCESS_SOUND:-}" && -n "${CFG_TMUX_PROCESS_SOUND:-}" && -n "${CFG_SWIFTBAR_ENABLED:-}" ]]; then
@@ -175,7 +365,7 @@ PYEOF
       echo "# Autogenerated cache for SwiftBar"
       printf "CFG_CACHE_SIG=%q\n" "$cache_sig"
       echo "$out"
-    } >"$CONFIG_CACHE".tmp 2>/dev/null && mv -f "$CONFIG_CACHE".tmp "$CONFIG_CACHE" 2>/dev/null || true
+    } | write_config_cache >/dev/null 2>&1 || true
   fi
 }
 
@@ -601,6 +791,12 @@ fi
 echo "Mode: $mode_display"
 echo "Mic source: $audio_source_display | size=11"
 echo "Mic active: $audio_active_label | size=11 color=gray"
+completion_marker_signature=""
+if [[ "$recently_processed" == "1" ]]; then
+  completion_marker_signature="$(usage_file_signature "$PROCESSED_FLAG")"
+fi
+load_usage_summary "$completion_marker_signature"
+emit_usage_summary_menu
 read -r tmux_rec tmux_proc < <(count_tmux_jobs)
 if [[ "${tmux_rec:-0}" -gt 0 || "${tmux_proc:-0}" -gt 0 ]]; then
   echo "TMUX queue: 🔴 ${tmux_rec:-0} · ⏳ ${tmux_proc:-0} | size=11"
