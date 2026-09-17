@@ -1400,15 +1400,38 @@ assert_json_equals "logs_tail_json_subcommand" "$logs_tail_json" "subcommand" "t
 assert_json_equals "logs_tail_json_stream_key" "$logs_tail_json" "streams.0.key" "transcribe"
 assert_json_equals "logs_tail_json_requested_lines" "$logs_tail_json" "streams.0.tail_lines_requested" "1"
 assert_json_equals "logs_tail_json_line" "$logs_tail_json" "streams.0.lines.0" "transcribe line 2"
-( sleep 0.2; printf '%s\n' 'record line 3' >>"$LOGS_RECORD" ) &
-logs_follow_out="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" DICTATE_LOGS_FOLLOW_POLL_MS=50 DICTATE_LOGS_FOLLOW_ITERATIONS=8 tmux-whisper logs follow record --lines 1)"
+wait_for_follow_initial_line() {
+  local file="$1" needle="$2" attempt
+  for ((attempt = 0; attempt < 250; attempt++)); do
+    if [[ -f "$file" ]] && rg -q --fixed-strings "$needle" "$file"; then
+      break
+    fi
+    sleep 0.02
+  done
+}
+
+# Append only after follow has emitted its initial tail. A timed writer can
+# win the startup race and turn the new line into the initial tail instead.
+logs_follow_record_out="$LOGS_TMP/follow-record.out"
+HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" DICTATE_LOGS_FOLLOW_POLL_MS=50 DICTATE_LOGS_FOLLOW_ITERATIONS=20 tmux-whisper logs follow record --lines 1 >"$logs_follow_record_out" &
+logs_follow_record_pid=$!
+wait_for_follow_initial_line "$logs_follow_record_out" "record line 2"
+assert_file_contains "logs_follow_initial_line" "$logs_follow_record_out" "record line 2"
+printf '%s\n' 'record line 3' >>"$LOGS_RECORD"
+wait "$logs_follow_record_pid"
+logs_follow_out="$(cat "$logs_follow_record_out")"
 assert_contains "logs_follow_header" "$logs_follow_out" "Following logs (poll 50ms). Press Ctrl-C to stop."
 assert_contains "logs_follow_block_header" "$logs_follow_out" "--- record (follow tail 1) ---"
-assert_contains "logs_follow_initial_line" "$logs_follow_out" "record line 2"
 assert_contains "logs_follow_new_line" "$logs_follow_out" "record line 3"
 assert_not_contains "logs_follow_old_line_hidden" "$logs_follow_out" "record line 1"
-( sleep 0.2; printf '%s\n' 'transcribe line 3' >>"$LOGS_TRANSCRIBE" ) &
-logs_follow_json="$(HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" DICTATE_LOGS_FOLLOW_POLL_MS=50 DICTATE_LOGS_FOLLOW_ITERATIONS=8 tmux-whisper logs follow transcribe --lines 1 --json)"
+logs_follow_json_out="$LOGS_TMP/follow-transcribe.jsonl"
+HOME="$LOGS_HOME" PATH="$LOGS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$LOGS_CFG" DICTATE_CONFIG_FILE="$LOGS_CFG/config.toml" DICTATE_RECORD_LOG="$LOGS_RECORD" DICTATE_TRANSCRIBE_LOG="$LOGS_TRANSCRIBE" DICTATE_TMPDIR="$LOGS_TMP" DICTATE_LOGS_FOLLOW_POLL_MS=50 DICTATE_LOGS_FOLLOW_ITERATIONS=20 tmux-whisper logs follow transcribe --lines 1 --json >"$logs_follow_json_out" &
+logs_follow_json_pid=$!
+wait_for_follow_initial_line "$logs_follow_json_out" "transcribe line 2"
+assert_file_contains "logs_follow_json_initial_tail" "$logs_follow_json_out" "transcribe line 2"
+printf '%s\n' 'transcribe line 3' >>"$LOGS_TRANSCRIBE"
+wait "$logs_follow_json_pid"
+logs_follow_json="$(cat "$logs_follow_json_out")"
 logs_follow_json_last="$(printf '%s\n' "$logs_follow_json" | tail -n 1)"
 assert_json_equals "logs_follow_json_event" "$logs_follow_json_last" "event" "line"
 assert_json_equals "logs_follow_json_subcommand" "$logs_follow_json_last" "subcommand" "follow"

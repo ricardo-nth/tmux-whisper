@@ -6,6 +6,15 @@ Tmux Whisper is CLI-first for operator work. Text output should stay useful for 
 
 These commands are safe to build integrations on:
 
+- `tmux-whisper version --json`
+  - Object with `schema_version`, `cli_version`, `config_schema_version`, and
+    the separately resolved `running_binary.path`.
+  - `receipt` contains non-executed install provenance: `present`, `readable`,
+    `installed_at`, `source`, `ref`, and `commit`. Missing provenance is
+    represented by `present: false` and null field values; it does not make the
+    command fail.
+  - Receipt provenance records how an installation was created. It is not
+    evidence that a receipt's source checkout is the running binary.
 - `tmux-whisper status --json`
   - Object with `command`, `summary`, `runtime`, `effective_settings`, `diagnostics`, and `more_detail`.
   - `summary.next_action` is the primary human next step.
