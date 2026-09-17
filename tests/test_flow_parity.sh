@@ -746,12 +746,18 @@ run_inline_cancel_refresh_round() {
   setup_case "inline-cancel-refresh"
   export DICTATE_TEST_FFMPEG_HOLD=1
 
-  local start_out cancel_out
+  # Cancellation must not initialize or change the transcript-free usage
+  # ledger. Snapshot the public CLI result around a real recording/cancel
+  # cycle so this covers the primary inline path end to end.
+  local start_out cancel_out usage_before usage_after
+  usage_before="$("$DICTATE_BIN" usage --json)"
   start_out="$("$DICTATE_BIN" inline toggle)"
   assert_contains "inline_cancel_refresh_start" "$start_out" "RECORDING"
 
   cancel_out="$("$DICTATE_BIN" cancel)"
   assert_contains "inline_cancel_refresh_cancelled" "$cancel_out" "CANCELLED"
+  usage_after="$("$DICTATE_BIN" usage --json)"
+  assert_equals "inline_cancel_usage_unchanged" "$usage_after" "$usage_before"
   [[ -f "${DICTATE_CANCEL_FLAG:-/tmp/dictate-cancelled.flag}" ]] || fail "inline_cancel_refresh_flag"
   pass "inline_cancel_refresh_flag"
   assert_refresh_count_at_least "inline_cancel_refresh_requested" 2
