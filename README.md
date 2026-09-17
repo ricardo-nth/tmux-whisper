@@ -236,7 +236,7 @@ tmux-whisper doctor
 tmux-whisper status
 ```
 
-Common real-world fixes are documented in [docs/TROUBLESHOOTING.md](/Users/admin/Documents/Projects/tmux-whspr/tmux-whisper/docs/TROUBLESHOOTING.md), including:
+Common real-world fixes are documented in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md), including:
 
 - install-channel refresh and upgrade drift
 - invalid config repair
@@ -260,7 +260,7 @@ Recommended setup:
 
 - create three Raycast Script Commands that point at those installed files
 - use `tmux-whisper-inline.sh` for frontmost-app paste/send
-- use `tmux-whisper-toggle.sh` for tmux-first recording from a hotkey
+- use `tmux-whisper-toggle.sh` for pane-targeted tmux recording from a hotkey
 - use `tmux-whisper-cancel.sh` for discard/cancel behavior
 
 ### SwiftBar
@@ -365,7 +365,7 @@ GitHub Actions runs the same checks on push and pull requests.
 
 ## Roadmap
 
-See `ROADMAP.md` for current milestone direction (tmux-first hardening -> UX maturity -> integration platform -> stable release).
+See `ROADMAP.md` for the current direction: inline daily dictation, a differentiated tmux workflow, and versioned integration adapters.
 
 ## Contributing
 

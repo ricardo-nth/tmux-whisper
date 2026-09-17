@@ -12,7 +12,7 @@ If these files do not exist, proceed silently. Do not flag their absence or sugg
 
 ## Layout
 
-This is a single-context repo. Tmux Whisper is a macOS-first, tmux-first dictation CLI with Raycast and SwiftBar integrations as adapter surfaces around the CLI/runtime.
+This is a single-context repo. Tmux Whisper is a macOS-first, inline-first dictation CLI. Tmux is the differentiated pane-targeted workflow; Raycast and SwiftBar are adapter surfaces around the CLI/runtime.
 
 Use the repo's established terms:
 
