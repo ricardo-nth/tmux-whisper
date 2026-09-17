@@ -239,14 +239,14 @@ private extension Dictionary where Key == String, Value == Any {
     guard let value = self[key] as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID() else {
       throw StatusError.missingRequiredField(key)
     }
-    let numeric = value.doubleValue
-    guard numeric.isFinite,
-      numeric >= 0,
-      numeric <= Double(Int.max),
-      numeric.rounded(.towardZero) == numeric
+    // Preserve integer precision: Double(Int.max) rounds upward to 2^63.
+    // Decimal normalizes integral JSON exponent/decimal forms before Int's
+    // exact, range-checked conversion, without a floating-point boundary.
+    guard let decimal = Decimal(string: value.stringValue, locale: Locale(identifier: "en_US_POSIX")),
+      let count = Int(NSDecimalNumber(decimal: decimal).stringValue), count >= 0
     else {
       throw StatusError.missingRequiredField(key)
     }
-    return value.intValue
+    return count
   }
 }

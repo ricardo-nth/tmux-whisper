@@ -8,6 +8,7 @@ enum CompanionCoreRegression {
       try testParsesDocumentedFieldsAndIgnoresAdditions()
       try testUnknownValuesAreToleratedAndMalformedResponsesAreRejected()
       try testMissingOrInvalidCountsFailClosed()
+      try testCountIntegerBoundaries()
       try testUsageSummarySupportsV1AndAdditiveFields()
       try testUsageSummaryRejectsUnknownSchema()
       try testControlPolicyIsConservativeForGlobalCancel()
@@ -62,6 +63,25 @@ enum CompanionCoreRegression {
       """.utf8
     )
     try expectThrows { _ = try CompanionStatus.parse(json: fractionalCount) }
+  }
+
+  static func testCountIntegerBoundaries() throws {
+    let statusBase = String(decoding: fixture(state: "processing", inlineState: "idle",
+      tmuxState: "idle", processing: 17, queue: 0), as: UTF8.self)
+    let usageBase = String(decoding: usageFixture(coverageStatus: "active",
+      trackingStartedAt: "null", deliveredCount: 17, processedWords: 0), as: UTF8.self)
+    func statusData(_ literal: String) -> Data {
+      Data(statusBase.replacingOccurrences(of: "\"total\": 17", with: "\"total\": \(literal)").utf8)
+    }
+    func usageData(_ literal: String) -> Data {
+      Data(usageBase.replacingOccurrences(of: "\"count\": 17", with: "\"count\": \(literal)").utf8)
+    }
+    try expect(try CompanionStatus.parse(json: statusData(String(Int.max))).runtime.processingMarkers.total == Int.max)
+    try expect(try UsageSummary.parse(json: usageData(String(Int.max))).deliveredCount == Int.max)
+    for literal in ["9223372036854775808", "18446744073709551615", "1e30", "-1", "0.5", "true"] {
+      try expectThrows { _ = try CompanionStatus.parse(json: statusData(literal)) }
+      try expectThrows { _ = try UsageSummary.parse(json: usageData(literal)) }
+    }
   }
 
   static func testUsageSummarySupportsV1AndAdditiveFields() throws {
