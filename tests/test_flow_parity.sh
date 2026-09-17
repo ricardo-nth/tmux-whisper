@@ -848,7 +848,7 @@ EOF
   local start_out stop_out inline_record_log
   inline_record_log="$CASE_DIR/tmp/whisper-dictate-inline.record.log"
 
-  start_out="$("$DICTATE_BIN" inline toggle)"
+  start_out="$(DICTATE_AUDIO_CACHE_SKIP_VALIDATE=0 "$DICTATE_BIN" inline toggle)"
   assert_contains "inline_audio_cache_start" "$start_out" "RECORDING"
 
   stop_out="$("$DICTATE_BIN" inline toggle)"
@@ -886,7 +886,7 @@ EOF
   inline_record_log="$CASE_DIR/tmp/whisper-dictate-inline.record.log"
   cache_file="$CASE_DIR/config/.cache/audio-index.sh"
 
-  start_out="$("$DICTATE_BIN" inline toggle)"
+  start_out="$(DICTATE_AUDIO_CACHE_SKIP_VALIDATE=0 "$DICTATE_BIN" inline toggle)"
   assert_contains "inline_audio_cache_refresh_start" "$start_out" "RECORDING"
   assert_file_not_contains "inline_audio_cache_refresh_no_stale_note" "$inline_record_log" "stale cache invalidated"
   assert_file_contains "inline_audio_cache_refresh_index" "$cache_file" "CACHED_AUDIO_INDEX=0"
@@ -1127,7 +1127,7 @@ CACHED_AUDIO_AT=2026-03-20T08:47:56Z
 EOF
 
   local start_out stop_out
-  start_out="$("$DICTATE_BIN" toggle)"
+  start_out="$(DICTATE_AUDIO_CACHE_SKIP_VALIDATE=0 "$DICTATE_BIN" toggle)"
   assert_contains "tmux_audio_cache_start" "$start_out" "RECORDING"
   assert_file_contains "tmux_audio_cache_log_note" "$DICTATE_RECORD_LOG" "audio cache: stale cache invalidated: cached idx=1 name=MacBook Air Microphone match=mac at=2026-03-20T08:47:56Z; re-resolved idx=0 match=mac name=MacBook Air Microphone"
   assert_file_contains "tmux_audio_cache_rewritten_index" "$CASE_DIR/config/.cache/audio-index.sh" "CACHED_AUDIO_INDEX=0"
