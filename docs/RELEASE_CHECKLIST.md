@@ -3,6 +3,9 @@
 ## Pre-release
 
 - [ ] Confirm `main` CI is green.
+- [ ] Set `TMUX_WHISPER_CLI_VERSION` in `bin/tmux-whisper` to the release tag
+  version (for example, `0.7.0`), then confirm `tmux-whisper version --json`
+  reports that value before tagging.
 - [ ] Run local validation:
   - [ ] `./tests/ci.sh`
   - [ ] `./install.sh --force`
