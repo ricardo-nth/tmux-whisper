@@ -167,7 +167,8 @@ feature is installed. It never backfills old or pruned history.
 The estimate shows the typing pace assumption (`DICTATE_HISTORY_TYPING_WPM`,
 default `40`) and a signed difference between typing-equivalent time and full
 recording-to-delivery elapsed time. It is an estimate, not a claim of lifetime
-hours saved.
+hours saved. Changing that WPM setting recalculates the estimate while leaving
+the recorded delivery and duration totals unchanged.
 
 ## Upgrade and Repair
 

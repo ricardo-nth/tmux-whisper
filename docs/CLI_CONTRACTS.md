@@ -33,6 +33,9 @@ These commands are safe to build integrations on:
     delivery for both inline and tmux flows. `estimated_time_difference_ms` is
     `typing_equivalent_duration_ms - full_elapsed_duration_ms`, so its sign is
     explicit rather than an unqualified time-saved claim.
+  - The WPM assumption is evaluated when the command is read. Changing
+    `DICTATE_HISTORY_TYPING_WPM` recalculates the estimate, not the stored
+    delivery, word, or duration totals.
   - Only successful delivered inline and tmux dictations are counted. Failed,
     cancelled, no-speech, superseded, and replay runs are excluded.
 - `tmux-whisper logs --json`
