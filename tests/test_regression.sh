@@ -963,10 +963,13 @@ swiftbar_usage_fresh_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrati
 assert_contains "swiftbar_usage_post_delivery_refresh" "$swiftbar_usage_fresh_out" "Usage (tracked): 1234 words"
 usage_call_count="$(wc -l <"$SWIFTBAR_USAGE_CALL_LOG" | tr -d ' ')"
 assert_equals "swiftbar_usage_post_delivery_bypasses_cache" "$usage_call_count" "5"
+# A cache-directory write is unrelated to the usage ledger or completion
+# marker. It must not alter their signatures and force another CLI read.
+printf '%s\n' 'unrelated cache write' >"$SWIFTBAR_USAGE_CACHE/unrelated-cache-file"
 swiftbar_usage_post_delivery_cached_out="$(env "${swiftbar_usage_env[@]}" bash "$ROOT/integrations/tmux-whisper-status.0.2s.sh")"
 assert_contains "swiftbar_usage_post_delivery_cache_keeps_menu" "$swiftbar_usage_post_delivery_cached_out" "Usage (tracked): 1234 words"
 usage_call_count="$(wc -l <"$SWIFTBAR_USAGE_CALL_LOG" | tr -d ' ')"
-assert_equals "swiftbar_usage_post_delivery_refreshes_once" "$usage_call_count" "5"
+assert_equals "swiftbar_usage_unrelated_cache_write_keeps_completion_cache" "$usage_call_count" "5"
 
 # Missing and malformed summaries are non-fatal and leave the rest of the
 # ready-state controls visible. A failed refresh must replace older cached
