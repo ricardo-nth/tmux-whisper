@@ -41,3 +41,18 @@ Local host: macOS 26.6.2, Apple Silicon, Swift 6.4 Command Line Tools.
 - Usage includes only the CLI's tracked coverage, never a historical backfill.
 - Full Xcode's XCTest module was unavailable on this CLT-only machine, so the
   regression suite is a dependency-free Swift executable used by macOS CI too.
+
+## Main sync recheck
+
+Synced with main `78cc5a3` after usage, SwiftBar metrics, release preparation,
+and cache/signature fixes merged. Resolved the changelog conflict by retaining
+main's release wording unchanged: v0.6.0 remains stable, v0.7.0 is unreleased,
+and this native prototype is outside that release scope.
+
+The native regression harness and local signed release build passed again.
+The rebuilt app launched against the installed CLI and the actual native menu
+showed ready state, Start enabled, Stop/Cancel disabled, and unstarted usage
+coverage. Screenshot and accessibility inspection confirmed the menu; the app
+was then quit. No new integration risk was observed in this bounded check.
+The spoken-delivery, permission, distribution and daily-performance limits above
+remain unresolved. No features or daily-runtime changes were made during sync.
