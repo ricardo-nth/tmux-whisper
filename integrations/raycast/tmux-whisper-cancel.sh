@@ -5,6 +5,8 @@
 # @raycast.mode silent
 # @raycast.packageName Tmux Whisper
 # @raycast.description Cancel current recording (discard without pasting)
+# tmux-whisper.adapter: raycast-cancel
+# tmux-whisper.adapter-version: 1
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 

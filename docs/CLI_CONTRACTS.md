@@ -35,6 +35,7 @@ These commands are safe to build integrations on:
 - `tmux-whisper integrations --json`
   - Object with installed binary, install receipt, SwiftBar plugin, and Raycast script state.
   - Adapter entries include source path and provenance state: `current`, `missing`, `non-executable`, `different`, or source-unavailable/source-missing fallbacks.
+  - Adapter entries include installed `version` and `source_version` values when shipped adapter metadata is present.
 - `tmux-whisper bench [N|all] --json [filters]`
   - Object with record counts, filters, stage summaries, startup summaries, latest row, and `next_commands`.
 - `tmux-whisper bench export [N|all] --json [filters]`
