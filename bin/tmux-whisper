@@ -5562,6 +5562,16 @@ process_inline_recording() {
   local delivery_completed_ms
   delivery_completed_ms="$(now_ms)"
   total_ms=$(( $(now_ms) - flow_started_ms ))
+  # Persist the small, transcript-free ledger while this confirmed delivery is
+  # still in hand. It must be visible before the processed signal, while the
+  # larger transcript history write remains safely asynchronous below.
+  local usage_full_elapsed_ms="$total_ms"
+  if [[ "$usage_started_ms" =~ ^[0-9]+$ ]]; then
+    usage_full_elapsed_ms=$(( delivery_completed_ms - usage_started_ms ))
+    (( usage_full_elapsed_ms < 0 )) && usage_full_elapsed_ms=0
+  fi
+  usage_record_delivery "inline" "$txt" "$record_ms" "$usage_full_elapsed_ms" || \
+    echo "[usage] unable to record delivered dictation summary" >&2
   append_bench_entry "inline" "ok" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
 
@@ -5574,13 +5584,6 @@ process_inline_recording() {
   # Save history asynchronously so paste/send latency is not blocked by JSON + file I/O.
   local history_app="${target_app:-current}"
   (
-    # Inline total_ms already starts at capture, so it is directly comparable.
-    local usage_full_elapsed_ms="$total_ms"
-    if [[ "$usage_started_ms" =~ ^[0-9]+$ ]]; then
-      usage_full_elapsed_ms=$(( delivery_completed_ms - usage_started_ms ))
-      (( usage_full_elapsed_ms < 0 )) && usage_full_elapsed_ms=0
-    fi
-    usage_record_delivery "inline" "$txt" "$record_ms" "$usage_full_elapsed_ms" || true
     save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms"
   ) >/dev/null 2>&1 &
 }
