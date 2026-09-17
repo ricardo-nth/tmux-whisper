@@ -61,6 +61,25 @@ integration_swiftbar_plugin_path() {
   fi
 }
 
+swiftbar_refresh() {
+  local plugin_id="${1:-tmux-whisper-status.0.2s.sh}"
+  [[ -n "$plugin_id" ]] || plugin_id="tmux-whisper-status.0.2s.sh"
+
+  if [[ -n "${DICTATE_SWIFTBAR_REFRESH_LOG:-}" ]]; then
+    mkdir -p "$(dirname "$DICTATE_SWIFTBAR_REFRESH_LOG")" 2>/dev/null || true
+    printf 'refresh plugin=%s at=%s\n' "$plugin_id" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >>"$DICTATE_SWIFTBAR_REFRESH_LOG" 2>/dev/null || true
+    return 0
+  fi
+
+  if [[ -n "${DICTATE_SWIFTBAR_REFRESH_CMD:-}" ]]; then
+    nohup sh -c "$DICTATE_SWIFTBAR_REFRESH_CMD" >/dev/null 2>&1 &
+    return 0
+  fi
+
+  [[ -x /usr/bin/open ]] || return 0
+  nohup /usr/bin/open -g "swiftbar://refreshplugin?plugin=${plugin_id}" >/dev/null 2>&1 &
+}
+
 integration_source_root() {
   local receipt_root candidate
   receipt_root="$(integration_receipt_value repo_root)"

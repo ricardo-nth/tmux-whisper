@@ -50,6 +50,8 @@ These are useful but not yet promised as stable contracts:
   - Human-readable adapter-only repair preview. This intentionally does not mutate files.
 - `tmux-whisper integrations repair`
   - Human-readable adapter-only repair action for Raycast scripts and the SwiftBar plugin. It creates missing adapter directories, refreshes adapter files from the recorded source tree, ensures executable bits, and backs up replaced adapter files.
+- `tmux-whisper swiftbar refresh`
+  - Human-readable, best-effort event refresh for the SwiftBar plugin. It is safe when SwiftBar is missing and exists to accelerate polling after lifecycle transitions, not to replace polling as the correctness mechanism.
 - `tmux-whisper logs follow ... --json`
   - Streaming newline-delimited JSON events. Treat event names as provisional.
 - `tmux-whisper watch ...`
