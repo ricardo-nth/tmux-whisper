@@ -46,6 +46,7 @@
 - **Completed**: `tmux-whisper integrations [--json]` now inspects the installed binary, install receipt, SwiftBar plugin, and Raycast scripts as a first integration-adapter status surface
 - **Completed**: `tmux-whisper integrations repair` now applies an adapter-only Raycast/SwiftBar refresh with missing-directory creation, executable-bit repair, changed-file reporting, and backups for replaced adapter files, while `repair --dry-run` remains non-mutating
 - **Completed**: integration status/doctor now reports per-adapter source provenance states (`current`, `missing`, `non-executable`, or `different`) for Raycast scripts and the SwiftBar plugin before any SwiftBar behavior changes
+- **Completed**: `docs/INTEGRATIONS.md` now documents the supported integration compatibility matrix, install-channel differences, environment expectations, and stable-vs-experimental boundaries for v0.7 work
 - **Completed**: SwiftBar state reliability now uses a shared best-effort `tmux-whisper swiftbar refresh` surface from CLI lifecycle paths and Raycast wrappers, refreshes recording/processing/cancel/error transitions, and prunes stale recording or processing markers so the menu falls back to polling without getting stuck
 - **Completed**: Raycast and SwiftBar adapter files now carry explicit adapter-version metadata, and `tmux-whisper integrations --json` plus doctor/status output report installed/source versions for faster lifecycle review
 - **Primary development branch**: `main` in `ricardo-nth/tmux-whisper`
