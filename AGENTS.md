@@ -2,6 +2,20 @@
 
 This project is now the single source of truth for Tmux Whisper development.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `ricardo-nth/tmux-whisper`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default triage label vocabulary, including `ready-for-agent` for AFK-ready implementation work. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo. Read root domain docs and ADRs if present, and otherwise proceed silently. See `docs/agents/domain.md`.
+
 ## Source of Truth
 
 - Primary development repo: `tmux-whisper` (project workspace)

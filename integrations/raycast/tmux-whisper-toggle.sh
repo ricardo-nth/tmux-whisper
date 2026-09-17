@@ -5,10 +5,11 @@
 # @raycast.mode silent
 # @raycast.packageName Tmux Whisper
 # @raycast.description Toggle recording → paste+Enter into tmux pane
+# tmux-whisper.adapter: raycast-toggle
+# tmux-whisper.adapter-version: 1
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 export DICTATE_CLEAN=1
-SWIFTBAR_PLUGIN_ID="tmux-whisper-status.0.2s.sh"
 
 if [[ -f "$HOME/.zshenv" ]]; then
   # Load XDG vars + SOUNDS_DIR for Raycast environment
@@ -41,7 +42,7 @@ die_with_notice() {
 }
 
 refresh_swiftbar() {
-  /usr/bin/open -g "swiftbar://refreshplugin?plugin=${SWIFTBAR_PLUGIN_ID}" 2>/dev/null || true
+  "$DICTATE_BIN" swiftbar refresh >/dev/null 2>&1 || true
 }
 
 expand_sound_path() {

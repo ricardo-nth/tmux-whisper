@@ -5,6 +5,8 @@
 # @raycast.mode silent
 # @raycast.packageName Tmux Whisper
 # @raycast.description Toggle recording → paste into frontmost app
+# tmux-whisper.adapter: raycast-inline
+# tmux-whisper.adapter-version: 1
 
 set -euo pipefail
 
@@ -14,7 +16,6 @@ echo "=== $(date) ==="
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
 export DICTATE_CLEAN=1
-SWIFTBAR_PLUGIN_ID="tmux-whisper-status.0.2s.sh"
 INLINE_STATE_FILE="/tmp/whisper-dictate-inline.state"
 DICTATE_ZSHENV_LOADED="0"
 
@@ -81,7 +82,7 @@ notify_inline_error() {
 }
 
 refresh_swiftbar() {
-  nohup /usr/bin/open -g "swiftbar://refreshplugin?plugin=${SWIFTBAR_PLUGIN_ID}" >/dev/null 2>&1 &
+  "$DICTATE_BIN" swiftbar refresh >/dev/null 2>&1 || true
 }
 
 if [[ ! -x "$DICTATE_BIN" ]]; then
