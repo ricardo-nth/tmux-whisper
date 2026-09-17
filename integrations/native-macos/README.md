@@ -17,7 +17,8 @@ swift run --package-path integrations/native-macos CompanionCoreRegression
 
 The script builds an ad-hoc signed `.app` inside the ignored `.build` directory
 and launches it with your shell environment. Use **Quit companion** to exit.
-Pass `--show-menu` to open the menu after the first status read.
+Pass `--show-menu` to open the menu on-screen after the first status read, even
+if a menu-bar manager has hidden its new icon.
 To build without launching: `./integrations/native-macos/build.sh`.
 Nothing is copied to Applications, installed at login, or changed in CLI config.
 Do not run the repository installer just to try this companion.
@@ -41,8 +42,11 @@ environment overrides. Finder launches inherit a different environment.
   shown in the menu. Unknown completion is never automatically retried.
 - Quitting does not stop recording or processing.
 
-Usage metrics await the reviewed #29 JSON contract; this prototype calculates no
-usage totals. There is no global hotkey, notification system, updater, autostart,
+Usage reads the version 1 `usage --json` contract: delivered dictations, processed
+words, and coverage start. Unstarted coverage explicitly says tracking begins with
+the next successful delivery. Older dictations are not included. Usage refreshes
+independently every 30 seconds (or with Refresh status); failure leaves controls
+usable. This prototype calculates no usage totals. There is no global hotkey, notification system, updater, autostart,
 or replacement capture/transcription/paste/accounting implementation.
 
 ## Packaging and acceptance

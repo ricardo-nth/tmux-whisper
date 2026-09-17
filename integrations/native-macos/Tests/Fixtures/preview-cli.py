@@ -14,6 +14,11 @@ import sys
 path = os.environ.get("WHISPER_PREVIEW_STATE_FILE")
 value = json.loads(pathlib.Path(path).read_text()) if path and pathlib.Path(path).exists() else {"state": "ready"}
 state = value.get("state", "ready")
+if sys.argv[1:] == ["usage", "--json"]:
+    print(json.dumps({"command": "usage", "schema_version": 1,
+                      "coverage": {"status": "not_started", "tracking_started_at": None},
+                      "delivered_dictations": {"count": 0}, "processed_words": 0}))
+    sys.exit(0)
 if sys.argv[1:] == ["status", "--json"]:
     if state == "error":
         print("Preview: CLI unavailable. Refresh after restoring the fixture.", file=sys.stderr)

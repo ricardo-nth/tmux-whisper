@@ -63,7 +63,7 @@
 ### Experimental native companion (unreleased)
 
 - Added a local-build AppKit menu bar prototype consuming installed CLI status and inline start/stop/cancel commands; no permanent install or changes to Raycast/SwiftBar.
-- Usage display awaits the reviewed usage contract; signing/distribution and real spoken delivery acceptance remain follow-up work.
+- Usage display consumes the version 1 CLI usage contract and explains tracking coverage; signing/distribution and real spoken delivery acceptance remain follow-up work.
 
 ### Planned next (v0.7 integration platform)
 

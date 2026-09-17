@@ -16,7 +16,7 @@ metrics are the runtime token source; no copied web palette or font system.
 
 The signature is a waveform-in-circle menu bar icon. Recording, processing and
 attention use distinct SF Symbols and text labels, never color alone. The menu
-orders title, live status and guidance, inline controls, refresh, and quit.
+orders title, live status and guidance, inline controls, CLI-reported usage coverage, refresh, and quit.
 Native menu separators group actions. Status/error text wraps into short lines;
 full status is available in the icon tooltip. No animation or global hotkeys.
 

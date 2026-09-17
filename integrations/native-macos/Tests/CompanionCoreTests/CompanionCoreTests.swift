@@ -8,6 +8,8 @@ enum CompanionCoreRegression {
       try testParsesDocumentedFieldsAndIgnoresAdditions()
       try testUnknownValuesAreToleratedAndMalformedResponsesAreRejected()
       try testMissingOrInvalidCountsFailClosed()
+      try testUsageSummarySupportsV1AndAdditiveFields()
+      try testUsageSummaryRejectsUnknownSchema()
       try testControlPolicyIsConservativeForGlobalCancel()
       try testCommandsUseOnlyInlineControlsAndGlobalCancel()
       try await testProcessRunnerReportsNonZeroExitAndTimeout()
@@ -60,6 +62,34 @@ enum CompanionCoreRegression {
       """.utf8
     )
     try expectThrows { _ = try CompanionStatus.parse(json: fractionalCount) }
+  }
+
+  static func testUsageSummarySupportsV1AndAdditiveFields() throws {
+    let unstarted = try UsageSummary.parse(json: usageFixture(
+      coverageStatus: "not_started", trackingStartedAt: "null", deliveredCount: 0, processedWords: 0
+    ))
+    try expect(unstarted.schemaVersion == 1)
+    try expect(unstarted.coverage.status == .notStarted)
+    try expect(unstarted.coverage.trackingStartedAt == nil)
+    try expect(unstarted.deliveredCount == 0)
+    try expect(unstarted.processedWords == 0)
+
+    let active = try UsageSummary.parse(json: usageFixture(
+      coverageStatus: "active", trackingStartedAt: "\"2026-09-17T12:00:00Z\"", deliveredCount: 8, processedWords: 321,
+      extra: "\"future_addition\": {\"safe\": true}"
+    ))
+    try expect(active.coverage.status == .active)
+    try expect(active.coverage.trackingStartedAt == "2026-09-17T12:00:00Z")
+    try expect(active.deliveredCount == 8)
+    try expect(active.processedWords == 321)
+  }
+
+  static func testUsageSummaryRejectsUnknownSchema() throws {
+    try expectThrows {
+      _ = try UsageSummary.parse(json: usageFixture(
+        schemaVersion: 2, coverageStatus: "active", trackingStartedAt: "null", deliveredCount: 1, processedWords: 2
+      ))
+    }
   }
 
   static func testControlPolicyIsConservativeForGlobalCancel() throws {
@@ -160,6 +190,32 @@ enum CompanionCoreRegression {
           "processing_markers": {"total": \(processing), "live": \(processing), "stale": 0},
           "tmux_queue": {"total": \(queue), "recording": 0, "processing": 0}
         }\(extra.isEmpty ? "" : ", \(extra)")
+      }
+      """.utf8
+    )
+  }
+
+  static func usageFixture(
+    schemaVersion: Int = 1,
+    coverageStatus: String,
+    trackingStartedAt: String,
+    deliveredCount: Int,
+    processedWords: Int,
+    extra: String = ""
+  ) -> Data {
+    Data(
+      """
+      {
+        "command": "usage",
+        "schema_version": \(schemaVersion),
+        "coverage": {"status": "\(coverageStatus)", "tracking_started_at": \(trackingStartedAt)},
+        "delivered_dictations": {"count": \(deliveredCount), "by_flow": {"inline": \(deliveredCount)}},
+        "processed_words": \(processedWords),
+        "recording_duration_ms": 0,
+        "full_elapsed_duration_ms": 0,
+        "typing_assumption": {"wpm": 40},
+        "typing_equivalent_duration_ms": 0,
+        "estimated_time_difference_ms": 0\(extra.isEmpty ? "" : ", \(extra)")
       }
       """.utf8
     )

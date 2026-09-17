@@ -7,6 +7,10 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let menu = NSMenu()
     private var cli: WhisperCLI?
     private var status: CompanionStatus?
+    private var usage: UsageSummary?
+    private var usageError: String?
+    private var usageRefreshing = false
+    private var lastUsageAttempt: Date?
     private var readError: String?
     private var actionError: String?
     private var busy = false
@@ -15,7 +19,6 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var showMenuAfterRead = CommandLine.arguments.contains("--show-menu")
     private var lastRead: Date?
     private var timer: Timer?
-    private var pollTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -26,7 +29,7 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         render()
         refresh()
         timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            MainActor.assumeIsolated { self?.refresh() }
         }
         RunLoop.main.add(timer!, forMode: .common)
     }
@@ -42,26 +45,82 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return Date().timeIntervalSince(lastRead) < 15 && readError == nil
     }
 
+    nonisolated private static func deliver(_ update: @escaping @MainActor @Sendable () -> Void) {
+        // Main-actor Tasks alone wait for menu tracking to end. Deliver reads in
+        // common run-loop modes so state stays current while the menu is open.
+        RunLoop.main.perform(inModes: [.common]) {
+            MainActor.assumeIsolated { update() }
+        }
+    }
+
     private func refresh() {
         guard !refreshing, !busy else { return }
         refreshing = true
-        pollTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                if cli == nil { cli = WhisperCLI() }
-                status = try await cli!.status()
-                lastRead = Date()
-                readError = nil
-            } catch {
-                status = nil
-                readError = error.localizedDescription
+        if cli == nil { cli = WhisperCLI() }
+        let client = cli!
+        Task.detached { [weak self] in
+            let result: Result<CompanionStatus, Error>
+            do { result = .success(try await client.status()) }
+            catch { result = .failure(error) }
+            Self.deliver { [weak self] in
+                guard let self else { return }
+                switch result {
+                case .success(let value):
+                    status = value
+                    lastRead = Date()
+                    readError = nil
+                    refreshUsage()
+                case .failure(let error):
+                    status = nil
+                    readError = error.localizedDescription
+                }
+                refreshing = false
+                render()
+                if showMenuAfterRead {
+                    showMenuAfterRead = false
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, let screen = NSScreen.main else { return }
+                        menu.popUp(positioning: nil,
+                                   at: NSPoint(x: screen.visibleFrame.maxX - 380,
+                                               y: screen.visibleFrame.maxY - 12), in: nil)
+                    }
+                }
             }
-            refreshing = false
-            render()
-            if showMenuAfterRead {
-                showMenuAfterRead = false
-                item.button?.performClick(nil)
+        }
+    }
+
+    private func refreshUsage(force: Bool = false) {
+        guard !usageRefreshing, let client = cli else { return }
+        if !force, let lastUsageAttempt, Date().timeIntervalSince(lastUsageAttempt) < 30 { return }
+        usageRefreshing = true
+        lastUsageAttempt = Date()
+        Task.detached { [weak self] in
+            let result: Result<UsageSummary, Error>
+            do { result = .success(try await client.usage()) }
+            catch { result = .failure(error) }
+            Self.deliver { [weak self] in
+                guard let self else { return }
+                switch result {
+                case .success(let value): usage = value; usageError = nil
+                case .failure:
+                    usage = nil
+                    usageError = "Usage unavailable. Update the CLI or refresh to retry."
+                }
+                usageRefreshing = false
+                render()
             }
+        }
+    }
+
+    private var usageText: String {
+        guard let usage else { return usageError ?? "Loading usage…" }
+        switch usage.coverage.status {
+        case .notStarted:
+            return "Usage tracking starts with your next successful dictation."
+        case .active:
+            return "\(usage.deliveredCount.formatted()) dictations · \(usage.processedWords.formatted()) words"
+        case .unknown:
+            return "Usage coverage is unknown. Check tmux-whisper usage."
         }
     }
 
@@ -106,9 +165,9 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.image?.isTemplate = true
         item.button?.toolTip = "Tmux Whisper Companion — \(status?.summary.headline ?? "Checking CLI…")"
         let policy = status?.policy
-        let enabled = fresh && !busy && !refreshing
+        let enabled = fresh && !busy
         let signature = [state, status?.summary.headline ?? "", status?.summary.nextAction ?? "",
-                         readError ?? "", actionError ?? "", String(busy), String(enabled),
+                         readError ?? "", actionError ?? "", usageText, usage?.coverage.trackingStartedAt ?? "", String(busy), String(enabled),
                          String(policy?.canStartInline ?? false), String(policy?.canStopInline ?? false),
                          String(policy?.canCancelInline ?? false)].joined(separator: "\n")
         guard signature != renderedMenu else { return }
@@ -129,12 +188,19 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add("Stop and transcribe", action: #selector(stop), enabled: enabled && policy?.canStopInline == true)
         add("Cancel recording (discard audio)", action: #selector(cancel), enabled: enabled && policy?.canCancelInline == true)
         menu.addItem(.separator())
+        add("Usage · since tracking began", enabled: false)
+        text(usageText)
+        if usage?.coverage.status == .active, let started = usage?.coverage.trackingStartedAt {
+            text("Tracking since \(started)")
+        }
+        text("Older dictations are not included.")
+        menu.addItem(.separator())
         add("Refresh status", action: #selector(refreshStatus), enabled: !busy && !refreshing)
         add("Quit companion", action: #selector(quit))
     }
 
     private func perform(_ command: WhisperCommand) {
-        guard !busy, !refreshing, let cli else { return }
+        guard !busy, let cli else { return }
         busy = true
         actionError = nil
         render()
@@ -170,7 +236,7 @@ final class CompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func start() { perform(.startInline) }
     @objc private func stop() { perform(.stopInline) }
     @objc private func cancel() { perform(.cancelInline) }
-    @objc private func refreshStatus() { refresh() }
+    @objc private func refreshStatus() { refresh(); refreshUsage(force: true) }
     @objc private func dismissError() { actionError = nil; render() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

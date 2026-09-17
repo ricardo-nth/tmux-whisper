@@ -170,6 +170,11 @@ public struct WhisperCLI: Sendable {
     return try CompanionStatus.parse(json: output.standardOutput)
   }
 
+  public func usage() async throws -> UsageSummary {
+    let output = try await invoke(arguments: ["usage", "--json"], timeout: statusTimeout)
+    return try UsageSummary.parse(json: output.standardOutput)
+  }
+
   @discardableResult
   public func execute(_ command: WhisperCommand) async throws -> CommandOutput {
     try await invoke(arguments: command.arguments, timeout: commandTimeout)
