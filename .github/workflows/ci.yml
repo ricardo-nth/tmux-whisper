@@ -20,3 +20,13 @@ jobs:
 
       - name: Run CI checks
         run: ./tests/ci.sh
+
+  native-companion:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Test native companion
+        run: swift run --package-path integrations/native-macos CompanionCoreRegression
+      - name: Build local app bundle
+        run: ./integrations/native-macos/build.sh

@@ -59,6 +59,11 @@
 - keep filtered bench inspection, history session summaries, and compact/watch/log workflows evolving from real usage rather than opening a dashboard/TUI track
 - if any CLI-first polish remains after the stable cut, keep it small and evidence-led so it does not blur into v0.7 integration work
 
+### Experimental native companion (unreleased)
+
+- Added a local-build AppKit menu bar prototype consuming installed CLI status and inline start/stop/cancel commands; no permanent install or changes to Raycast/SwiftBar.
+- Usage display awaits the reviewed usage contract; signing/distribution and real spoken delivery acceptance remain follow-up work.
+
 ### Planned next (v0.7 integration platform)
 
 - begin v0.7 from a dedicated integration-platform branch now that `v0.6.0` is tagged and the Homebrew formula is updated
