@@ -279,6 +279,12 @@ tmux-whisper swiftbar on
 
 If needed, set `DICTATE_INSTALL_SWIFTBAR=0` to skip plugin install.
 
+When usage tracking has started, the ready-state menu shows delivered words,
+the tracking start time, and a signed **estimated typing-time difference**
+(`typing equivalent - dictation elapsed`). SwiftBar reads the stable
+`tmux-whisper usage --json` contract and caches it between redraws; recording
+and processing states stay focused on their controls.
+
 ### Integration environment note
 
 Raycast and SwiftBar often run with a minimal shell environment. If you rely on `CEREBRAS_API_KEY`, custom PATH entries, or env-based overrides, put them in `~/.zshenv` so the integrations can see them consistently.
