@@ -28,17 +28,41 @@ version_running_binary_path() {
 version_receipt_value() {
   local key="${1:-}"
   local receipt="${2:-$DICTATE_CONFIG_DIR/install-receipt.env}"
+  local raw=""
   [[ -n "$key" && -r "$receipt" ]] || return 0
 
   # Install receipts are generated as shell-style key/value pairs. Read only
   # the expected key as data; never source a user-local receipt for a version
-  # query. These provenance values contain no path expansion requirement.
-  awk -v expected="$key" '
+  # query. Decode Bash printf %q output as data so escaped provenance renders
+  # as the installed value without evaluating substitutions or expansions.
+  raw="$(awk -v expected="$key" '
     index($0, expected "=") == 1 {
       print substr($0, length(expected) + 2)
       exit
     }
-  ' "$receipt" 2>/dev/null || true
+  ' "$receipt" 2>/dev/null || true)"
+  [[ -n "$raw" ]] || return 0
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' "$raw"
+    return 0
+  fi
+
+  VERSION_RECEIPT_RAW="$raw" python3 - <<'PYEOF'
+import os
+import shlex
+
+raw = os.environ["VERSION_RECEIPT_RAW"]
+
+try:
+    values = shlex.split(raw, posix=True)
+except ValueError:
+    values = []
+
+# A receipt value is one Bash-quoted word. Preserve malformed or multi-word
+# input verbatim rather than attempting shell evaluation.
+print(values[0] if len(values) == 1 else raw)
+PYEOF
 }
 
 show_version() {

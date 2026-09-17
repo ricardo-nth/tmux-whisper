@@ -71,7 +71,7 @@ echo "PASS: missing_receipt_json"
 cat >"$CONFIG_DIR/install-receipt.env" <<'EOF'
 installed_at=2026-09-17T10:00:00Z
 install_source=bootstrap:ricardo-nth/tmux-whisper@v0.7.0
-repo_git_ref=v0.7.0
+repo_git_ref=release\ candidate
 repo_git_commit=0123456789abcdef
 bin_path=/a/source/checkout/bin/tmux-whisper
 EOF
@@ -80,7 +80,7 @@ present_text="$(run_version version)"
 assert_contains "present_receipt" "$present_text" "Install receipt: present ($CONFIG_DIR/install-receipt.env)"
 assert_contains "present_installed_at" "$present_text" "installed at: 2026-09-17T10:00:00Z"
 assert_contains "present_source" "$present_text" "source: bootstrap:ricardo-nth/tmux-whisper@v0.7.0"
-assert_contains "present_ref" "$present_text" "ref: v0.7.0"
+assert_contains "present_ref" "$present_text" "ref: release candidate"
 assert_contains "present_commit" "$present_text" "commit: 0123456789abcdef"
 assert_contains "receipt_binary_separation" "$present_text" "Receipt provenance records install metadata; the running binary is listed separately."
 
@@ -102,7 +102,7 @@ assert receipt["present"] is True
 assert receipt["readable"] is True
 assert receipt["installed_at"] == "2026-09-17T10:00:00Z"
 assert receipt["source"] == "bootstrap:ricardo-nth/tmux-whisper@v0.7.0"
-assert receipt["ref"] == "v0.7.0"
+assert receipt["ref"] == "release candidate"
 assert receipt["commit"] == "0123456789abcdef"
 PYEOF
 echo "PASS: present_receipt_json"
