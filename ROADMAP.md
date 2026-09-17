@@ -59,6 +59,7 @@ Focus: turn the existing operator summary layer into a first-class terminal prod
 - Keep pushing from parity into workflow depth: export/search/follow/watch commands should build on the read-only contracts rather than bypass them.
 - Add export-friendly and watch/tail-style workflows that keep tmux/terminal users inside the CLI.
 - Use filtered bench inspection and history session summaries as the main reliability investigation surface for FFmpeg drift soak, morning-delay warm-cache behavior, and SwiftBar/sound-start timing.
+- Keep durable usage accounting transcript-free and retention-independent, so a future menu-bar surface can show verified new-delivery totals without pretending that old/pruned history is lifetime coverage.
 - Keep tmux-first workflow as the primary operating model.
 - Treat any future TUI as a later convenience layer built on stable CLI contracts, not as the next milestone.
 

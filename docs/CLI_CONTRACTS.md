@@ -23,6 +23,18 @@ These commands are safe to build integrations on:
   - Each session includes app, mode, words, timing metrics, audio artifact metadata, debug notes, and a preview.
 - `tmux-whisper last --json`
   - Object with the latest history entry.
+- `tmux-whisper usage --json`
+  - Object with `coverage`, `delivered_dictations`, word and duration totals,
+    the current typing-WPM assumption, and `estimated_time_difference_ms`.
+  - The summary is a transcript-free local aggregate stored outside retained
+    history. It starts with the first successful delivery after this feature is
+    installed; it does not backfill or recover pruned history.
+  - `full_elapsed_duration_ms` measures recording start through successful
+    delivery for both inline and tmux flows. `estimated_time_difference_ms` is
+    `typing_equivalent_duration_ms - full_elapsed_duration_ms`, so its sign is
+    explicit rather than an unqualified time-saved claim.
+  - Only successful delivered inline and tmux dictations are counted. Failed,
+    cancelled, no-speech, superseded, and replay runs are excluded.
 - `tmux-whisper logs --json`
 - `tmux-whisper logs path|tail [stream] [--lines N] --json`
   - Object with `streams` and `next_commands`.

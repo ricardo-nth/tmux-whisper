@@ -188,6 +188,7 @@ HISTORY (saved transcripts, auto-cleanup after 7 days):
   tmux-whisper history N [--json] # show entry N (1 = most recent)
   tmux-whisper history stats [--json] # summarize saved dictations + operator timings
   tmux-whisper history sessions [N] [--json] # compact per-dictation session summaries
+  tmux-whisper usage [--json]       # durable, transcript-free usage summary for delivered dictations
   tmux-whisper last [--json]      # concise summary of the most recent dictation
   tmux-whisper history reprocess N [mode]  # re-run LLM on raw transcript
   tmux-whisper history clear      # delete all history
@@ -227,6 +228,7 @@ ENV OPTIONS:
   DICTATE_KEEP_LOGS=1        # keep /tmp logs even on success
   DICTATE_HISTORY_RETENTION_DAYS=7 # keep transcript JSON history for stats/search
   DICTATE_HISTORY_AUDIO_RETENTION_DAYS=2 # keep archived inline debug WAVs; metadata/logs remain
+  DICTATE_HISTORY_TYPING_WPM=40 # assumed typing pace used by history and usage estimates
   DICTATE_BENCH_MAX_ROWS=800 # cap retained bench samples in history/bench.tsv
   DICTATE_BENCH_MATRIX_MODE=code # force mode used by bench-matrix cleanup/postprocess
   DICTATE_BENCH_MATRIX_MODELS=fast,smart,qwen,gpt # LLM list for postprocess-on matrix runs
@@ -5127,13 +5129,25 @@ stop() {
     fi
     tmux delete-buffer -b whisper_dictate >/dev/null 2>&1 || true
     paste_ms=$(( $(now_ms) - stage_started_ms ))
+    local delivery_completed_ms
+    delivery_completed_ms="$(now_ms)"
 
     rm -f "$wav"
 
     total_ms=$(( $(now_ms) - flow_started_ms ))
     local raw_chars="${#raw_txt}"
     local out_chars="${#txt}"
-    # Save to history (includes metrics and postprocess budget observability when available)
+    # History retains its established processing-only tmux total_ms. The
+    # durable ledger instead measures from recording start through delivery.
+    local usage_full_elapsed_ms="$((record_ms + total_ms))"
+    if [[ "$state_record_started_ms" =~ ^[0-9]+$ ]]; then
+      usage_full_elapsed_ms=$(( delivery_completed_ms - state_record_started_ms ))
+      (( usage_full_elapsed_ms < 0 )) && usage_full_elapsed_ms=0
+    fi
+    usage_record_delivery "tmux" "$txt" "$record_ms" "$usage_full_elapsed_ms" || \
+      echo "[usage] unable to record delivered dictation summary" >&2
+    # Save transcript history separately; usage accounting must not depend on
+    # retained history succeeding or surviving its normal prune cycle.
     save_history "$raw_txt" "$txt" "$tmux_mode" "tmux" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms"
     append_bench_entry "tmux" "ok" "$model_id" "$tmux_mode" "$do_postprocess" "$raw_chars" "$out_chars" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
       "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
@@ -5239,6 +5253,7 @@ process_inline_recording() {
   local inline_session_id="${10:-}"
   local stop_grace_ms="${11:-}"
   local processing_marker_owner="${12:-self}"
+  local usage_started_ms="${13:-}"
 
   need ffmpeg
 
@@ -5544,6 +5559,8 @@ process_inline_recording() {
   fi
 
   paste_ms=$(( $(now_ms) - stage_started_ms ))
+  local delivery_completed_ms
+  delivery_completed_ms="$(now_ms)"
   total_ms=$(( $(now_ms) - flow_started_ms ))
   append_bench_entry "inline" "ok" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
@@ -5556,7 +5573,16 @@ process_inline_recording() {
 
   # Save history asynchronously so paste/send latency is not blocked by JSON + file I/O.
   local history_app="${target_app:-current}"
-  ( save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" ) >/dev/null 2>&1 &
+  (
+    # Inline total_ms already starts at capture, so it is directly comparable.
+    local usage_full_elapsed_ms="$total_ms"
+    if [[ "$usage_started_ms" =~ ^[0-9]+$ ]]; then
+      usage_full_elapsed_ms=$(( delivery_completed_ms - usage_started_ms ))
+      (( usage_full_elapsed_ms < 0 )) && usage_full_elapsed_ms=0
+    fi
+    usage_record_delivery "inline" "$txt" "$record_ms" "$usage_full_elapsed_ms" || true
+    save_history "$raw_txt" "$txt" "$detected_mode" "${history_app:-unknown}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms"
+  ) >/dev/null 2>&1 &
 }
 
 inline_start() {
@@ -5754,7 +5780,7 @@ inline_stop() {
     trap '' HUP
     set -euo pipefail
     process_inline_recording "$wav" "${target_app:-}" "$model_id" "$record_ms" \
-      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}" "$inline_stop_grace_ms" "external"
+      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "${inline_session_id:-}" "$inline_stop_grace_ms" "external" "$state_record_started_ms"
   ) >"$TMPDIR/whisper-dictate-inline.transcribe.log" 2>&1 &
   inline_bg_pid="$!"
   processing_marker_start "inline" "${inline_session_id:-}" "$inline_bg_pid" 2>/dev/null || true
@@ -5847,7 +5873,7 @@ inline() {
   (( record_ms < 0 )) && record_ms=0
 
   process_inline_recording "$wav" "$target_app" "$model_id" "$record_ms" \
-    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "$inline_session_id" "$inline_stop_grace_ms"
+    "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source" "$inline_session_id" "$inline_stop_grace_ms" "self" "$record_started_ms"
 }
 
 toggle() {
@@ -7435,6 +7461,15 @@ case "$cmd" in
   swiftbar) manage_swiftbar "${2:-}" ;;
   replay) replay "${2:-}" "${@:3}" ;;
   history) manage_history "${@:2}" ;;
+  usage)
+    if [[ "${2:-}" == "--json" ]]; then
+      usage_summary "1"
+    elif [[ -n "${2:-}" ]]; then
+      die "usage: tmux-whisper usage [--json]"
+    else
+      usage_summary
+    fi
+    ;;
   last)
     if [[ "${2:-}" == "--json" ]]; then
       show_last_history "json"

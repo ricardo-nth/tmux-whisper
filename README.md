@@ -156,6 +156,19 @@ tmux-whisper postprocess on
 
 If you are not inside tmux, use `tmux-whisper inline` or the Raycast inline integration instead.
 
+### Durable usage summary
+
+`tmux-whisper usage` reports a small local, transcript-free aggregate for
+successful deliveries; `tmux-whisper usage --json` is the stable surface for a
+future SwiftBar or native menu. It preserves aggregate counts after normal
+transcript-history pruning, but deliberately starts tracking only after the
+feature is installed. It never backfills old or pruned history.
+
+The estimate shows the typing pace assumption (`DICTATE_HISTORY_TYPING_WPM`,
+default `40`) and a signed difference between typing-equivalent time and full
+recording-to-delivery elapsed time. It is an estimate, not a claim of lifetime
+hours saved.
+
 ## Upgrade and Repair
 
 Daily-use upgrade flow depends on channel:
