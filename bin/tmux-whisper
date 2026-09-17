@@ -47,6 +47,7 @@ RECORDING:
   tmux-whisper inline toggle      # toggle background inline recording
   tmux-whisper status [--json] [--preset compact]    # show runtime + effective settings snapshot
   tmux-whisper version [--json]   # show CLI, schema, running binary, and install provenance
+  tmux-whisper --version          # text alias for version
   tmux-whisper stop               # force stop any recording
   tmux-whisper cancel             # cancel recording (discard, no paste)
 
