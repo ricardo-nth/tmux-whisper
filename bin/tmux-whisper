@@ -2199,7 +2199,8 @@ tmux_whisperd_lock_acquire() {
   mkdir -p "$(dirname "$lock")" 2>/dev/null || return 1
   while :; do
     if mkdir "$lock" 2>/dev/null; then
-      printf '%s\n' "$$" >"$lock/pid"
+      # An ownerless lock would later be reclaimed while still in use.
+      printf '%s\n' "$$" >"$lock/pid" 2>/dev/null || { rm -rf "$lock"; return 1; }
       return 0
     fi
     owner="$(cat "$lock/pid" 2>/dev/null || true)"
