@@ -359,6 +359,25 @@ tmux-whisper bench --json
 tmux-whisper bench-matrix 1
 ```
 
+## Lowkey (experimental native app)
+
+Lowkey is the native macOS menu-bar front-end for inline dictation. It runs beside the CLI/Raycast setup, so you can compare the two. It handles the hotkey, microphone, sounds and paste natively, and uses the installed `tmux-whisper` for transcription and cleanup, so the text matches inline dictation exactly.
+
+```bash
+tools/make-signing-identity.sh   # once: local code-signing identity (keeps permissions across rebuilds)
+tools/build-lowkey-app.sh        # build, sign, install ~/Applications/Lowkey.app
+open ~/Applications/Lowkey.app
+```
+
+On first launch, allow Microphone, and Accessibility (for pasting) in System Settings → Privacy & Security. The default hotkey is `ctrl+option+space`. Change it in `~/.config/dictate/config.toml`:
+
+```toml
+[app]
+hotkey = "ctrl+option+space"   # e.g. "cmd+shift+d", "f13"
+```
+
+Then choose **Reload Settings** from the menu. Timings and errors are in `~/Library/Logs/Lowkey/app.log`.
+
 ## Repo Layout
 
 - `bin/tmux-whisper` is the main product orchestration layer.

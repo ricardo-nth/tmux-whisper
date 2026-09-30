@@ -188,6 +188,7 @@ out = {
   "CFG_SWIFTBAR_ENABLED": "1" if b(get("integrations.swiftbar.enabled", True), True) else "0",
   "CFG_UI_KEYBIND_TMUX": str(get("ui.keybinds.tmux", "F12")),
   "CFG_UI_KEYBIND_INLINE": str(get("ui.keybinds.inline", "F11")),
+  "CFG_APP_HOTKEY": str(get("app.hotkey", "ctrl+option+space")),
   "CFG_CLEAN_REPEATS_LEVEL": str(get("clean.repeats_level", "1")),
 }
 

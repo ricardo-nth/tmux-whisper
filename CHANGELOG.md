@@ -1,5 +1,11 @@
 # Tmux Whisper changelog
 
+## v0.10.0 — Unreleased
+
+- **Lowkey (experimental native app, phase 2 of #30)**: a signed menu-bar app that runs beside the CLI/Raycast setup. It owns the latency-critical path natively: a Carbon global hotkey (toggle, default `ctrl+option+space`, set with `[app] hotkey` in config.toml), AVAudioEngine capture at 16 kHz, preloaded AVAudioPlayer sounds (the start chime no longer waits on an `afplay` process), and paste/send via CGEvent with the same paste-target and send-mode settings as inline dictation. Transcription, cleanup, history, and usage stay in the CLI, so output is identical to today's inline dictation. Timings (hotkey→chime, engine start, hotkey→first audio, processing, delivery) are logged to `~/Library/Logs/Lowkey/app.log`.
+  - Build with `tools/make-signing-identity.sh` (once: a local self-signed code-signing identity so microphone and Accessibility grants survive rebuilds) and `tools/build-lowkey-app.sh` (Command Line Tools only; installs `~/Applications/Lowkey.app`).
+  - New CLI back-end commands for the app: `tmux-whisper app-config --json` and `tmux-whisper inline process <wav> --json`. The latter runs the inline pipeline on a private copy of the WAV without pasting, and records history, bench (`app:avaudioengine`), and usage like any inline dictation.
+
 ## v0.9.0 — 2026-09-30
 
 - **Faster inline start**: measured on 796 real inline runs, the time before you can speak was dominated by (a) a device-index lookup that enumerated audio devices through ffmpeg whenever the cache was over 6 hours old or devices changed (0.5–3.4 s, about 8% of starts, typically the first dictation of the day), and (b) the start chime, which `afplay` takes ~0.3–0.9 s to make audible.
