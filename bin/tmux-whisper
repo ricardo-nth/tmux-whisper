@@ -6004,6 +6004,8 @@ inline_start() {
   while :; do
     control_fifo=""
     control_keeper_pid=""
+    # Output appearing is the liveness signal below, so start without one.
+    rm -f "$wav" 2>/dev/null || true
     if start_recording_control_fifo "${TMPDIR:-/tmp}/dictate-inline-$$" 2>/dev/null; then
       control_fifo="$RECORDING_CONTROL_FIFO"
       control_keeper_pid="$RECORDING_CONTROL_KEEPER_PID"
@@ -6027,14 +6029,23 @@ inline_start() {
     startup_total_ms=$(( record_started_ms - startup_started_ms ))
     (( startup_total_ms < 0 )) && startup_total_ms=0
 
+    # Live means ffmpeg opened the device and began writing output. A device
+    # that can't be opened (e.g. renamed) makes ffmpeg exit after 0.2-0.8s,
+    # so "process still running" alone would report success and lose the
+    # recording; waiting for output lets the retry below resolve an index.
+    # A slow device that is still running after ~1.2s is treated as live.
     live_ok="0"
-    for attempt in {1..8}; do
-      if kill -0 "$pid" 2>/dev/null; then
+    for attempt in {1..60}; do
+      kill -0 "$pid" 2>/dev/null || break
+      if [[ -s "$wav" ]]; then
         live_ok="1"
         break
       fi
       sleep 0.02
     done
+    if [[ "$live_ok" != "1" ]] && kill -0 "$pid" 2>/dev/null; then
+      live_ok="1"
+    fi
     startup_ffmpeg_live_ms=$(( $(now_ms) - ffmpeg_started_ms ))
 
     if [[ "$live_ok" == "1" ]]; then

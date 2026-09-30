@@ -278,10 +278,12 @@ if [[ -n "${DICTATE_TEST_FFMPEG_LOG:-}" ]]; then
   printf '%s\n' "$*" >>"$DICTATE_TEST_FFMPEG_LOG"
 fi
 
-# Simulate a device that can't be opened by name (renamed/unplugged).
+# Simulate a device that can't be opened by name (renamed/unplugged). Real
+# ffmpeg takes 0.2-0.8s to give up, well past a bare "is it running" check.
 if [[ "${DICTATE_TEST_FFMPEG_FAIL_NAME:-0}" == "1" && "$*" == *"-i :MacBook Air Microphone"* ]]; then
-  echo "[avfoundation] Could not find audio device with name MacBook Air Microphone" >&2
-  exit 1
+  sleep 0.4
+  echo "[AVFoundation indev] Audio device not found" >&2
+  exit 251
 fi
 
 out="${!#}"

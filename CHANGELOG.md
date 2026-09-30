@@ -3,7 +3,7 @@
 ## v0.9.0 — Unreleased
 
 - **Faster inline start**: measured on 796 real inline runs, the time before you can speak was dominated by (a) a device-index lookup that enumerated audio devices through ffmpeg whenever the cache was over 6 hours old or devices changed (0.5–3.4 s, about 8% of starts, typically the first dictation of the day), and (b) the start chime, which `afplay` takes ~0.3–0.9 s to make audible.
-  - Inline capture with `audio.source = "mac"` or `"name"` opens the microphone by name and no longer resolves a device index at start. If opening by name fails, the existing retry resolves the index (now covered by a test).
+  - Inline capture with `audio.source = "mac"` or `"name"` opens the microphone by name and no longer resolves a device index at start. If the device can't be opened by name, the start now falls back to resolving an index. Previously that retry could never fire: recording was declared live once ffmpeg was merely running (~160 ms), but ffmpeg takes 0.2–0.8 s to give up on a missing device, so the failure only surfaced at stop. Recording is now live once ffmpeg writes output, or after ~1.2 s still running.
   - The start chime is triggered as soon as `inline start` runs, overlapping with device and ffmpeg setup instead of queueing behind them.
   - Transcription itself was not the cause: short clips take ~0.8 s regardless of idle time, and larger times track recording length.
 - **TmuxWhisperKit (native app, phase 1 of #30)**: `tmux-whisperd` is now a thin executable over a reusable Swift library, `TmuxWhisperKit`: the daemon protocol, `ASREngine` (Parakeet via FluidAudio), `TranscriptionService`, and `UnixSocketServer`. The planned menu-bar app will link it in-process. Daemon version 0.2.0.
