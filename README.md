@@ -174,6 +174,8 @@ tmux-whisper transcribe - < memo.m4a           # read from stdin
 - Long recordings are chunked by the Parakeet runtime itself; a 10-minute memo took about 15 seconds end to end on an M1 Air with the model warm. Dictation waits while a long file is transcribing.
 - Existing output files are never overwritten without `--force`; failures exit non-zero and leave no partial output.
 
+For AI agents (Claude Code, Codex), `integrations/agents/transcribe-audio/SKILL.md` is a skill that tells them to use `tmux-whisper transcribe` for audio files instead of downloading a speech model. Install it by copying the folder into `~/.claude/skills/` and/or `~/.codex/skills/`.
+
 For right-click transcription in Finder:
 
 ```bash
