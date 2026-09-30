@@ -48,11 +48,11 @@ if [[ "$bootstrap_help" != *"Installs Tmux Whisper from a GitHub source archive.
   echo "Expected bootstrap help to describe Tmux Whisper branding" >&2
   exit 1
 fi
-if [[ "$bootstrap_help" != *"--ref v0.8.0 --force"* ]]; then
+if [[ "$bootstrap_help" != *"--ref v0.9.0 --force"* ]]; then
   echo "Expected bootstrap help to show a pinned ref example" >&2
   exit 1
 fi
-if [[ "$bootstrap_help" != *"v0.8.0/bootstrap.sh"* ]]; then
+if [[ "$bootstrap_help" != *"v0.9.0/bootstrap.sh"* ]]; then
   echo "Expected bootstrap help to reference the next stable tag example" >&2
   exit 1
 fi

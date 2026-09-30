@@ -21,7 +21,7 @@ TMUX_JOBS_DIR="${DICTATE_TMUX_JOBS_DIR:-/tmp/dictate-tmux-jobs}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEFAULT_SWIFT_PARAKEET_MODELS_DIR="$XDG_DATA_HOME/tmux-whisper/models"
 DICTATE_CONFIG_SCHEMA_VERSION=1
-TMUX_WHISPER_CLI_VERSION="0.9.0-dev"
+TMUX_WHISPER_CLI_VERSION="0.9.0"
 
 # Readers such as SwiftBar and `tmux-whisper doctor` inspect these files while
 # recording starts. Publish a complete replacement so they never observe the
@@ -5946,6 +5946,12 @@ inline_start() {
 
   [[ ! -f "$INLINE_STATE_FILE" ]] || die "already recording. Run: tmux-whisper inline stop"
 
+  # The chime is the user's cue to speak. afplay takes ~0.3-0.9s to become
+  # audible, so start it now and let device/ffmpeg setup (~50ms) overlap
+  # with it instead of queueing it behind them. Capture starts well before
+  # the chime is heard.
+  play_sound start
+
   local model_id
   model_id="$(current_transcribe_model_label)"
   local inline_session_id
@@ -5998,6 +6004,8 @@ inline_start() {
   while :; do
     control_fifo=""
     control_keeper_pid=""
+    # Output appearing is the liveness signal below, so start without one.
+    rm -f "$wav" 2>/dev/null || true
     if start_recording_control_fifo "${TMPDIR:-/tmp}/dictate-inline-$$" 2>/dev/null; then
       control_fifo="$RECORDING_CONTROL_FIFO"
       control_keeper_pid="$RECORDING_CONTROL_KEEPER_PID"
@@ -6021,14 +6029,23 @@ inline_start() {
     startup_total_ms=$(( record_started_ms - startup_started_ms ))
     (( startup_total_ms < 0 )) && startup_total_ms=0
 
+    # Live means ffmpeg opened the device and began writing output. A device
+    # that can't be opened (e.g. renamed) makes ffmpeg exit after 0.2-0.8s,
+    # so "process still running" alone would report success and lose the
+    # recording; waiting for output lets the retry below resolve an index.
+    # A slow device that is still running after ~1.2s is treated as live.
     live_ok="0"
-    for attempt in {1..8}; do
-      if kill -0 "$pid" 2>/dev/null; then
+    for attempt in {1..60}; do
+      kill -0 "$pid" 2>/dev/null || break
+      if [[ -s "$wav" ]]; then
         live_ok="1"
         break
       fi
       sleep 0.02
     done
+    if [[ "$live_ok" != "1" ]] && kill -0 "$pid" 2>/dev/null; then
+      live_ok="1"
+    fi
     startup_ffmpeg_live_ms=$(( $(now_ms) - ffmpeg_started_ms ))
 
     if [[ "$live_ok" == "1" ]]; then
@@ -6063,6 +6080,9 @@ inline_start() {
   if [[ "$live_ok" != "1" ]]; then
     cleanup_recording_control_fifo "$control_fifo" "$control_keeper_pid"
     rm -f "$wav" 2>/dev/null || true
+    # The start chime already played; make the failure audible too, so it is
+    # never mistaken for a cue to speak.
+    play_sound error
     local hint=""
     hint="$(recording_log_tail_hint "$record_log")"
     if [[ -n "$hint" ]]; then
@@ -6080,7 +6100,6 @@ inline_start() {
   maybe_warmup_swift_parakeet_in_background
 
   swiftbar_refresh
-  play_sound start
   echo "🎙️ RECORDING → inline"
 }
 
