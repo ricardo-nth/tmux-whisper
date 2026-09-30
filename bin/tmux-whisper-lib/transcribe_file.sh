@@ -89,15 +89,36 @@ transcribe_file_write_output() {
     echo "tmux-whisper: cannot write output: $dest" >&2
     return 1
   }
+  # Removed by the EXIT trap if the run is interrupted mid-write.
+  TRANSCRIBE_FILE_PENDING_TMP="$tmp"
   # mktemp creates 0600; give the transcript normal umask-based permissions.
   chmod "$(printf '%o' $(( 0666 & ~$(umask) )))" "$tmp" 2>/dev/null || true
-  if printf '%s\n' "$content" >"$tmp" && mv -f "$tmp" "$dest"; then
-    transcribe_file_log "Wrote $dest"
-    return 0
+  if ! printf '%s\n' "$content" >"$tmp"; then
+    rm -f "$tmp" 2>/dev/null || true
+    TRANSCRIBE_FILE_PENDING_TMP=""
+    echo "tmux-whisper: cannot write output: $dest" >&2
+    return 1
   fi
-  rm -f "$tmp" 2>/dev/null || true
-  echo "tmux-whisper: cannot write output: $dest" >&2
-  return 1
+  if [[ "$force" == "1" ]]; then
+    mv -f "$tmp" "$dest"
+  else
+    # -n never replaces a file that appeared since the existence check; the
+    # temp file surviving the move means another writer got there first.
+    mv -n "$tmp" "$dest"
+  fi
+  if [[ -e "$tmp" ]]; then
+    rm -f "$tmp" 2>/dev/null || true
+    TRANSCRIBE_FILE_PENDING_TMP=""
+    if [[ "$force" != "1" && -e "$dest" ]]; then
+      echo "tmux-whisper: output exists (use --force to overwrite): $dest" >&2
+    else
+      echo "tmux-whisper: cannot write output: $dest" >&2
+    fi
+    return 1
+  fi
+  TRANSCRIBE_FILE_PENDING_TMP=""
+  transcribe_file_log "Wrote $dest"
+  return 0
 }
 
 # Usage: transcribe_file_destination <input> <output> <beside> <out_dir> <ext>
@@ -188,8 +209,9 @@ manage_transcribe() {
 
   local work_dir
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/tmux-whisper-transcribe.XXXXXX")" || die "transcribe: cannot create a temporary directory"
+  TRANSCRIBE_FILE_PENDING_TMP=""
   # shellcheck disable=SC2064
-  trap "rm -rf '$work_dir'" EXIT
+  trap "rm -rf '$work_dir'; [[ -z \"\${TRANSCRIBE_FILE_PENDING_TMP:-}\" ]] || rm -f \"\$TRANSCRIBE_FILE_PENDING_TMP\"" EXIT
   trap 'exit 130' INT TERM
 
   # Keep file jobs out of the dictation transcribe log, which the tmux worker

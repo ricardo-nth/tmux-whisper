@@ -1329,6 +1329,10 @@ run_transcribe_file_outputs_round() {
 
   "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" -o "$CASE_DIR/out/one.txt" -q
   assert_file_contains "transcribe_output_file" "$CASE_DIR/out/one.txt" "file transcript text"
+  if compgen -G "$CASE_DIR/memos/.tmux-whisper-transcript.*" >/dev/null || compgen -G "$CASE_DIR/out/.tmux-whisper-transcript.*" >/dev/null; then
+    fail "transcribe_no_temp_files_in_output_dirs"
+  fi
+  pass "transcribe_no_temp_files_in_output_dirs"
 
   cp "$CASE_DIR/memos/memo.m4a" "$CASE_DIR/memos/second.mp3"
   "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" "$CASE_DIR/memos/second.mp3" --out-dir "$CASE_DIR/out-dir" --format json -q
@@ -1472,6 +1476,28 @@ run_transcribe_file_daemon_unavailable_round() {
   assert_path_absent "transcribe_no_daemon_no_output" "$CASE_DIR/memos/memo.txt"
 }
 
+
+run_transcribe_file_write_race_round() {
+  setup_case "transcribe-write-race"
+  local dir="$CASE_DIR/race" rc=0
+  mkdir -p "$dir"
+  # A competing writer creates the destination after the existence check
+  # (simulated from the chmod step), which must not be clobbered without --force.
+  RACE_DIR="$dir" bash -c '
+    source "$1"
+    transcribe_file_log() { :; }
+    chmod() { printf "%s\n" "competing notes" >"$RACE_DIR/memo.txt"; }
+    transcribe_file_write_output "$RACE_DIR/memo.txt" "new transcript" 0
+  ' _ "$ROOT/bin/tmux-whisper-lib/transcribe_file.sh" 2>"$CASE_DIR/logs/race.txt" || rc=$?
+  assert_equals "transcribe_race_exit" "$rc" "1"
+  assert_file_contains "transcribe_race_kept_existing" "$dir/memo.txt" "competing notes"
+  assert_file_contains "transcribe_race_message" "$CASE_DIR/logs/race.txt" "output exists"
+  if compgen -G "$dir/.tmux-whisper-transcript.*" >/dev/null; then
+    fail "transcribe_race_temp_removed"
+  fi
+  pass "transcribe_race_temp_removed"
+}
+
 write_stubs
 run_tmux_round "enter"
 run_tmux_round "codex"
@@ -1505,6 +1531,7 @@ run_transcribe_file_no_speech_round
 run_transcribe_file_long_round
 run_transcribe_file_no_tail_rescue_round
 run_transcribe_file_daemon_unavailable_round
+run_transcribe_file_write_race_round
 run_finder_quick_action_round
 run_finder_handler_round
 

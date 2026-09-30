@@ -78,7 +78,7 @@ These are useful but not yet promised as stable contracts:
 - `tmux-whisper swiftbar refresh`
   - Human-readable, best-effort event refresh for the SwiftBar plugin. It is safe when SwiftBar is missing and exists to accelerate polling after lifecycle transitions, not to replace polling as the correctness mechanism.
 - `tmux-whisper transcribe <file>... --format json`
-  - One JSON object per input, newline-delimited: `file`, `text`, `audio_duration_ms`, `processing_ms`, `model`, `engine`. `text` is the raw Parakeet transcript with no dictation cleanup. Stdin input reports `file: "stdin"`. Exit status is non-zero if any input fails; successful inputs are still emitted.
+  - One JSON object per input, newline-delimited: `file`, `text`, `audio_duration_ms`, `processing_ms`, `model`, `engine`. `text` is the raw Parakeet transcript with no dictation cleanup. `audio_duration_ms` is `null` when the duration cannot be probed. Stdin input reports `file: "stdin"`. Exit status is non-zero if any input fails; successful inputs are still emitted.
   - File transcripts are not deliveries: they never appear in `history` or `usage`.
 - `tmux-whisper finder install|remove|status`
   - Human-readable management of the Finder Quick Action (`~/Library/Services/Transcribe with Tmux Whisper.workflow`).
