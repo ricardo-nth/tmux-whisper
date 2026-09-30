@@ -101,11 +101,16 @@ transcribe_file_write_output() {
   fi
   if [[ "$force" == "1" ]]; then
     mv -f "$tmp" "$dest"
-  else
-    # -n never replaces a file that appeared since the existence check; the
-    # temp file surviving the move means another writer got there first.
+  elif ln "$tmp" "$dest" 2>/dev/null; then
+    # link(2) refuses atomically when the name exists, so a file that appeared
+    # after the existence check is never replaced.
+    rm -f "$tmp"
+  elif [[ ! -e "$dest" ]]; then
+    # Filesystems without hard links (exFAT/FAT recorders): -n still refuses
+    # an existing file, with only a tiny check-then-rename window.
     mv -n "$tmp" "$dest"
   fi
+  # A surviving temp file means the output was not published.
   if [[ -e "$tmp" ]]; then
     rm -f "$tmp" 2>/dev/null || true
     TRANSCRIBE_FILE_PENDING_TMP=""
