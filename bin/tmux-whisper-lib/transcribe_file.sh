@@ -89,6 +89,8 @@ transcribe_file_write_output() {
     echo "tmux-whisper: cannot write output: $dest" >&2
     return 1
   }
+  # mktemp creates 0600; give the transcript normal umask-based permissions.
+  chmod "$(printf '%o' $(( 0666 & ~$(umask) )))" "$tmp" 2>/dev/null || true
   if printf '%s\n' "$content" >"$tmp" && mv -f "$tmp" "$dest"; then
     transcribe_file_log "Wrote $dest"
     return 0

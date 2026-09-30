@@ -1308,6 +1308,13 @@ run_transcribe_file_outputs_round() {
   out="$("$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" --beside -q)"
   assert_equals "transcribe_beside_stdout_empty" "$out" ""
   assert_file_contains "transcribe_beside_written" "$CASE_DIR/memos/memo.txt" "file transcript text"
+  local mode
+  if [[ "${OSTYPE:-}" == darwin* ]]; then
+    mode="$(stat -f '%Lp' "$CASE_DIR/memos/memo.txt")"
+  else
+    mode="$(stat -c '%a' "$CASE_DIR/memos/memo.txt")"
+  fi
+  assert_equals "transcribe_beside_umask_mode" "$mode" "$(printf '%o' $(( 0666 & ~$(umask) )))"
 
   rc=0
   "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" --beside -q 2>"$CASE_DIR/logs/exists.txt" || rc=$?
