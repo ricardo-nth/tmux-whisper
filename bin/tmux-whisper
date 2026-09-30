@@ -6080,6 +6080,9 @@ inline_start() {
   if [[ "$live_ok" != "1" ]]; then
     cleanup_recording_control_fifo "$control_fifo" "$control_keeper_pid"
     rm -f "$wav" 2>/dev/null || true
+    # The start chime already played; make the failure audible too, so it is
+    # never mistaken for a cue to speak.
+    play_sound error
     local hint=""
     hint="$(recording_log_tail_hint "$record_log")"
     if [[ -n "$hint" ]]; then

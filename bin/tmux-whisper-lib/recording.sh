@@ -66,7 +66,10 @@ recording_resolve_audio_context() {
     audio_index="$CFG_AUDIO_DEVICE_INDEX"
     RECORDING_AUDIO_SOURCE="config:audio.device_index"
   fi
-  [[ -n "$audio_index" ]] || die "no audio device found. Run: tmux-whisper debug"
+  if [[ -z "$audio_index" ]]; then
+    play_sound error
+    die "no audio device found. Run: tmux-whisper debug"
+  fi
 
   RECORDING_AUDIO_INDEX="$audio_index"
   RECORDING_AUDIO_SELECTOR="$audio_index"
