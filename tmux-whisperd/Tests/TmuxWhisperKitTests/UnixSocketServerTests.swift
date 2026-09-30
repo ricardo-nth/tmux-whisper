@@ -189,4 +189,83 @@ struct UnixSocketServerTests {
     let ping = try TestClient.request(path, DaemonRequest(id: "p", op: .ping))
     #expect(ping.ok)
   }
+
+  @Test func refusesToStealALiveDaemonsSocket() throws {
+    let path = makeSocketPath()
+    let first = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .zero))
+    try first.start()
+    defer { first.stop() }
+
+    let second = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .zero))
+    #expect(throws: UnixSocketServer.ServerError.self) { try second.start() }
+    let ping = try TestClient.request(path, DaemonRequest(id: "p", op: .ping))
+    #expect(ping.ok)
+  }
+
+  @Test func stopLeavesASuccessorsSocketAlone() throws {
+    let path = makeSocketPath()
+    let old = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .zero))
+    try old.start()
+    // The old daemon's path is replaced (e.g. by a restart after its socket
+    // was removed); stopping it later must not delete the new socket.
+    unlink(path)
+    let successor = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .zero))
+    try successor.start()
+    defer { successor.stop() }
+
+    old.stop()
+    let ping = try TestClient.request(path, DaemonRequest(id: "p", op: .ping))
+    #expect(ping.ok)
+  }
+
+  @Test func stopDrainsAcceptedWorkAndFreesThePath() async throws {
+    let path = makeSocketPath()
+    let server = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .seconds(1)))
+    try server.start()
+
+    let inFlight = Task.detached {
+      try TestClient.request(path, DaemonRequest(id: "t", op: .transcribe, wavPath: "/x"))
+    }
+    try await Task.sleep(for: .milliseconds(200))
+
+    let stopped = Task.detached { server.stop(drainTimeout: 5) }
+    try await Task.sleep(for: .milliseconds(100))
+    // The path is released immediately, so a successor can bind while the
+    // old server is still finishing its accepted request.
+    let successor = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .zero))
+    try successor.start()
+    defer { successor.stop() }
+
+    let result = try await inFlight.value
+    #expect(result.text == "slow result")
+    await stopped.value
+    #expect(server.activeClientCount == 0)
+  }
+
+  @Test func rejectsClientsBeyondTheCap() async throws {
+    let path = makeSocketPath()
+    let limits = UnixSocketServer.Limits(maxClients: 1)
+    let server = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .seconds(2)), limits: limits)
+    try server.start()
+    defer { server.stop() }
+
+    let slow = Task.detached {
+      try TestClient.request(path, DaemonRequest(id: "slow", op: .transcribe, wavPath: "/x"))
+    }
+    try await Task.sleep(for: .milliseconds(200))
+    let rejected = try TestClient.request(path, DaemonRequest(id: "p", op: .ping))
+    #expect(rejected.errorCode == "busy")
+    _ = try await slow.value
+  }
+
+  @Test func restartsCleanlyOnTheSamePath() throws {
+    let path = makeSocketPath()
+    for round in 0..<3 {
+      let server = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .zero))
+      try server.start()
+      let ping = try TestClient.request(path, DaemonRequest(id: "r\(round)", op: .ping))
+      #expect(ping.id == "r\(round)")
+      server.stop()
+    }
+  }
 }

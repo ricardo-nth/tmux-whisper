@@ -1572,6 +1572,23 @@ EOF
   DICTATE_TEST_FFPROBE_DURATION_MS=3000 "$DICTATE_BIN" transcribe "$CASE_DIR/memos/m.m4a" -q >/dev/null
   assert_equals "daemon_hot_path_never_builds" "$(grep -c . "$build_log")" "2"
   assert_file_contains "daemon_hot_path_uses_stale" "$CASE_DIR/tmp/tmux-whisper-file.transcribe.log" "out of date; using it now"
+  assert_file_contains "daemon_hot_path_never_syncs" "$build/Sources/tmux-whisperd/main.swift" 'print("v2")'
+
+  # A build lock held by a live process blocks a concurrent refresh...
+  sleep 60 &
+  local holder=$!
+  mkdir -p "$build.build.lock"
+  printf '%s\n' "$holder" >"$build.build.lock/pid"
+  "$DICTATE_BIN" warmup --restart-stale >/dev/null
+  assert_equals "daemon_live_lock_blocks_build" "$(grep -c . "$build_log")" "2"
+  assert_file_contains "daemon_live_lock_logged" "$DICTATE_TRANSCRIBE_LOG" "another tmux-whisperd build is running"
+  # ...and is reclaimed once its owner is gone.
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null || true
+  "$DICTATE_BIN" warmup --restart-stale >/dev/null
+  assert_equals "daemon_dead_lock_reclaimed" "$(grep -c . "$build_log")" "3"
+  [[ -d "$build.build.lock" ]] && fail "daemon_lock_released"
+  pass "daemon_lock_released"
+  printf '%s\n' 'print("v4")' >"$src/Sources/tmux-whisperd/main.swift"
 
   # A failed rebuild keeps the working binary.
   DICTATE_TEST_SWIFT_BUILD_FAIL=1 "$DICTATE_BIN" warmup --restart-stale >/dev/null

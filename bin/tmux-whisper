@@ -2141,37 +2141,48 @@ tmux_whisperd_source_hash() {
   ) | shasum -a 256 | awk '{print $1}'
 }
 
-# Copy daemon sources into the build root when they differ, so updates from
-# any install channel are picked up by the next build.
+# Copy daemon sources into the build root (under the build lock). Staged first
+# so a failed copy never leaves a partial tree behind.
 tmux_whisperd_sync_sources() {
-  local src="$1" dest="$2"
+  local src="$1" dest="$2" stage item
   [[ "$(cd "$src" && pwd -P)" == "$(mkdir -p "$dest" && cd "$dest" && pwd -P)" ]] && return 0
   [[ "$(tmux_whisperd_source_hash "$src")" == "$(tmux_whisperd_source_hash "$dest" 2>/dev/null || true)" ]] && return 0
 
   log_transcribe_event "swift_parakeet: syncing tmux-whisperd sources from $src"
-  install -m 0644 "$src/Package.swift" "$dest/Package.swift" || return 1
-  if [[ -f "$src/Package.resolved" ]]; then
-    install -m 0644 "$src/Package.resolved" "$dest/Package.resolved" || return 1
+  stage="$dest/.sync-stage.$$"
+  rm -rf "$stage"
+  mkdir -p "$stage" || return 1
+  if ! {
+    cp "$src/Package.swift" "$stage/Package.swift" &&
+    { [[ ! -f "$src/Package.resolved" ]] || cp "$src/Package.resolved" "$stage/Package.resolved"; } &&
+    cp -R "$src/Sources" "$stage/Sources" &&
+    # Package.swift declares the test target, so its directory must exist.
+    { [[ ! -d "$src/Tests" ]] || cp -R "$src/Tests" "$stage/Tests"; }
+  }; then
+    rm -rf "$stage"
+    return 1
   fi
-  rm -rf "$dest/Sources" "$dest/Tests"
-  cp -R "$src/Sources" "$dest/Sources"
-  # Package.swift declares the test target, so its directory must exist.
-  if [[ -d "$src/Tests" ]]; then
-    cp -R "$src/Tests" "$dest/Tests"
-  fi
+
+  rm -rf "$dest/Sources" "$dest/Tests" "$dest/Package.resolved"
+  for item in Package.swift Package.resolved Sources Tests; do
+    [[ -e "$stage/$item" ]] || continue
+    mv -f "$stage/$item" "$dest/$item" || { rm -rf "$stage"; return 1; }
+  done
+  rm -rf "$stage"
 }
 
-# Prints current|stale|missing for the built daemon binary.
+# Prints current|stale|missing for the built daemon binary against the
+# sources in src_root (default: the resolved source root). Read-only.
 tmux_whisperd_binary_state() {
-  local build_root binary stamp want
-  build_root="$(tmux_whisperd_build_root)"
-  binary="$build_root/.build/release/tmux-whisperd"
+  local src="${1:-}" binary stamp want
+  [[ -n "$src" ]] || src="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
+  binary="$(tmux_whisperd_build_root)/.build/release/tmux-whisperd"
   stamp="$(tmux_whisperd_built_stamp)"
   if [[ ! -x "$binary" ]]; then
     printf "%s\n" "missing"
     return 0
   fi
-  want="$(tmux_whisperd_source_hash "$build_root" 2>/dev/null || true)"
+  want="$(tmux_whisperd_source_hash "$src" 2>/dev/null || true)"
   if [[ -n "$want" && -f "$stamp" && "$(cat "$stamp" 2>/dev/null)" == "$want" ]]; then
     printf "%s\n" "current"
   else
@@ -2179,12 +2190,51 @@ tmux_whisperd_binary_state() {
   fi
 }
 
+# --- Locks ------------------------------------------------------------------
+# mkdir locks recording the owner PID. A lock whose owner is gone is
+# reclaimed; only the owner releases it.
+
+tmux_whisperd_lock_acquire() {
+  local lock="$1" wait_seconds="${2:-0}" waited=0 owner
+  mkdir -p "$(dirname "$lock")" 2>/dev/null || return 1
+  while :; do
+    if mkdir "$lock" 2>/dev/null; then
+      printf '%s\n' "$$" >"$lock/pid"
+      return 0
+    fi
+    owner="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -rf "$lock"
+      continue
+    fi
+    # A lock without a PID for over a minute was abandoned mid-acquire.
+    if [[ -z "$owner" && -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]]; then
+      rm -rf "$lock"
+      continue
+    fi
+    (( waited >= wait_seconds )) && return 1
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
+tmux_whisperd_lock_release() {
+  local lock="$1"
+  [[ "$(cat "$lock/pid" 2>/dev/null || true)" == "$$" ]] && rm -rf "$lock"
+  return 0
+}
+
+tmux_whisperd_build_lock() {
+  printf "%s\n" "$(tmux_whisperd_build_root).build.lock"
+}
+
 tmux_whisperd_build() {
-  local build_root="$1"
+  local build_root="$1" src="$2"
   local -a build_flags=()
   local sdk_path toolchain_cxx want
 
   command -v swift >/dev/null 2>&1 || return 1
+  tmux_whisperd_sync_sources "$src" "$build_root" || return 1
   # A stale Command Line Tools install can leave an incomplete
   # usr/include/c++/v1 that newer clang searches before the SDK's libc++, so
   # FluidAudio's C++ sources fail with "'cmath' file not found". Point clang
@@ -2207,14 +2257,31 @@ tmux_whisperd_build() {
   printf "%s\n" "$want" >"$(tmux_whisperd_built_stamp)"
 }
 
+# Sync + build under the build lock, waiting up to wait_seconds for another
+# build to finish (then re-checking, since it may have produced this build).
+tmux_whisperd_locked_build() {
+  local src="$1" wait_seconds="${2:-0}" build_root lock rc=0
+  build_root="$(tmux_whisperd_build_root)"
+  lock="$(tmux_whisperd_build_lock)"
+  if ! tmux_whisperd_lock_acquire "$lock" "$wait_seconds"; then
+    log_transcribe_event "swift_parakeet: another tmux-whisperd build is running"
+    return 2
+  fi
+  if [[ "$(tmux_whisperd_binary_state "$src")" != "current" ]]; then
+    tmux_whisperd_build "$build_root" "$src" || rc=1
+  fi
+  tmux_whisperd_lock_release "$lock"
+  return "$rc"
+}
+
 # Resolves the daemon binary, building it when missing or out of date.
-# With --allow-stale (the dictation hot path), an outdated binary is used
-# immediately and a background refresh rebuilds and swaps the daemon later.
+# With --allow-stale (the dictation hot path) an outdated binary is returned
+# immediately and nothing is written; the caller schedules a refresh.
 ensure_tmux_whisperd_binary() {
   local allow_stale="0"
   [[ "${1:-}" == "--allow-stale" ]] && allow_stale="1"
   local binary="${DICTATE_TMUX_WHISPERD_BIN:-}"
-  local src build_root state
+  local src state
 
   if [[ -n "$binary" ]]; then
     binary="$(expand_path "$binary")"
@@ -2225,32 +2292,25 @@ ensure_tmux_whisperd_binary() {
 
   src="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
   [[ -n "$src" ]] || return 1
-  build_root="$(tmux_whisperd_build_root)"
-  tmux_whisperd_sync_sources "$src" "$build_root" || return 1
-  binary="$build_root/.build/release/tmux-whisperd"
+  binary="$(tmux_whisperd_build_root)/.build/release/tmux-whisperd"
 
-  state="$(tmux_whisperd_binary_state)"
-  case "$state" in
-    current)
-      printf "%s\n" "$binary"
-      return 0
-      ;;
-    stale)
-      if [[ "$allow_stale" == "1" ]]; then
-        log_transcribe_event "swift_parakeet: tmux-whisperd is out of date; using it now and refreshing in the background"
-        start_tmux_whisperd_background_refresh
-        printf "%s\n" "$binary"
-        return 0
-      fi
-      ;;
-  esac
-
-  if tmux_whisperd_build "$build_root"; then
+  state="$(tmux_whisperd_binary_state "$src")"
+  if [[ "$state" == "current" ]]; then
     printf "%s\n" "$binary"
     return 0
   fi
+  if [[ "$state" == "stale" && "$allow_stale" == "1" ]]; then
+    log_transcribe_event "swift_parakeet: tmux-whisperd is out of date; using it now and refreshing in the background"
+    printf "%s\n" "$binary"
+    return 0
+  fi
+
+  # Missing, or an explicit refresh: build, waiting for a concurrent build.
+  tmux_whisperd_locked_build "$src" 1200 || true
   if [[ -x "$binary" ]]; then
-    log_transcribe_event "swift_parakeet: rebuilding tmux-whisperd failed; keeping the existing binary"
+    if [[ "$(tmux_whisperd_binary_state "$src")" != "current" ]]; then
+      log_transcribe_event "swift_parakeet: rebuilding tmux-whisperd failed; keeping the existing binary"
+    fi
     printf "%s\n" "$binary"
     return 0
   fi
@@ -2259,18 +2319,23 @@ ensure_tmux_whisperd_binary() {
 
 start_tmux_whisperd_background_refresh() {
   [[ "${DICTATE_DAEMON_BACKGROUND_REFRESH:-1}" == "1" ]] || return 0
+  [[ -z "${DICTATE_TMUX_WHISPERD_BIN:-}" ]] || return 0
   nohup "$TMUX_WHISPER_RUNNING_BINARY" warmup --best-effort --restart-stale \
     >/dev/null 2>&1 </dev/null &
+}
+
+tmux_whisperd_meta_path() {
+  printf "%s\n" "${1:-}.meta"
 }
 
 # True when the built binary matches its sources and any running daemon was
 # started from that build.
 tmux_whisperd_is_current() {
   local src socket_path meta running_hash built
+  [[ -z "${DICTATE_TMUX_WHISPERD_BIN:-}" ]] || return 0
   src="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
   [[ -n "$src" ]] || return 0
-  [[ "$(tmux_whisperd_source_hash "$src" 2>/dev/null)" == "$(tmux_whisperd_source_hash "$(tmux_whisperd_build_root)" 2>/dev/null || true)" ]] || return 1
-  [[ "$(tmux_whisperd_binary_state)" == "current" ]] || return 1
+  [[ "$(tmux_whisperd_binary_state "$src")" == "current" ]] || return 1
   socket_path="$(resolve_swift_parakeet_socket_path)"
   swift_parakeet_ping "$socket_path" || return 0
   meta="$(tmux_whisperd_meta_path "$socket_path")"
@@ -2279,11 +2344,8 @@ tmux_whisperd_is_current() {
   [[ -n "$built" && "$running_hash" == "$built" ]]
 }
 
-tmux_whisperd_meta_path() {
-  printf "%s\n" "${1:-}.meta"
-}
-
-# PID of the daemon serving socket_path, preferring the recorded meta file.
+# PID of the daemon serving socket_path: its command line must end with that
+# exact socket path (guards against PID reuse and similar paths).
 tmux_whisperd_running_pid() {
   local socket_path="$1" meta pid="" command
   meta="$(tmux_whisperd_meta_path "$socket_path")"
@@ -2292,14 +2354,19 @@ tmux_whisperd_running_pid() {
   fi
   if [[ "$pid" =~ ^[0-9]+$ ]]; then
     command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-    # Guard against PID reuse: the recorded process must still own this socket.
-    if [[ "$command" == *"$socket_path"* ]]; then
+    command="${command%"${command##*[![:space:]]}"}"
+    if [[ "$command" == *" $socket_path" ]]; then
       printf "%s\n" "$pid"
       return 0
     fi
   fi
   # Daemons started before meta files existed.
-  pgrep -f "tmux-whisperd serve --socket $socket_path\$" 2>/dev/null | head -n 1
+  ps -axo pid=,command= 2>/dev/null | while read -r pid command; do
+    if [[ "$command" == *"tmux-whisperd serve --socket $socket_path" ]]; then
+      printf "%s\n" "$pid"
+      break
+    fi
+  done
 }
 
 dictation_pipeline_idle() {
@@ -2308,9 +2375,12 @@ dictation_pipeline_idle() {
   return 0
 }
 
-# Replace a running daemon that was built from older sources, but only while
-# nothing is recording, processing, or waiting on it. Waits for idle up to
-# DICTATE_DAEMON_RESTART_WAIT_SECONDS (default 30 minutes).
+# Replace a running daemon that was built from older sources, only while
+# nothing is recording, processing, or in flight. Waits for idle up to
+# DICTATE_DAEMON_RESTART_WAIT_SECONDS (default 30 minutes). The daemon is
+# asked to stop with SIGTERM: it releases the socket at once and finishes any
+# request it already accepted, so a request racing the idle check still
+# completes. It is never force-killed.
 restart_stale_tmux_whisperd() {
   local socket_path="$1"
   local meta built running_hash pid waited=0
@@ -2325,14 +2395,11 @@ restart_stale_tmux_whisperd() {
   [[ "$running_hash" == "$built" ]] && return 0
 
   while :; do
-    if swift_parakeet_ping "$socket_path"; then
-      # Older daemons don't report active_requests; they serve one client at a
-      # time, so answering a ping at all means they are idle.
-      if dictation_pipeline_idle && [[ "${RESP_ACTIVE_REQUESTS:-0}" == "0" || -z "${RESP_ACTIVE_REQUESTS:-}" ]]; then
-        break
-      fi
-    else
-      return 0
+    swift_parakeet_ping "$socket_path" || return 0
+    # Older daemons don't report active_requests; they serve one client at a
+    # time, so answering a ping at all means they are idle.
+    if dictation_pipeline_idle && [[ -z "${RESP_ACTIVE_REQUESTS:-}" || "${RESP_ACTIVE_REQUESTS}" == "0" ]]; then
+      break
     fi
     if (( waited >= max_wait )); then
       log_transcribe_event "swift_parakeet: daemon still busy after ${max_wait}s; leaving the old daemon running"
@@ -2343,15 +2410,25 @@ restart_stale_tmux_whisperd() {
   done
 
   pid="$(tmux_whisperd_running_pid "$socket_path")"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  [[ "$pid" =~ ^[0-9]+$ ]] || {
+    log_transcribe_event "swift_parakeet: could not identify the running daemon; not restarting"
+    return 0
+  }
   log_transcribe_event "swift_parakeet: restarting out-of-date daemon (pid $pid)"
-  kill "$pid" 2>/dev/null || return 0
-  for _ in {1..50}; do
-    kill -0 "$pid" 2>/dev/null || break
+  kill -TERM "$pid" 2>/dev/null || return 0
+  for _ in {1..100}; do
+    [[ -S "$socket_path" ]] || break
+    if ! kill -0 "$pid" 2>/dev/null; then
+      # Older daemons exit on SIGTERM without removing their socket.
+      rm -f "$socket_path"
+      break
+    fi
     sleep 0.1
   done
-  kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
-  [[ -S "$socket_path" ]] && rm -f "$socket_path"
+  if [[ -S "$socket_path" ]]; then
+    log_transcribe_event "swift_parakeet: daemon $pid did not release its socket; not restarting"
+    return 0
+  fi
   rm -f "$meta"
   ensure_swift_parakeet_daemon "$socket_path"
 }
@@ -2461,7 +2538,7 @@ swift_parakeet_ping() {
 
 ensure_swift_parakeet_daemon() {
   local socket_path="${1:-}"
-  local binary=""
+  local binary="" launched_hash=""
   local attempt
 
   if swift_parakeet_ping "$socket_path"; then
@@ -2471,13 +2548,19 @@ ensure_swift_parakeet_daemon() {
   rm -f "$socket_path" 2>/dev/null || true
   binary="$(ensure_tmux_whisperd_binary --allow-stale 2>/dev/null || true)"
   [[ -n "$binary" ]] || return 1
+  # Read the stamp before launching, so the meta file describes this binary
+  # even if a background refresh replaces it right afterwards.
+  launched_hash="$(cat "$(tmux_whisperd_built_stamp)" 2>/dev/null || true)"
 
   mkdir -p "$(dirname "$socket_path")" 2>/dev/null || true
   log_transcribe_event "swift_parakeet: starting daemon at $socket_path"
   nohup "$binary" serve --socket "$socket_path" >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1 </dev/null &
   # Record which build is serving this socket so upgrades can replace it.
-  printf 'pid=%s\nsource_hash=%s\n' "$!" "$(cat "$(tmux_whisperd_built_stamp)" 2>/dev/null || true)" \
+  printf 'pid=%s\nsource_hash=%s\n' "$!" "$launched_hash" \
     >"$(tmux_whisperd_meta_path "$socket_path")" 2>/dev/null || true
+  if [[ -z "${DICTATE_TMUX_WHISPERD_BIN:-}" && "$(tmux_whisperd_binary_state)" != "current" ]]; then
+    start_tmux_whisperd_background_refresh
+  fi
 
   for attempt in {1..40}; do
     swift_parakeet_ping "$socket_path" && return 0
@@ -2487,29 +2570,28 @@ ensure_swift_parakeet_daemon() {
   return 1
 }
 
-# Rebuild an out-of-date daemon and swap it in once idle. One refresh at a
-# time: dictations that find a stale binary may each request one.
+# Rebuild an out-of-date daemon and swap it in once idle. Build and restart
+# each hold their own lock, so repeated triggers never run in parallel.
 refresh_tmux_whisperd() {
   [[ -z "${DICTATE_TMUX_WHISPERD_BIN:-}" ]] || return 0
-  local build_root lock socket_path
-  build_root="$(tmux_whisperd_build_root)"
-  mkdir -p "$build_root/.build" 2>/dev/null || return 1
-  lock="$build_root/.build/refresh.lock"
-  # A lock older than 30 minutes belongs to a refresh that died.
-  if [[ -d "$lock" ]] && [[ -n "$(find "$lock" -maxdepth 0 -mmin +30 2>/dev/null)" ]]; then
-    rmdir "$lock" 2>/dev/null || true
-  fi
-  if ! mkdir "$lock" 2>/dev/null; then
-    log_transcribe_event "swift_parakeet: daemon refresh already running"
-    return 0
-  fi
-  # shellcheck disable=SC2064
-  trap "rmdir '$lock' 2>/dev/null || true" EXIT
+  local src restart_lock socket_path build_rc=0
+  src="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
+  [[ -n "$src" ]] || return 1
 
-  ensure_tmux_whisperd_binary >/dev/null || { rmdir "$lock" 2>/dev/null; return 1; }
+  if [[ "$(tmux_whisperd_binary_state "$src")" != "current" ]]; then
+    # Capture the status explicitly: the script runs under `set -e`.
+    tmux_whisperd_locked_build "$src" 0 || build_rc=$?
+    case "$build_rc" in
+      2) return 0 ;;   # another refresh is building; it will also restart
+      1) log_transcribe_event "swift_parakeet: rebuilding tmux-whisperd failed; keeping the existing binary"; return 1 ;;
+    esac
+  fi
+
+  restart_lock="$(tmux_whisperd_build_root).restart.lock"
+  tmux_whisperd_lock_acquire "$restart_lock" 0 || return 0
   socket_path="$(resolve_swift_parakeet_socket_path)"
   restart_stale_tmux_whisperd "$socket_path" || true
-  rmdir "$lock" 2>/dev/null || true
+  tmux_whisperd_lock_release "$restart_lock"
 }
 
 maybe_warmup_swift_parakeet_in_background() {
@@ -2522,6 +2604,9 @@ maybe_warmup_swift_parakeet_in_background() {
   (
     trap '' HUP
     if [[ -n "$socket_path" ]] && swift_parakeet_ping "$socket_path"; then
+      # Off the hot path: pick up daemon updates an install-time refresh
+      # missed (e.g. it gave up waiting for idle).
+      tmux_whisperd_is_current || start_tmux_whisperd_background_refresh
       exit 0
     fi
     warmup_backend --best-effort >/dev/null 2>>"${TRANSCRIBE_LOG:-/dev/null}" || true

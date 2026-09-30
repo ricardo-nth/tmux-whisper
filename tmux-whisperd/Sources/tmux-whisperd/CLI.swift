@@ -46,13 +46,15 @@ enum TmuxWhisperdMain {
     }
   }
 
-  /// Stop cleanly on SIGTERM/SIGINT so the socket file is removed.
+  /// Stop cleanly on SIGTERM/SIGINT: release the socket, drain, then exit.
   private static func installShutdownHandlers(server: UnixSocketServer) -> [DispatchSourceSignal] {
     [SIGTERM, SIGINT].map { signalNumber in
       signal(signalNumber, SIG_IGN)
       let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
       source.setEventHandler {
-        server.stop()
+        // Finish requests already accepted (e.g. a long file transcription)
+        // before exiting; the socket is released immediately for a successor.
+        server.stop(drainTimeout: 900)
         exit(0)
       }
       source.resume()

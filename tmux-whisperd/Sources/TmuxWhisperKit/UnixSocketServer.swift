@@ -14,17 +14,26 @@ public final class UnixSocketServer: @unchecked Sendable {
     public var readTimeout: TimeInterval
     /// How long a response write may block on a stalled client.
     public var writeTimeout: TimeInterval
+    /// Clients served at once; further connections get an immediate "busy".
+    public var maxClients: Int
 
-    public init(maxRequestBytes: Int = 1 << 20, readTimeout: TimeInterval = 10, writeTimeout: TimeInterval = 30) {
+    public init(
+      maxRequestBytes: Int = 1 << 20,
+      readTimeout: TimeInterval = 10,
+      writeTimeout: TimeInterval = 30,
+      maxClients: Int = 32
+    ) {
       self.maxRequestBytes = maxRequestBytes
       self.readTimeout = readTimeout
       self.writeTimeout = writeTimeout
+      self.maxClients = maxClients
     }
   }
 
   public enum ServerError: Error, LocalizedError {
     case socketPathTooLong(String)
     case socketPathOccupied(String)
+    case alreadyServing(String)
     case posix(String, Int32)
 
     public var errorDescription: String? {
@@ -33,6 +42,8 @@ public final class UnixSocketServer: @unchecked Sendable {
         return "socket path is too long: \(path)"
       case .socketPathOccupied(let path):
         return "refusing to replace a non-socket file at \(path)"
+      case .alreadyServing(let path):
+        return "another daemon is already listening on \(path)"
       case .posix(let call, let code):
         return "\(call) failed: \(String(cString: strerror(code)))"
       }
@@ -44,7 +55,13 @@ public final class UnixSocketServer: @unchecked Sendable {
   private let limits: Limits
   private let lock = NSLock()
   private var serverFD: Int32 = -1
+  /// Self-pipe that wakes the accept loop on stop().
+  private var wakeFDs: (read: Int32, write: Int32) = (-1, -1)
   private var stopped = false
+  private var activeClients = 0
+  /// Identity of the socket file this server created, so stop() never
+  /// removes a socket that a newer daemon has since bound at the same path.
+  private var boundSocket: (dev: dev_t, ino: ino_t)?
 
   public init(socketPath: String, handler: any DaemonRequestHandling, limits: Limits = Limits()) {
     self.socketPath = socketPath
@@ -59,6 +76,11 @@ public final class UnixSocketServer: @unchecked Sendable {
   /// Binds and starts accepting in the background. Returns once the socket is
   /// listening.
   public func start() throws {
+    // A client that disconnects before its response is written must never
+    // kill the process. SO_NOSIGPIPE alone is not enough: setsockopt fails on
+    // a socket whose peer has already gone, so ignore SIGPIPE process-wide and
+    // let writes fail with EPIPE instead.
+    signal(SIGPIPE, SIG_IGN)
     try prepareSocketPath()
 
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -88,12 +110,29 @@ public final class UnixSocketServer: @unchecked Sendable {
       throw error
     }
 
+    var pipeFDs: [Int32] = [-1, -1]
+    guard pipe(&pipeFDs) == 0 else {
+      close(fd)
+      throw ServerError.posix("pipe", errno)
+    }
+    // The accept loop may have exited (closing the read end) by the time
+    // stop() writes; that must be EPIPE, not a process-killing SIGPIPE.
+    _ = fcntl(pipeFDs[1], F_SETNOSIGPIPE, 1)
+    // Non-blocking listener: poll() can report a connection that is gone by
+    // the time accept() runs.
+    _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+
+    var info = stat()
+    let identity: (dev: dev_t, ino: ino_t)? = lstat(socketPath, &info) == 0 ? (info.st_dev, info.st_ino) : nil
     lock.withLock {
       serverFD = fd
+      wakeFDs = (pipeFDs[0], pipeFDs[1])
       stopped = false
+      boundSocket = identity
     }
 
-    let thread = Thread { [self] in acceptLoop(fd: fd) }
+    let wakeRead = pipeFDs[0]
+    let thread = Thread { [self] in acceptLoop(fd: fd, wakeFD: wakeRead) }
     thread.name = "tmux-whisperd.accept"
     thread.start()
   }
@@ -106,51 +145,99 @@ public final class UnixSocketServer: @unchecked Sendable {
     }
   }
 
-  /// Stops accepting and removes the socket file. In-flight clients finish.
-  public func stop() {
-    let fd: Int32 = lock.withLock {
-      guard !stopped else { return -1 }
+  /// Stops accepting and removes this server's socket file, then waits up to
+  /// `drainTimeout` seconds for requests already accepted to finish. New
+  /// clients can connect to a replacement daemon as soon as this returns
+  /// from the unlink, so a restart never interrupts accepted work.
+  public func stop(drainTimeout: TimeInterval = 0) {
+    let (fd, wakeWrite, identity): (Int32, Int32, (dev: dev_t, ino: ino_t)?) = lock.withLock {
+      guard !stopped else { return (-1, -1, nil) }
       stopped = true
       let fd = serverFD
       serverFD = -1
-      return fd
+      return (fd, wakeFDs.write, boundSocket)
     }
     guard fd >= 0 else { return }
-    // close() does not reliably wake a thread blocked in accept() on Darwin;
-    // a throwaway connection does, and the loop then sees `stopped`.
-    Self.wakeAcceptor(socketPath: socketPath)
-    close(fd)
-    Self.unlinkIfSocket(socketPath)
+    // Remove the path first so no new client reaches this server; a
+    // replacement daemon can bind it straight away.
+    Self.unlinkIfSameSocket(socketPath, identity: identity)
+    // Wake the accept loop; it closes the listener and the read end on exit.
+    // stop() owns the write end, so the descriptor can't be closed and reused
+    // underneath this write.
+    var byte: UInt8 = 1
+    _ = write(wakeWrite, &byte, 1)
+    close(wakeWrite)
+
+    let deadline = Date().addingTimeInterval(drainTimeout)
+    while activeClientCount > 0, Date() < deadline {
+      usleep(50_000)
+    }
+  }
+
+  /// Clients currently being served (read, handled, or written).
+  public var activeClientCount: Int {
+    lock.withLock { activeClients }
   }
 
   private var isStopped: Bool {
     lock.withLock { stopped }
   }
 
-  private func acceptLoop(fd: Int32) {
+  private func acceptLoop(fd: Int32, wakeFD: Int32) {
+    defer {
+      close(fd)
+      close(wakeFD)
+    }
+
     while !isStopped {
-      let clientFD = accept(fd, nil, nil)
-      if clientFD < 0 {
-        if errno == EINTR || errno == ECONNABORTED {
-          continue
-        }
-        if isStopped {
-          return
-        }
-        // Transient failures (e.g. EMFILE) must not kill the daemon.
+      var fds = [
+        pollfd(fd: fd, events: Int16(POLLIN), revents: 0),
+        pollfd(fd: wakeFD, events: Int16(POLLIN), revents: 0),
+      ]
+      let ready = poll(&fds, nfds_t(fds.count), -1)
+      if ready < 0 {
+        if errno == EINTR { continue }
         usleep(50_000)
         continue
       }
-      if isStopped {
-        close(clientFD)
+      if fds[1].revents != 0 || isStopped {
         return
       }
+      guard fds[0].revents & Int16(POLLIN) != 0 else { continue }
+
+      let clientFD = accept(fd, nil, nil)
+      if clientFD < 0 {
+        // EAGAIN/ECONNABORTED: the client went away. Anything else (e.g.
+        // EMFILE) is transient and must not kill the daemon.
+        if errno != EAGAIN && errno != EWOULDBLOCK && errno != ECONNABORTED && errno != EINTR {
+          usleep(50_000)
+        }
+        continue
+      }
+      // Accepted sockets inherit O_NONBLOCK on Darwin; clients use blocking
+      // I/O bounded by SO_RCVTIMEO/SO_SNDTIMEO.
+      _ = fcntl(clientFD, F_SETFL, fcntl(clientFD, F_GETFL) & ~O_NONBLOCK)
 
       configureClient(clientFD)
+      let admitted: Bool = lock.withLock {
+        guard activeClients < limits.maxClients else { return false }
+        activeClients += 1
+        return true
+      }
+      guard admitted else {
+        let busy = DaemonResponse.failure(id: "unknown", code: "busy", message: "too many concurrent clients")
+        if let data = try? JSONEncoder().encode(busy) {
+          try? Self.writeAll(fd: clientFD, data: data + Data([0x0A]))
+        }
+        close(clientFD)
+        continue
+      }
+
       let handler = self.handler
       let limits = self.limits
-      let thread = Thread {
+      let thread = Thread { [self] in
         Self.serveClient(fd: clientFD, handler: handler, limits: limits)
+        lock.withLock { activeClients -= 1 }
       }
       thread.name = "tmux-whisperd.client"
       thread.start()
@@ -262,27 +349,34 @@ public final class UnixSocketServer: @unchecked Sendable {
       guard (info.st_mode & S_IFMT) == S_IFSOCK else {
         throw ServerError.socketPathOccupied(socketPath)
       }
+      // A live daemon owns this socket: never steal it. Only a socket left by
+      // a crashed daemon (nobody accepting) is replaced.
+      if Self.isAcceptingConnections(socketPath) {
+        throw ServerError.alreadyServing(socketPath)
+      }
       unlink(socketPath)
     }
   }
 
-  private static func unlinkIfSocket(_ path: String) {
+  private static func unlinkIfSameSocket(_ path: String, identity: (dev: dev_t, ino: ino_t)?) {
+    guard let identity else { return }
     var info = stat()
-    if lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFSOCK {
-      unlink(path)
-    }
+    guard lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFSOCK else { return }
+    guard info.st_dev == identity.dev, info.st_ino == identity.ino else { return }
+    unlink(path)
   }
 
-  private static func wakeAcceptor(socketPath: String) {
+  private static func isAcceptingConnections(_ path: String) -> Bool {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-    guard fd >= 0 else { return }
+    guard fd >= 0 else { return false }
     defer { close(fd) }
-    guard var address = try? socketAddress(for: socketPath) else { return }
-    _ = withUnsafePointer(to: &address) { pointer in
+    guard var address = try? socketAddress(for: path) else { return false }
+    let result = withUnsafePointer(to: &address) { pointer in
       pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { rebound in
         connect(fd, rebound, socklen_t(MemoryLayout<sockaddr_un>.size))
       }
     }
+    return result == 0
   }
 
   static func socketAddress(for path: String) throws -> sockaddr_un {
