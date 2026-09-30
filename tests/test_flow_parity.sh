@@ -169,7 +169,7 @@ assert_refresh_count_at_least() {
   local expected="$2"
   local actual=0
   if [[ -f "${DICTATE_SWIFTBAR_REFRESH_LOG:-}" ]]; then
-    actual="$(grep -c 'refresh plugin=tmux-whisper-status.0.2s.sh' "$DICTATE_SWIFTBAR_REFRESH_LOG" 2>/dev/null || echo 0)"
+    actual="$(grep -c 'refresh plugin=tmux-whisper-status.0.2s.sh' "$DICTATE_SWIFTBAR_REFRESH_LOG" 2>/dev/null || true)"
   fi
   assert_number_ge "$name" "$actual" "$expected"
 }
@@ -181,7 +181,7 @@ wait_for_refresh_count_at_least() {
   for ((i = 0; i < tries; i++)); do
     actual=0
     if [[ -f "${DICTATE_SWIFTBAR_REFRESH_LOG:-}" ]]; then
-      actual="$(grep -c 'refresh plugin=tmux-whisper-status.0.2s.sh' "$DICTATE_SWIFTBAR_REFRESH_LOG" 2>/dev/null || echo 0)"
+      actual="$(grep -c 'refresh plugin=tmux-whisper-status.0.2s.sh' "$DICTATE_SWIFTBAR_REFRESH_LOG" 2>/dev/null || true)"
     fi
     if (( actual >= expected )); then
       return 0

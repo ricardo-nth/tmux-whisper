@@ -61,7 +61,14 @@ integration_swiftbar_plugin_path() {
   fi
 }
 
+# Lifecycle refresh hook used on every state transition. It is a no-op when the
+# SwiftBar integration is disabled, so dictation never launches a quit SwiftBar.
 swiftbar_refresh() {
+  [[ "${CFG_SWIFTBAR_ENABLED:-1}" == "1" ]] || return 0
+  swiftbar_refresh_now "$@"
+}
+
+swiftbar_refresh_now() {
   local plugin_id="${1:-tmux-whisper-status.0.2s.sh}"
   [[ -n "$plugin_id" ]] || plugin_id="tmux-whisper-status.0.2s.sh"
 
@@ -77,13 +84,34 @@ swiftbar_refresh() {
   fi
 
   [[ -x /usr/bin/open ]] || return 0
+  # `open swiftbar://` would launch SwiftBar if it is installed but quit.
+  /usr/bin/pgrep -xq SwiftBar 2>/dev/null || return 0
   nohup /usr/bin/open -g "swiftbar://refreshplugin?plugin=${plugin_id}" >/dev/null 2>&1 &
 }
 
+integration_swiftbar_opted_out() {
+  [[ "$(integration_receipt_value swiftbar_plugin)" == "skipped" ]]
+}
+
+# Adapter sources, in priority order:
+#   1. <prefix>/share/tmux-whisper beside the running binary: Homebrew's
+#      pkgshare, or the snapshot install.sh writes next to ~/.local/bin. This
+#      is exactly what was installed, so drift is measured against it.
+#   2. receipt repo_root, only when the receipt describes the running binary
+#      (a stale local-install receipt must not drive a Homebrew install)
+#   3. the checkout the binary is running from
 integration_source_root() {
-  local receipt_root candidate
+  local receipt_root receipt_bin candidate
+  candidate="$(cd "$SCRIPT_DIR/../share/tmux-whisper" 2>/dev/null && pwd || true)"
+  if [[ -n "$candidate" && -d "$candidate/integrations" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
   receipt_root="$(integration_receipt_value repo_root)"
-  if [[ -n "$receipt_root" && -d "$receipt_root/integrations" ]]; then
+  receipt_bin="$(integration_receipt_value bin_path)"
+  if [[ -n "$receipt_root" && -d "$receipt_root/integrations" \
+    && ( -z "$receipt_bin" || "$receipt_bin" == "$(integration_current_binary_path)" ) ]]; then
     printf '%s\n' "$receipt_root"
     return 0
   fi
@@ -209,14 +237,16 @@ integration_check_lines() {
     printf '%s\n' "issue|binary|tmux-whisper binary is not executable at $binary_path"
   fi
   if [[ ! -r "$receipt_path" ]]; then
-    printf '%s\n' "issue|receipt|install receipt is missing or unreadable at $receipt_path"
+    printf '%s\n' "warn|receipt|install receipt is missing or unreadable at $receipt_path (expected for Homebrew installs)"
   fi
   if [[ -n "$receipt_bin_path" && "$receipt_bin_path" != "$binary_path" ]]; then
     printf '%s\n' "warn|receipt|install receipt binary points at $receipt_bin_path but PATH resolves $binary_path"
   fi
 
   if [[ ! -f "$swiftbar_path" ]]; then
-    printf '%s\n' "issue|swiftbar|SwiftBar plugin is missing at $swiftbar_path"
+    if ! integration_swiftbar_opted_out; then
+      printf '%s\n' "warn|swiftbar|SwiftBar plugin is not installed at $swiftbar_path"
+    fi
   elif [[ ! -x "$swiftbar_path" ]]; then
     printf '%s\n' "issue|swiftbar|SwiftBar plugin is not executable at $swiftbar_path"
   fi
@@ -236,7 +266,7 @@ integration_check_lines() {
       cancel) path="$raycast_cancel"; adapter="raycast-cancel" ;;
     esac
     if [[ ! -f "$path" ]]; then
-      printf '%s\n' "issue|raycast|Raycast $name script is missing at $path"
+      printf '%s\n' "warn|raycast|Raycast $name script is missing at $path"
     elif [[ ! -x "$path" ]]; then
       printf '%s\n' "issue|raycast|Raycast $name script is not executable at $path"
     fi
@@ -351,7 +381,12 @@ integration_emit_repair_dry_run_text() {
   src="$(integration_expected_source "$source_root" raycast-cancel)"
   echo "  - would install Raycast cancel: ${src:-<source unavailable>} -> $raycast_cancel"
   src="$(integration_expected_source "$source_root" swiftbar)"
-  echo "  - would install SwiftBar plugin: ${src:-<source unavailable>} -> $swiftbar_path"
+  if integration_swiftbar_opted_out && [[ ! -e "$swiftbar_path" ]]; then
+    echo "  - would skip SwiftBar plugin: skipped at install (DICTATE_INSTALL_SWIFTBAR=0)"
+  else
+    echo "  - would install SwiftBar plugin: ${src:-<source unavailable>} -> $swiftbar_path"
+  fi
+  echo "  - would back up replaced adapters to: $(integration_backup_dir)"
   echo "  - would ensure executable bits on installed adapter scripts"
   echo ""
   if [[ -n "$lines" ]]; then
@@ -402,8 +437,10 @@ integration_repair_one_adapter() {
   fi
 
   if [[ -e "$dest" ]]; then
-    backup_path="$dest.backup.$backup_stamp"
-    if ! cp -p "$dest" "$backup_path"; then
+    # Keep backups out of adapter directories: SwiftBar loads every file in its
+    # plugin folder, so an executable backup there becomes a second menu item.
+    backup_path="$(integration_backup_dir)/$(basename "$dest").$backup_stamp"
+    if ! mkdir -p "$(dirname "$backup_path")" || ! cp "$dest" "$backup_path" || ! chmod -x "$backup_path"; then
       printf '%s\n' "failed|$label|could not create backup: $backup_path" >>"$log_file"
       return 1
     fi
@@ -428,6 +465,10 @@ integration_repair_one_adapter() {
     return 1
   fi
   printf '%s\n' "changed|$label|installed: $src -> $dest" >>"$log_file"
+}
+
+integration_backup_dir() {
+  printf '%s\n' "$DICTATE_CONFIG_DIR/backups/integrations"
 }
 
 integration_repair_action_count() {
@@ -463,8 +504,12 @@ integration_emit_repair_text() {
     "$(integration_expected_source "$source_root" raycast-toggle)" "$raycast_toggle" "$log_file" "$backup_stamp" || true
   integration_repair_one_adapter "Raycast cancel" \
     "$(integration_expected_source "$source_root" raycast-cancel)" "$raycast_cancel" "$log_file" "$backup_stamp" || true
-  integration_repair_one_adapter "SwiftBar plugin" \
-    "$(integration_expected_source "$source_root" swiftbar)" "$swiftbar_path" "$log_file" "$backup_stamp" || true
+  if integration_swiftbar_opted_out && [[ ! -e "$swiftbar_path" ]]; then
+    printf '%s\n' "unchanged|SwiftBar plugin|skipped at install (DICTATE_INSTALL_SWIFTBAR=0)" >>"$log_file"
+  else
+    integration_repair_one_adapter "SwiftBar plugin" \
+      "$(integration_expected_source "$source_root" swiftbar)" "$swiftbar_path" "$log_file" "$backup_stamp" || true
+  fi
 
   changed_count="$(integration_repair_action_count "$log_file")"
   failed_count="$(integration_repair_failed_count "$log_file")"

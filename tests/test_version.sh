@@ -37,8 +37,12 @@ assert_contains() {
   echo "PASS: $name"
 }
 
+# Derive the expected version from source so release bumps touch one line.
+EXPECTED_CLI_VERSION="$(sed -n 's/^TMUX_WHISPER_CLI_VERSION="\(.*\)"$/\1/p' "$ROOT/bin/tmux-whisper")"
+[[ -n "$EXPECTED_CLI_VERSION" ]] || { echo "Could not read TMUX_WHISPER_CLI_VERSION" >&2; exit 1; }
+
 missing_text="$(run_version version)"
-assert_contains "missing_cli_version" "$missing_text" "CLI version: 0.7.0-dev"
+assert_contains "missing_cli_version" "$missing_text" "CLI version: $EXPECTED_CLI_VERSION"
 assert_contains "missing_config_schema" "$missing_text" "Config schema: v1"
 assert_contains "missing_running_binary" "$missing_text" "Running binary: $BIN_REAL"
 assert_contains "missing_receipt" "$missing_text" "Install receipt: missing ($CONFIG_DIR/install-receipt.env)"
@@ -50,14 +54,14 @@ source_text="$(HOME="$HOME_DIR" PATH="/usr/bin:/bin" DICTATE_CONFIG_DIR="$CONFIG
 assert_contains "source_checkout_stale_lib_fallback" "$source_text" "Running binary: $ROOT/bin/tmux-whisper"
 
 missing_json="$(run_version version --json)"
-VERSION_JSON="$missing_json" python3 - <<'PYEOF'
+VERSION_JSON="$missing_json" EXPECTED_CLI_VERSION="$EXPECTED_CLI_VERSION" python3 - <<'PYEOF'
 import json
 import os
 
 payload = json.loads(os.environ["VERSION_JSON"])
 assert payload["command"] == "version"
 assert payload["schema_version"] == 1
-assert payload["cli_version"] == "0.7.0-dev"
+assert payload["cli_version"] == os.environ["EXPECTED_CLI_VERSION"]
 assert payload["config_schema_version"] == 1
 assert payload["running_binary"]["path"].endswith("/bin/tmux-whisper")
 assert payload["receipt"]["present"] is False

@@ -49,15 +49,29 @@ fi
 # The plugin sources both cache files, so never use SwiftBar's shared /tmp
 # fallback. Honour an explicitly supplied private cache directory for test
 # isolation; otherwise use a private per-user config cache.
+# GNU stat treats `-f` as a filesystem query, so pick the file-field form by
+# platform instead of forking a failing `stat -c` on every macOS redraw.
+# Usage: file_stat <gnu-format> <bsd-format> <file>
+file_stat() {
+  if [[ "${OSTYPE:-}" == darwin* ]]; then
+    stat -f "$2" "$3"
+  else
+    stat -c "$1" "$3"
+  fi
+}
+
 ensure_private_cache_dir() {
   local dir="${1:-}" mode
   [[ -n "$dir" && ! -L "$dir" ]] || return 1
-  mkdir -p -m 700 "$dir" 2>/dev/null || return 1
-  chmod 700 "$dir" 2>/dev/null || return 1
+  if [[ ! -d "$dir" ]]; then
+    mkdir -p -m 700 "$dir" 2>/dev/null || return 1
+  fi
   [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]] || return 1
-  # GNU stat accepts `-f` as a filesystem-format option, so try its file-mode
-  # form first and use macOS's `-f` form only when that is unavailable.
-  mode="$(stat -c '%a' "$dir" 2>/dev/null || stat -f '%Lp' "$dir" 2>/dev/null || true)"
+  mode="$(file_stat '%a' '%Lp' "$dir" 2>/dev/null || true)"
+  if [[ "$mode" != "700" && "$mode" != "0700" ]]; then
+    chmod 700 "$dir" 2>/dev/null || return 1
+    mode="$(file_stat '%a' '%Lp' "$dir" 2>/dev/null || true)"
+  fi
   [[ "$mode" == "700" || "$mode" == "0700" ]]
 }
 
@@ -76,8 +90,10 @@ USAGE_CACHE="$CACHE_DIR/tmux-whisper-usage.cache"
 # hot path, but always invalidate immediately when its atomic ledger changes.
 USAGE_CACHE_TTL_SECONDS="${DICTATE_SWIFTBAR_USAGE_CACHE_TTL_SECONDS:-30}"
 [[ "$USAGE_CACHE_TTL_SECONDS" =~ ^[0-9]+$ ]] || USAGE_CACHE_TTL_SECONDS=30
-USAGE_FAILURE_CACHE_TTL_SECONDS="${DICTATE_SWIFTBAR_USAGE_FAILURE_CACHE_TTL_SECONDS:-2}"
-[[ "$USAGE_FAILURE_CACHE_TTL_SECONDS" =~ ^[0-9]+$ ]] || USAGE_FAILURE_CACHE_TTL_SECONDS=2
+# A failed read (e.g. a corrupt ledger) is retried slowly; the signature check
+# still picks up a repaired file on the next redraw.
+USAGE_FAILURE_CACHE_TTL_SECONDS="${DICTATE_SWIFTBAR_USAGE_FAILURE_CACHE_TTL_SECONDS:-60}"
+[[ "$USAGE_FAILURE_CACHE_TTL_SECONDS" =~ ^[0-9]+$ ]] || USAGE_FAILURE_CACHE_TTL_SECONDS=60
 
 shopt -s nullglob
 
@@ -126,8 +142,7 @@ is_recent_file() {
   [[ -n "$f" && -n "$max_age_s" && -f "$f" ]] || return 1
   local now mtime age
   now="$(date +%s)"
-  mtime="$(stat -f %m "$f" 2>/dev/null || true)"
-  [[ "$mtime" =~ ^[0-9]+$ ]] || mtime="$(stat -c %Y "$f" 2>/dev/null || true)"
+  mtime="$(file_stat %Y %m "$f" 2>/dev/null || true)"
   [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
   age=$((now - mtime))
   [[ "$age" -le "$max_age_s" ]]
@@ -144,10 +159,7 @@ usage_file_signature() {
   # inode, mtime, and size are cheap to read at every redraw. The CLI publishes
   # usage.json with an atomic replacement, so inode catches back-to-back
   # deliveries that happen in one timestamp tick with the same byte length.
-  # GNU `stat -f` reports filesystem fields, not file fields. Prefer GNU's
-  # file format and fall back to macOS's BSD form so unrelated cache writes
-  # cannot alter this file identity.
-  stat -c '%i:%Y:%s' "$file" 2>/dev/null || stat -f '%i:%m:%z' "$file" 2>/dev/null || printf '%s\n' "unreadable"
+  file_stat '%i:%Y:%s' '%i:%m:%z' "$file" 2>/dev/null || printf '%s\n' "unreadable"
 }
 
 format_usage_duration() {
