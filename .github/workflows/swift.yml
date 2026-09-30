@@ -1,0 +1,39 @@
+name: Swift
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tmux-whisperd/**"
+      - ".github/workflows/swift.yml"
+  pull_request:
+    paths:
+      - "tmux-whisperd/**"
+      - ".github/workflows/swift.yml"
+
+jobs:
+  tmux-whisper-kit:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: tmux-whisperd
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: tmux-whisperd/.build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('tmux-whisperd/Package.resolved') }}
+          restore-keys: swiftpm-${{ runner.os }}-
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Test TmuxWhisperKit
+        run: swift test
+
+      - name: Build release daemon
+        run: swift build -c release --product tmux-whisperd && .build/release/tmux-whisperd version

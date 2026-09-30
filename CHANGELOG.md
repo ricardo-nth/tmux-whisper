@@ -1,5 +1,16 @@
 # Tmux Whisper changelog
 
+## v0.9.0 — Unreleased
+
+- **TmuxWhisperKit (native app, phase 1 of #30)**: `tmux-whisperd` is now a thin executable over a reusable Swift library, `TmuxWhisperKit`: the daemon protocol, `ASREngine` (Parakeet via FluidAudio), `TranscriptionService`, and `UnixSocketServer`. The planned menu-bar app will link it in-process. Daemon version 0.2.0.
+- **Daemon no longer serves one client at a time**: accept runs on its own thread and each client gets a thread, so a ping answers in about a millisecond while a long file transcription runs. Requests are capped at 1 MiB and idle clients time out after 10 s instead of blocking the daemon. The socket is created `0600`, a regular file at the socket path is never replaced, and SIGTERM removes the socket.
+- **Safe concurrency**: FluidAudio's `AsrManager` is not thread-safe, so model loading and transcription run through a serial gate even with concurrent clients.
+- **Daemon updates now reach existing installs**: the CLI hashes the daemon sources, rebuilds when they change, and records which build a running daemon came from. `install.sh` (and bootstrap) start a background refresh that rebuilds and swaps the daemon only when nothing is recording, processing, or in flight. Dictation never waits for a rebuild: an out-of-date binary is used immediately while the refresh runs. A failed rebuild keeps the working binary.
+- **Builds happen in one user-writable place** (`~/.local/share/tmux-whisper/native/tmux-whisperd`), with sources synced from a repo checkout, Homebrew's `share/tmux-whisper/tmux-whisperd`, or the installer. `install.sh` now ships `Package.resolved` so installed builds use the same FluidAudio pin as CI.
+- **Ping reports** `version` and `active_requests`; `debug` shows whether the daemon binary is `current` or `stale`.
+- **CI**: new macOS workflow builds and tests the Swift package when `tmux-whisperd/` changes (16 Swift Testing cases).
+- **Tests**: bootstrap, CLI, regression and version tests no longer read or write the real user's `~/.local/share`. The bootstrap test previously installed daemon sources into it.
+
 ## v0.8.0 — 2026-09-30
 
 - **Audio-file transcription**: `tmux-whisper transcribe <file|->...` transcribes voice memos and other recordings (anything ffmpeg decodes) with the local Parakeet model and prints the raw transcript. Options: `-o FILE`, `--beside`, `--out-dir DIR`, `-c/--clipboard`, `--format txt|json`, `--force`, `--no-tail-rescue`, `-q`.

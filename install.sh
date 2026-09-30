@@ -115,7 +115,7 @@ run_install_warmup() {
     DICTATE_CONFIG_DIR="$CONFIG_DIR" \
     DICTATE_CONFIG_FILE="$CONFIG_DIR/config.toml" \
     XDG_DATA_HOME="$XDG_DATA_HOME" \
-    "$BIN_DIR/tmux-whisper" warmup --best-effort || true
+    "$BIN_DIR/tmux-whisper" warmup --best-effort --refresh-in-background || true
 }
 
 migrate_legacy_mode_names() {
@@ -188,9 +188,13 @@ rm -rf "$BIN_DIR/tmux-whisper-lib"
 mkdir -p "$BIN_DIR/tmux-whisper-lib"
 cp -R "$REPO_ROOT/bin/tmux-whisper-lib/." "$BIN_DIR/tmux-whisper-lib/"
 install -m 0644 "$REPO_ROOT/tmux-whisperd/Package.swift" "$NATIVE_DIR/tmux-whisperd/Package.swift"
-rm -rf "$NATIVE_DIR/tmux-whisperd/Sources"
+# The pinned dependency graph keeps installed builds identical to CI's.
+install -m 0644 "$REPO_ROOT/tmux-whisperd/Package.resolved" "$NATIVE_DIR/tmux-whisperd/Package.resolved"
+rm -rf "$NATIVE_DIR/tmux-whisperd/Sources" "$NATIVE_DIR/tmux-whisperd/Tests"
 mkdir -p "$NATIVE_DIR/tmux-whisperd/Sources"
 cp -R "$REPO_ROOT/tmux-whisperd/Sources/." "$NATIVE_DIR/tmux-whisperd/Sources/"
+# Package.swift declares the test target, so its directory must exist to build.
+cp -R "$REPO_ROOT/tmux-whisperd/Tests" "$NATIVE_DIR/tmux-whisperd/Tests"
 
 # Preserve user config and local mode edits on every install, including --force.
 # `--force` remains a convenience for reinstalling binaries/integrations.

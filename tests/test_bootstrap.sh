@@ -19,6 +19,10 @@ tar -czf "$TMP_ROOT/tmux-whisper-main.tar.gz" -C "$ARCHIVE_ROOT" tmux-whisper-ma
 
 HOME="$TMP_ROOT/home"
 export HOME
+# Isolate XDG data too, or the installer writes into the real user's
+# ~/.local/share (native daemon sources, models) and may refresh their daemon.
+export XDG_DATA_HOME="$HOME/.local/share"
+unset XDG_CONFIG_HOME
 mkdir -p "$HOME"
 
 ARCHIVE_URL="file://$TMP_ROOT/tmux-whisper-main.tar.gz"

@@ -616,6 +616,7 @@ setup_case() {
   unset DICTATE_TEST_SWIFT_TEXT_SEQUENCE
   unset DICTATE_TEST_SWIFT_REJECT_SUBSECOND
   unset DICTATE_TEST_FFPROBE_DURATION_MS
+  unset DICTATE_TRANSCRIBE_FILE_LOG
   unset DICTATE_SWIFT_PARAKEET_TAIL_RESCUE
   unset DICTATE_SWIFT_PARAKEET_TAIL_RESCUE_MS
   unset DICTATE_SWIFT_PARAKEET_TAIL_RESCUE_MIN_MS
@@ -1498,6 +1499,90 @@ run_transcribe_file_write_race_round() {
   pass "transcribe_race_temp_removed"
 }
 
+
+run_daemon_build_and_refresh_round() {
+  setup_case "daemon-refresh"
+  unset DICTATE_TMUX_WHISPERD_BIN
+  local src="$CASE_DIR/whisperd-src" build="$CASE_DIR/whisperd-build" build_log="$CASE_DIR/logs/swift-build.log"
+  mkdir -p "$src/Sources/tmux-whisperd" "$src/Tests/TmuxWhisperKitTests"
+  printf '%s\n' '// swift-tools-version: 6.0' >"$src/Package.swift"
+  printf '%s\n' 'print("v1")' >"$src/Sources/tmux-whisperd/main.swift"
+  printf '%s\n' '// tests' >"$src/Tests/TmuxWhisperKitTests/T.swift"
+  export DICTATE_TMUX_WHISPERD_ROOT="$src"
+  export DICTATE_TMUX_WHISPERD_BUILD_ROOT="$build"
+  export DICTATE_DAEMON_BACKGROUND_REFRESH=0
+  export DICTATE_DAEMON_RESTART_WAIT_SECONDS=0
+  export DICTATE_TEST_SWIFT_BUILD_LOG="$build_log"
+  export DICTATE_TEST_STUB_DAEMON="$STUB_DIR/tmux-whisperd"
+  cat >"$HOME/.local/bin/swift" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "build" ]] || exit 0
+printf '%s\n' "$*" >>"$DICTATE_TEST_SWIFT_BUILD_LOG"
+[[ "${DICTATE_TEST_SWIFT_BUILD_FAIL:-0}" == "1" ]] && { echo "error: Build failed" >&2; exit 1; }
+[[ -d Tests ]] || { echo "error: invalid custom path 'Tests/TmuxWhisperKitTests'" >&2; exit 1; }
+mkdir -p .build/release
+cp "$DICTATE_TEST_STUB_DAEMON" .build/release/tmux-whisperd
+chmod +x .build/release/tmux-whisperd
+EOF
+  chmod +x "$HOME/.local/bin/swift"
+  local socket="$DICTATE_SWIFT_PARAKEET_SOCKET_PATH" meta="$DICTATE_SWIFT_PARAKEET_SOCKET_PATH.meta"
+  local builds stamp pid1 pid2 hash
+
+  # First use: sources synced into the build root, built once, daemon started.
+  "$DICTATE_BIN" warmup >/dev/null
+  builds="$(grep -c . "$build_log")"
+  assert_equals "daemon_first_build" "$builds" "1"
+  assert_file_contains "daemon_sources_synced" "$build/Sources/tmux-whisperd/main.swift" 'print("v1")'
+  [[ -d "$build/Tests" ]] || fail "daemon_tests_dir_synced"
+  pass "daemon_tests_dir_synced"
+  stamp="$(cat "$build/.build/tmux-whisper-built-source-hash")"
+  assert_file_contains "daemon_meta_records_build" "$meta" "source_hash=$stamp"
+  pid1="$(awk -F= '$1 == "pid" { print $2 }' "$meta")"
+
+  # Unchanged sources: no rebuild.
+  "$DICTATE_BIN" warmup --restart-stale >/dev/null
+  assert_equals "daemon_no_rebuild_when_current" "$(grep -c . "$build_log")" "1"
+
+  # A busy pipeline blocks the swap even though a new build exists.
+  printf '%s\n' 'print("v2")' >"$src/Sources/tmux-whisperd/main.swift"
+  : >"$DICTATE_INLINE_STATE_FILE"
+  "$DICTATE_BIN" warmup --restart-stale >/dev/null
+  assert_equals "daemon_rebuilt_on_source_change" "$(grep -c . "$build_log")" "2"
+  assert_equals "daemon_not_restarted_while_busy" "$(awk -F= '$1 == "pid" { print $2 }' "$meta")" "$pid1"
+  assert_file_contains "daemon_busy_logged" "$DICTATE_TRANSCRIBE_LOG" "daemon still busy"
+  rm -f "$DICTATE_INLINE_STATE_FILE"
+
+  # Idle: the out-of-date daemon is replaced by one started from the new build.
+  "$DICTATE_BIN" warmup --restart-stale >/dev/null
+  pid2="$(awk -F= '$1 == "pid" { print $2 }' "$meta")"
+  [[ -n "$pid2" && "$pid2" != "$pid1" ]] || fail "daemon_restarted_when_idle"
+  pass "daemon_restarted_when_idle"
+  kill -0 "$pid1" 2>/dev/null && fail "daemon_old_process_stopped"
+  pass "daemon_old_process_stopped"
+  hash="$(cat "$build/.build/tmux-whisper-built-source-hash")"
+  assert_file_contains "daemon_meta_updated" "$meta" "source_hash=$hash"
+  assert_equals "daemon_no_extra_build_on_restart" "$(grep -c . "$build_log")" "2"
+
+  # Hot path with an outdated binary: start it now, never build inline.
+  printf '%s\n' 'print("v3")' >"$src/Sources/tmux-whisperd/main.swift"
+  kill "$pid2" 2>/dev/null || true
+  wait_for_absent "$socket" 60 || rm -f "$socket"
+  mkdir -p "$CASE_DIR/memos"
+  printf '%s\n' "memo" >"$CASE_DIR/memos/m.m4a"
+  DICTATE_TEST_FFPROBE_DURATION_MS=3000 "$DICTATE_BIN" transcribe "$CASE_DIR/memos/m.m4a" -q >/dev/null
+  assert_equals "daemon_hot_path_never_builds" "$(grep -c . "$build_log")" "2"
+  assert_file_contains "daemon_hot_path_uses_stale" "$CASE_DIR/tmp/tmux-whisper-file.transcribe.log" "out of date; using it now"
+
+  # A failed rebuild keeps the working binary.
+  DICTATE_TEST_SWIFT_BUILD_FAIL=1 "$DICTATE_BIN" warmup --restart-stale >/dev/null
+  assert_file_contains "daemon_failed_rebuild_keeps_binary" "$DICTATE_TRANSCRIBE_LOG" "rebuilding tmux-whisperd failed; keeping the existing binary"
+  [[ -x "$build/.build/release/tmux-whisperd" ]] || fail "daemon_binary_still_present"
+  pass "daemon_binary_still_present"
+
+  unset DICTATE_TMUX_WHISPERD_ROOT DICTATE_TMUX_WHISPERD_BUILD_ROOT DICTATE_DAEMON_BACKGROUND_REFRESH DICTATE_DAEMON_RESTART_WAIT_SECONDS
+  unset DICTATE_TEST_SWIFT_BUILD_LOG DICTATE_TEST_STUB_DAEMON
+}
+
 write_stubs
 run_tmux_round "enter"
 run_tmux_round "codex"
@@ -1532,6 +1617,7 @@ run_transcribe_file_long_round
 run_transcribe_file_no_tail_rescue_round
 run_transcribe_file_daemon_unavailable_round
 run_transcribe_file_write_race_round
+run_daemon_build_and_refresh_round
 run_finder_quick_action_round
 run_finder_handler_round
 
