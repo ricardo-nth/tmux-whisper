@@ -220,7 +220,7 @@ public final class UnixSocketServer: @unchecked Sendable {
 
       configureClient(clientFD)
       let admitted: Bool = lock.withLock {
-        guard activeClients < limits.maxClients else { return false }
+        guard activeClients < self.limits.maxClients else { return false }
         activeClients += 1
         return true
       }
@@ -234,9 +234,9 @@ public final class UnixSocketServer: @unchecked Sendable {
       }
 
       let handler = self.handler
-      let limits = self.limits
+      let clientLimits = self.limits
       let thread = Thread { [self] in
-        Self.serveClient(fd: clientFD, handler: handler, limits: limits)
+        Self.serveClient(fd: clientFD, handler: handler, limits: clientLimits)
         lock.withLock { activeClients -= 1 }
       }
       thread.name = "tmux-whisperd.client"
