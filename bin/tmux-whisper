@@ -21,7 +21,7 @@ TMUX_JOBS_DIR="${DICTATE_TMUX_JOBS_DIR:-/tmp/dictate-tmux-jobs}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEFAULT_SWIFT_PARAKEET_MODELS_DIR="$XDG_DATA_HOME/tmux-whisper/models"
 DICTATE_CONFIG_SCHEMA_VERSION=1
-TMUX_WHISPER_CLI_VERSION="0.8.0-dev"
+TMUX_WHISPER_CLI_VERSION="0.8.0"
 
 # Readers such as SwiftBar and `tmux-whisper doctor` inspect these files while
 # recording starts. Publish a complete replacement so they never observe the
