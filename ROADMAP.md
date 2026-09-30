@@ -74,7 +74,7 @@ Success criteria:
 
 Focus: integrations as first-class, versioned surfaces.
 
-- `v0.6.0` remains stable. v0.7 lifecycle diagnostics, version reporting, dry-run repair, and adapter-only repair are complete.
+- Released in `v0.7.0`: lifecycle diagnostics, version reporting, dry-run repair, and adapter-only repair across local, bootstrap, and Homebrew installs.
 - Raycast and SwiftBar now report adapter versions plus `current`, `missing`, `non-executable`, or `different` provenance states.
 - SwiftBar lifecycle refresh and stale-marker recovery are complete; validate recording, processing, cancel, and error transitions in daily use before widening the adapter scope.
 - Keep the integration compatibility matrix and support boundaries documented in `docs/INTEGRATIONS.md`.
@@ -90,7 +90,8 @@ Focus: turn trusted local usage data into small, useful surfaces without changin
 
 - **Durable CLI usage metrics** ([#29](https://github.com/ricardo-nth/tmux-whisper/issues/29)): complete. The CLI persists privacy-preserving aggregates for successful deliveries and exposes coverage plus estimated typing-time assumptions in text and JSON.
 - **SwiftBar usage metrics** ([#31](https://github.com/ricardo-nth/tmux-whisper/issues/31)): complete. The ready menu consumes the CLI usage summary while recording and processing remain clear.
-- **Native Swift menu bar companion prototype** ([#30](https://github.com/ricardo-nth/tmux-whisper/issues/30)): experimental draft. Keep Raycast and SwiftBar available while it awaits a real spoken-dictation test; do not include it in the v0.7 release decision.
+- **Native macOS app** ([#30](https://github.com/ricardo-nth/tmux-whisper/issues/30)): the shell-out companion prototype (#33) was closed. The revised plan extracts a shared Swift kit from `tmux-whisperd`, then builds a signed menu bar app that owns hotkey, capture, Parakeet, paste, and sounds, and serves the existing daemon socket so the CLI and tmux flow become clients. Raycast and SwiftBar stay available until it replaces them.
+- **Audio-file transcription** (v0.8): `tmux-whisper transcribe <file>` for voice memos (m4a/mp3/wav/ogg via ffmpeg) with raw Parakeet output, excluded from dictation usage and history. The native app later exposes it through drag-and-drop and a Finder Quick Action.
 
 Success criteria:
 

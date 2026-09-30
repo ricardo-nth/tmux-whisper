@@ -657,11 +657,56 @@ assert_file_executable "integrations_repair_apply_inline_executable" "$INTEGRATI
 assert_file_executable "integrations_repair_apply_toggle_executable" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-toggle.sh"
 assert_file_executable "integrations_repair_apply_cancel_executable" "$INTEGRATIONS_CFG/integrations/raycast/tmux-whisper-cancel.sh"
 assert_file_executable "integrations_repair_apply_swiftbar_executable" "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh"
-assert_glob_exists "integrations_repair_apply_swiftbar_backup" "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh.backup.*"
+assert_glob_exists "integrations_repair_apply_swiftbar_backup" "$INTEGRATIONS_CFG/backups/integrations/tmux-whisper-status.0.2s.sh.*"
+if compgen -G "$INTEGRATIONS_SWIFTBAR/tmux-whisper-status.0.2s.sh.*" >/dev/null; then
+  echo "FAIL: integrations_repair_backup_outside_plugin_dir" >&2
+  exit 1
+fi
+echo "PASS: integrations_repair_backup_outside_plugin_dir"
+for backup in "$INTEGRATIONS_CFG"/backups/integrations/*; do
+  assert_file_not_executable "integrations_repair_backup_not_executable" "$backup"
+done
 integrations_doctor_repaired="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations doctor)"
 assert_contains "integrations_doctor_repaired_ok" "$integrations_doctor_repaired" "status: ok (0 warnings)"
 integrations_repair_apply_again="$(HOME="$INTEGRATIONS_HOME" PATH="$INTEGRATIONS_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= DICTATE_CONFIG_DIR="$INTEGRATIONS_CFG" DICTATE_CONFIG_FILE="$INTEGRATIONS_CFG/config.toml" tmux-whisper integrations repair)"
 assert_contains "integrations_repair_apply_idempotent" "$integrations_repair_apply_again" "files changed: 0"
+
+# --- Regression 8c: Homebrew layout resolves adapter sources from pkgshare and
+# ignores a stale local-install receipt; optional adapters are warnings only. ---
+BREW_INT_HOME="$TMP_ROOT/home-brew-integrations"
+BREW_INT_PREFIX="$BREW_INT_HOME/Cellar/tmux-whisper/0.7.0"
+BREW_INT_BIN="$BREW_INT_HOME/bin"
+BREW_INT_CFG="$BREW_INT_HOME/.config/dictate"
+install_test_runtime "$BREW_INT_PREFIX/libexec"
+mkdir -p "$BREW_INT_PREFIX/share/tmux-whisper" "$BREW_INT_BIN" "$BREW_INT_CFG"
+cp -R "$ROOT/integrations" "$BREW_INT_PREFIX/share/tmux-whisper/integrations"
+printf '#!/bin/bash\nexec "%s/libexec/tmux-whisper" "$@"\n' "$BREW_INT_PREFIX" >"$BREW_INT_BIN/tmux-whisper"
+chmod +x "$BREW_INT_BIN/tmux-whisper"
+printf '[meta]\nconfig_version = 1\n' >"$BREW_INT_CFG/config.toml"
+cat >"$BREW_INT_CFG/install-receipt.env" <<EOF
+install_source='local'
+repo_root='$ROOT'
+bin_path='$BREW_INT_HOME/.local/bin/tmux-whisper'
+swiftbar_plugin='skipped'
+EOF
+brew_int_run() {
+  HOME="$BREW_INT_HOME" PATH="$BREW_INT_BIN:/usr/bin:/bin" DICTATE_LIB_PATH= \
+    DICTATE_CONFIG_DIR="$BREW_INT_CFG" DICTATE_CONFIG_FILE="$BREW_INT_CFG/config.toml" tmux-whisper integrations "$@"
+}
+brew_int_share="$(cd "$BREW_INT_PREFIX/share/tmux-whisper" && pwd)"
+brew_int_doctor="$(brew_int_run doctor)"
+assert_contains "integrations_brew_source_pkgshare" "$brew_int_doctor" "source: $brew_int_share"
+assert_not_contains "integrations_brew_ignores_stale_receipt_root" "$brew_int_doctor" "source: $ROOT"
+assert_contains "integrations_brew_optional_missing_ok" "$brew_int_doctor" "status: ok"
+assert_contains "integrations_brew_raycast_missing_warn" "$brew_int_doctor" "warn/raycast: Raycast inline script is missing"
+assert_not_contains "integrations_brew_swiftbar_skipped_quiet" "$brew_int_doctor" "SwiftBar plugin is not installed"
+brew_int_dry_run="$(brew_int_run repair --dry-run)"
+assert_contains "integrations_brew_dry_run_skips_swiftbar" "$brew_int_dry_run" "would skip SwiftBar plugin"
+brew_int_repair="$(brew_int_run repair)"
+assert_contains "integrations_brew_repair_changed" "$brew_int_repair" "files changed: 3"
+assert_contains "integrations_brew_repair_swiftbar_skipped" "$brew_int_repair" "unchanged SwiftBar plugin: skipped at install"
+assert_file_executable "integrations_brew_repair_inline_installed" "$BREW_INT_CFG/integrations/raycast/tmux-whisper-inline.sh"
+assert_file_not_exists "integrations_brew_repair_no_swiftbar" "$BREW_INT_HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh"
 
 # --- Regression 9: script-level behavior for missing tmux-whisper binary is explicit. ---
 INLINE_HOME="$TMP_ROOT/home-inline"
@@ -729,6 +774,20 @@ idle_inline_stop_out="$(HOME="$IDLE_STOP_HOME" PATH="$IDLE_STOP_BIN:$STUB_BIN:/u
 assert_contains "idle_inline_stop_reports_not_recording" "$idle_inline_stop_out" "not recording. Run: tmux-whisper inline start"
 assert_file_not_exists "idle_inline_stop_no_error_flag" "$IDLE_STOP_HOME/error.flag"
 assert_file_not_exists "idle_inline_stop_no_swiftbar_refresh" "$IDLE_STOP_HOME/refresh.log"
+
+# Lifecycle refreshes are skipped when the SwiftBar integration is disabled,
+# while an explicit `swiftbar refresh` still requests one.
+GATED_REFRESH_LOG="$IDLE_STOP_HOME/gated-refresh.log"
+CFG_SWIFTBAR_ENABLED=0 DICTATE_SWIFTBAR_REFRESH_LOG="$GATED_REFRESH_LOG" \
+  bash -c 'source "$1"; swiftbar_refresh' _ "$ROOT/bin/tmux-whisper-lib/integrations.sh"
+assert_file_not_exists "swiftbar_refresh_disabled_noop" "$GATED_REFRESH_LOG"
+CFG_SWIFTBAR_ENABLED=1 DICTATE_SWIFTBAR_REFRESH_LOG="$GATED_REFRESH_LOG" \
+  bash -c 'source "$1"; swiftbar_refresh' _ "$ROOT/bin/tmux-whisper-lib/integrations.sh"
+assert_file_contains "swiftbar_refresh_enabled_requests" "$GATED_REFRESH_LOG" "refresh plugin=tmux-whisper-status.0.2s.sh"
+rm -f "$GATED_REFRESH_LOG"
+CFG_SWIFTBAR_ENABLED=0 DICTATE_SWIFTBAR_REFRESH_LOG="$GATED_REFRESH_LOG" \
+  bash -c 'source "$1"; swiftbar_refresh_now' _ "$ROOT/bin/tmux-whisper-lib/integrations.sh"
+assert_file_contains "swiftbar_refresh_now_ignores_toggle" "$GATED_REFRESH_LOG" "refresh plugin=tmux-whisper-status.0.2s.sh"
 
 # A freshly truncated marker can be an active writer between open and publish.
 # Doctor must leave it alone so the recording control is not lost.

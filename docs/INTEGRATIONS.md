@@ -58,6 +58,8 @@ Use adapter-only repair when the installed Raycast scripts or SwiftBar plugin ar
 tmux-whisper integrations repair
 ```
 
+Adapter sources resolve from the installed copy beside the binary: Homebrew's `share/tmux-whisper`, or the `~/.local/share/tmux-whisper/integrations` snapshot written by `install.sh` and bootstrap. Replaced adapters are backed up to `~/.config/dictate/backups/integrations/`. Missing Raycast scripts or a missing SwiftBar plugin are reported as warnings because both adapters are optional; a SwiftBar plugin skipped at install stays skipped.
+
 Use the full local installer when the binary, libraries, config defaults, sounds, native backend source, or install receipt also need to be refreshed:
 
 ```bash

@@ -64,14 +64,14 @@ curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/boots
 Pinned to a release tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.6.0/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.7.0/bootstrap.sh | bash
 ```
 
 Pass bootstrap and install flags explicitly:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force --with-sounds
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --ref v0.6.0 --force
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --ref v0.7.0 --force
 ```
 
 ### Local clone / development
@@ -300,7 +300,7 @@ tmux-whisper integrations repair --dry-run
 tmux-whisper integrations repair
 ```
 
-`doctor` checks the installed binary, install receipt, Raycast scripts, SwiftBar plugin, executable bits, and adapter drift from the recorded source tree. `integrations` and `doctor` report each adapter as `current`, `missing`, `non-executable`, or `different` from source so update provenance is visible before repair. `repair --dry-run` shows the adapter-only refresh plan without changing files. `repair` refreshes only the installed Raycast scripts and SwiftBar plugin, creates missing adapter directories, fixes executable bits, and backs up replaced adapter files; use `./install.sh --force` only when you need a full local runtime refresh.
+`doctor` checks the installed binary, install receipt, Raycast scripts, SwiftBar plugin, executable bits, and adapter drift from the recorded source tree. `integrations` and `doctor` report each adapter as `current`, `missing`, `non-executable`, or `different` from source so update provenance is visible before repair. `repair --dry-run` shows the adapter-only refresh plan without changing files. `repair` refreshes only the installed Raycast scripts and SwiftBar plugin, creates missing adapter directories, fixes executable bits, and backs up replaced adapter files to `~/.config/dictate/backups/integrations/`. It works on Homebrew, bootstrap, and local installs; use `./install.sh --force` only when you need a full local runtime refresh.
 
 ## Sounds
 

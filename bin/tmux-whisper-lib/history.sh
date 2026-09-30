@@ -278,7 +278,8 @@ usage_record_delivery() {
   [[ "$flow" == "inline" || "$flow" == "tmux" ]] || return 1
   [[ "$record_ms" =~ ^[0-9]+$ ]] || return 1
   [[ "$full_elapsed_ms" =~ ^[0-9]+$ ]] || return 1
-  need python3
+  # Return instead of `need`: a missing interpreter must not exit the worker.
+  command -v python3 >/dev/null 2>&1 || return 1
 
   python3 -c '
 import datetime
@@ -288,6 +289,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 
 path, flow, record_ms, full_elapsed_ms = sys.argv[1:]
 processed = sys.stdin.read()
@@ -309,7 +311,16 @@ def as_nonnegative_int(value, name):
 os.makedirs(os.path.dirname(path) or ".", mode=0o700, exist_ok=True)
 lock_path = path + ".lock"
 with open(lock_path, "a+", encoding="utf-8") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    # Bounded wait: a stuck lock holder must never stall the delivery worker.
+    deadline = time.monotonic() + 2.0
+    while True:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise SystemExit("tmux-whisper: usage summary is locked by another process; skipping this delivery")
+            time.sleep(0.05)
     if os.path.exists(path):
         try:
             with open(path, encoding="utf-8") as fh:

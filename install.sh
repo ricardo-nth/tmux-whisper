@@ -201,6 +201,14 @@ install -m 0755 "$REPO_ROOT/integrations/raycast/tmux-whisper-inline.sh" "$CONFI
 install -m 0755 "$REPO_ROOT/integrations/raycast/tmux-whisper-toggle.sh" "$CONFIG_DIR/integrations/raycast/tmux-whisper-toggle.sh"
 install -m 0755 "$REPO_ROOT/integrations/raycast/tmux-whisper-cancel.sh" "$CONFIG_DIR/integrations/raycast/tmux-whisper-cancel.sh"
 
+# Pristine adapter sources beside the binary (mirrors Homebrew's pkgshare), so
+# `integrations doctor|repair` work after bootstrap deletes its extracted tree.
+ADAPTER_SHARE_DIR="$(dirname "$BIN_DIR")/share/tmux-whisper"
+rm -rf "$ADAPTER_SHARE_DIR/integrations"
+mkdir -p "$ADAPTER_SHARE_DIR/integrations/raycast"
+install -m 0755 "$REPO_ROOT/integrations/raycast/"*.sh "$ADAPTER_SHARE_DIR/integrations/raycast/"
+install -m 0755 "$REPO_ROOT/integrations/tmux-whisper-status.0.2s.sh" "$ADAPTER_SHARE_DIR/integrations/tmux-whisper-status.0.2s.sh"
+
 if [[ "$INSTALL_SWIFTBAR" == "1" ]]; then
   mkdir -p "$SWIFTBAR_DIR"
   install -m 0755 "$REPO_ROOT/integrations/tmux-whisper-status.0.2s.sh" "$SWIFTBAR_DIR/tmux-whisper-status.0.2s.sh"

@@ -1,21 +1,20 @@
 # Tmux Whisper changelog
 
-## v0.7.0 — Unreleased
-
-`v0.6.0` remains the current stable release (tagged on 2026-05-13; Homebrew formula updated). This section prepares the next release; it does not announce a tag or a Homebrew update.
+## v0.7.0 — 2026-09-30
 
 - **Integration lifecycle**: `tmux-whisper integrations`, `integrations doctor`, and adapter-only `integrations repair` now inspect and refresh Raycast and SwiftBar adapters. They report source provenance and explicit adapter versions; `repair --dry-run` previews changes before mutation.
+  - Adapter sources resolve from Homebrew's `pkgshare`, or from a pristine snapshot that `install.sh` now writes to `~/.local/share/tmux-whisper/integrations`, so doctor/repair work on Homebrew and bootstrap installs (not only local checkouts). A stale receipt from another install channel no longer redirects the source.
+  - Replaced adapters are backed up (non-executable) under `~/.config/dictate/backups/integrations/`, never inside the SwiftBar plugin folder where a backup would load as a second menu item.
+  - Missing optional adapters (Raycast scripts, SwiftBar plugin) and a missing install receipt are warnings, not repair-blocking issues; a SwiftBar plugin skipped at install (`DICTATE_INSTALL_SWIFTBAR=0`) stays skipped on repair.
 - **SwiftBar reliability**: lifecycle paths refresh recording, processing, cancel, and error states, and stale markers fall back safely to polling. The plugin uses shared mode policy rather than duplicating CLI rules.
-- **Usage accounting and SwiftBar metrics**: `tmux-whisper usage [--json]` stores transcript-free aggregates for successful inline and tmux deliveries, with coverage and a signed typing-time estimate. SwiftBar shows those figures in its ready menu while keeping active states responsive.
+  - Lifecycle refreshes are skipped when `integrations.swiftbar.enabled = false` or SwiftBar is not running, so dictation never launches a quit SwiftBar. `tmux-whisper swiftbar refresh` requests a refresh explicitly.
+  - The plugin cache moved from shared `/tmp` to a private `~/.config/dictate/.cache/swiftbar`; per-redraw forks were trimmed, and a failed usage read now retries after 60s instead of 2s.
+  - `status`, `debug`, and `doctor` now prune stale state files and processing markers they identify.
+- **Usage accounting and SwiftBar metrics**: `tmux-whisper usage [--json]` stores transcript-free aggregates for successful inline and tmux deliveries, with coverage and a signed typing-time estimate. SwiftBar shows those figures in its ready menu while keeping active states responsive. Ledger writes wait at most 2s for their lock and never fail or block a delivery.
 - **CLI contracts**: `docs/CLI_CONTRACTS.md` identifies stable JSON read surfaces for adapters and scripts.
 - **Version contract**: `tmux-whisper version [--json]` reports the CLI and config schema versions, resolved running binary, and non-executed install-receipt provenance. `--version` is a text alias.
 - **Swift chunking**: `DICTATE_SWIFT_PARAKEET_CHUNKING=1` remains opt-in and quarantined. Reconsider or remove it only when real dictation evidence establishes a long-audio need beyond the stable single-pass and tail-rescue path.
-- **Native companion**: the native macOS menu-bar companion remains an experimental draft prototype. It is pending a real spoken-dictation test and is not part of this release scope.
-
-### Release checks still required
-
-- Exercise the integration lifecycle, adapter versions, usage accounting, SwiftBar state transitions, and real daily inline and tmux deliveries using `docs/RELEASE_CHECKLIST.md`.
-- Tagging, publication, and the Homebrew formula update happen only after those checks pass and remain separate release actions.
+- **Native app direction**: the shell-out menu-bar companion prototype (#33) was closed. The revised plan in #30 is a native app that owns capture, Parakeet transcription, and paste, and serves the existing daemon socket so the CLI and tmux flow keep working.
 
 ## 2026-05-09
 

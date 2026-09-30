@@ -45,6 +45,8 @@ assert_file "$HOME/.config/dictate/integrations/raycast/tmux-whisper-inline.sh"
 assert_file "$HOME/.config/swiftbar/plugins/tmux-whisper-status.0.2s.sh"
 assert_file "$HOME/.local/share/sounds/dictate/start.wav"
 assert_file "$HOME/.local/share/tmux-whisper/native/tmux-whisperd/Package.swift"
+assert_exec "$HOME/.local/share/tmux-whisper/integrations/raycast/tmux-whisper-inline.sh"
+assert_exec "$HOME/.local/share/tmux-whisper/integrations/tmux-whisper-status.0.2s.sh"
 if [[ ! -d "$HOME/.local/share/tmux-whisper/models" ]]; then
   echo "Expected install to create tmux-whisper Parakeet models dir" >&2
   exit 1
