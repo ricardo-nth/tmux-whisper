@@ -1460,6 +1460,18 @@ run_finder_handler_round() {
   assert_file_contains "finder_handler_notify_failure" "$notify_log" "Transcription failed: output exists"
 }
 
+
+run_transcribe_file_daemon_unavailable_round() {
+  setup_transcribe_case "transcribe-no-daemon"
+  export DICTATE_TMUX_WHISPERD_BIN="$CASE_DIR/missing-tmux-whisperd"
+  local rc=0
+  "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" --beside >/dev/null 2>"$CASE_DIR/logs/no-daemon.txt" || rc=$?
+  assert_equals "transcribe_no_daemon_exit" "$rc" "2"
+  assert_file_contains "transcribe_no_daemon_message" "$CASE_DIR/logs/no-daemon.txt" "Parakeet daemon unavailable: could not start tmux-whisperd"
+  assert_file_not_contains "transcribe_no_daemon_fails_before_file" "$CASE_DIR/logs/no-daemon.txt" "Transcribing"
+  assert_path_absent "transcribe_no_daemon_no_output" "$CASE_DIR/memos/memo.txt"
+}
+
 write_stubs
 run_tmux_round "enter"
 run_tmux_round "codex"
@@ -1492,6 +1504,7 @@ run_transcribe_file_errors_round
 run_transcribe_file_no_speech_round
 run_transcribe_file_long_round
 run_transcribe_file_no_tail_rescue_round
+run_transcribe_file_daemon_unavailable_round
 run_finder_quick_action_round
 run_finder_handler_round
 

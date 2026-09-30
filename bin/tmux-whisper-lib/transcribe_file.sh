@@ -197,6 +197,20 @@ manage_transcribe() {
   TRANSCRIBE_LOG="${DICTATE_TRANSCRIBE_FILE_LOG:-$TMPDIR/tmux-whisper-file.transcribe.log}"
   : >"$TRANSCRIBE_LOG" 2>/dev/null || TRANSCRIBE_LOG="/dev/null"
 
+  # Start (or build) the daemon up front so a missing backend is reported
+  # clearly instead of as a failure of the first file.
+  local socket_path
+  socket_path="$(resolve_swift_parakeet_socket_path)"
+  if ! swift_parakeet_ping "$socket_path" >/dev/null 2>&1; then
+    transcribe_file_log "Starting the Parakeet daemon (the first run after an install can take a few minutes)..."
+    if ! ensure_swift_parakeet_daemon "$socket_path"; then
+      if grep -q "error: Build failed" "$TRANSCRIBE_LOG" 2>/dev/null; then
+        die "Parakeet daemon unavailable: building tmux-whisperd failed (see $TRANSCRIBE_LOG)"
+      fi
+      die "Parakeet daemon unavailable: could not start tmux-whisperd (see $TRANSCRIBE_LOG)"
+    fi
+  fi
+
   local base_timeout="${DICTATE_SWIFT_PARAKEET_TIMEOUT_SECONDS:-600}"
   [[ "$base_timeout" =~ ^[0-9]+$ ]] || base_timeout=600
 

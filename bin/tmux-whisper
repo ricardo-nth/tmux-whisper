@@ -2136,9 +2136,21 @@ ensure_tmux_whisperd_binary() {
 
   command -v swift >/dev/null 2>&1 || return 1
   log_transcribe_event "swift_parakeet: building tmux-whisperd in $root"
+  local -a build_flags=()
+  local sdk_path toolchain_cxx
+  # A stale Command Line Tools install can leave an incomplete
+  # usr/include/c++/v1 that newer clang searches before the SDK's libc++, so
+  # FluidAudio's C++ sources fail with "'cmath' file not found". Point clang
+  # at the SDK headers when that happens.
+  sdk_path="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+  toolchain_cxx="$(dirname "$(xcrun -f clang 2>/dev/null || echo /nonexistent/clang)")/../include/c++/v1"
+  if [[ -n "$sdk_path" && -d "$toolchain_cxx" && ! -f "$toolchain_cxx/cmath" && -f "$sdk_path/usr/include/c++/v1/cmath" ]]; then
+    log_transcribe_event "swift_parakeet: toolchain libc++ headers are incomplete ($toolchain_cxx); using $sdk_path/usr/include/c++/v1"
+    build_flags=(-Xcxx -nostdinc++ -Xcxx -isystem -Xcxx "$sdk_path/usr/include/c++/v1")
+  fi
   (
     cd "$root"
-    swift build -c release --product tmux-whisperd
+    swift build -c release --product tmux-whisperd ${build_flags[@]+"${build_flags[@]}"}
   ) >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1 || return 1
 
   [[ -x "$binary" ]] || return 1
