@@ -21,7 +21,7 @@ TMUX_JOBS_DIR="${DICTATE_TMUX_JOBS_DIR:-/tmp/dictate-tmux-jobs}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEFAULT_SWIFT_PARAKEET_MODELS_DIR="$XDG_DATA_HOME/tmux-whisper/models"
 DICTATE_CONFIG_SCHEMA_VERSION=1
-TMUX_WHISPER_CLI_VERSION="0.7.0"
+TMUX_WHISPER_CLI_VERSION="0.8.0"
 
 # Readers such as SwiftBar and `tmux-whisper doctor` inspect these files while
 # recording starts. Publish a complete replacement so they never observe the
@@ -50,6 +50,14 @@ RECORDING:
   tmux-whisper --version          # text alias for version
   tmux-whisper stop               # force stop any recording
   tmux-whisper cancel             # cancel recording (discard, no paste)
+
+FILES:
+  tmux-whisper transcribe <file>...        # print raw transcript of audio files (m4a, mp3, wav, ogg, ...)
+  tmux-whisper transcribe <file> -o out.txt # write to a file (or --beside / --out-dir DIR)
+  tmux-whisper transcribe <file> -c        # also copy to clipboard
+  tmux-whisper transcribe <file> --format json # JSON per file (text, durations, model)
+  tmux-whisper transcribe --help           # all options
+  tmux-whisper finder install|remove|status # Finder right-click Quick Action for audio files
 
 AUDIO:
   tmux-whisper devices [--json]   # list macOS audio devices
@@ -280,13 +288,13 @@ fi
 source "$DICTATE_LIB_PATH"
 
 DICTATE_INTERNAL_LIB_DIR="${DICTATE_INTERNAL_LIB_DIR:-$HOME/.local/bin/tmux-whisper-lib}"
-if [[ ! -r "$DICTATE_INTERNAL_LIB_DIR/version.sh" ]]; then
+if [[ ! -r "$DICTATE_INTERNAL_LIB_DIR/transcribe_file.sh" ]]; then
   FALLBACK_INTERNAL_LIB_DIR="$SCRIPT_DIR/tmux-whisper-lib"
-  if [[ -r "$FALLBACK_INTERNAL_LIB_DIR/version.sh" ]]; then
+  if [[ -r "$FALLBACK_INTERNAL_LIB_DIR/transcribe_file.sh" ]]; then
     DICTATE_INTERNAL_LIB_DIR="$FALLBACK_INTERNAL_LIB_DIR"
   fi
 fi
-for internal_runtime_module in config.sh audio.sh mode.sh recording.sh integrations.sh history.sh diagnostics.sh version.sh; do
+for internal_runtime_module in config.sh audio.sh mode.sh recording.sh integrations.sh history.sh diagnostics.sh version.sh transcribe_file.sh; do
   [[ -r "$DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module" ]] || die "missing internal runtime module: $DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module"
   # shellcheck disable=SC1090
   source "$DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module"
@@ -2128,9 +2136,21 @@ ensure_tmux_whisperd_binary() {
 
   command -v swift >/dev/null 2>&1 || return 1
   log_transcribe_event "swift_parakeet: building tmux-whisperd in $root"
+  local -a build_flags=()
+  local sdk_path toolchain_cxx
+  # A stale Command Line Tools install can leave an incomplete
+  # usr/include/c++/v1 that newer clang searches before the SDK's libc++, so
+  # FluidAudio's C++ sources fail with "'cmath' file not found". Point clang
+  # at the SDK headers when that happens.
+  sdk_path="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+  toolchain_cxx="$(dirname "$(xcrun -f clang 2>/dev/null || echo /nonexistent/clang)")/../include/c++/v1"
+  if [[ -n "$sdk_path" && -d "$toolchain_cxx" && ! -f "$toolchain_cxx/cmath" && -f "$sdk_path/usr/include/c++/v1/cmath" ]]; then
+    log_transcribe_event "swift_parakeet: toolchain libc++ headers are incomplete ($toolchain_cxx); using $sdk_path/usr/include/c++/v1"
+    build_flags=(-Xcxx -nostdinc++ -Xcxx -isystem -Xcxx "$sdk_path/usr/include/c++/v1")
+  fi
   (
     cd "$root"
-    swift build -c release --product tmux-whisperd
+    swift build -c release --product tmux-whisperd ${build_flags[@]+"${build_flags[@]}"}
   ) >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1 || return 1
 
   [[ -x "$binary" ]] || return 1
@@ -7432,6 +7452,8 @@ case "$cmd" in
   logs) logs "${@:2}" ;;
   watch) watch "${@:2}" ;;
   warmup) warmup_backend "${@:2}" ;;
+  transcribe) manage_transcribe "${@:2}" ;;
+  finder) manage_finder "${2:-}" ;;
   bench) bench "${@:2}" ;;
   bench-matrix|bench_matrix) bench_matrix "${2:-}" "${3:-}" ;;
   changelog) changelog ;;

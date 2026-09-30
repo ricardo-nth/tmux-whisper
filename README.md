@@ -64,14 +64,14 @@ curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/boots
 Pinned to a release tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.7.0/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.8.0/bootstrap.sh | bash
 ```
 
 Pass bootstrap and install flags explicitly:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force --with-sounds
-curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --ref v0.7.0 --force
+curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --ref v0.8.0 --force
 ```
 
 ### Local clone / development
@@ -155,6 +155,34 @@ tmux-whisper postprocess on
 - Let processing finish while you keep working in tmux.
 
 If you are not inside tmux, use `tmux-whisper inline` or the Raycast inline integration instead.
+
+### Transcribe audio files
+
+Voice memos from a phone or dictaphone go through the same local Parakeet model:
+
+```bash
+tmux-whisper transcribe memo.m4a               # raw transcript to stdout
+tmux-whisper transcribe memo.m4a --beside      # writes memo.txt next to it
+tmux-whisper transcribe memo.m4a -c            # also copy to the clipboard
+tmux-whisper transcribe *.m4a --out-dir notes/ # one .txt per file
+tmux-whisper transcribe memo.m4a --format json # text + durations + model
+tmux-whisper transcribe - < memo.m4a           # read from stdin
+```
+
+- Anything ffmpeg can decode works (m4a, mp3, wav, aac, flac, ogg/opus, video audio tracks). The original file is never modified; it is decoded into a private 16 kHz copy.
+- Output is the **raw** transcript: dictation cleanup (vocab, British spelling, filler/repeat removal, modes, LLM post-processing) is not applied, and file transcripts are not counted in `usage` or written to history.
+- Long recordings are chunked by the Parakeet runtime itself; a 10-minute memo took about 15 seconds end to end on an M1 Air with the model warm. Dictation waits while a long file is transcribing.
+- Existing output files are never overwritten without `--force`; failures exit non-zero and leave no partial output.
+
+For AI agents (Claude Code, Codex), `integrations/agents/transcribe-audio/SKILL.md` is a skill that tells them to use `tmux-whisper transcribe` for audio files instead of downloading a speech model. Install it by copying the folder into `~/.claude/skills/` and/or `~/.codex/skills/`.
+
+For right-click transcription in Finder:
+
+```bash
+tmux-whisper finder install   # adds Quick Actions > "Transcribe with Tmux Whisper"
+```
+
+It writes `<name>.txt` next to each selected audio file, copies the transcript to the clipboard, and posts a notification. It is enabled for the Finder context menu automatically (no System Settings step). The first run may ask for permission to access the folder the memo is in. Remove it with `tmux-whisper finder remove`.
 
 ### Durable usage summary
 
