@@ -362,7 +362,7 @@ tmux-whisper bench-matrix 1
 ## Repo Layout
 
 - `bin/tmux-whisper` is the main product orchestration layer.
-- `tmux-whisperd/` contains the Swift/CoreML daemon package for the Parakeet backend.
+- `tmux-whisperd/` is the Swift package for the Parakeet backend: the `TmuxWhisperKit` library (daemon protocol, `ASREngine`, socket server; shared with the planned native app), the thin `tmux-whisperd` executable, and Swift Testing tests (`cd tmux-whisperd && swift test`). The CLI builds it on demand into `~/.local/share/tmux-whisper/native/tmux-whisperd` and rebuilds when the sources change.
 - `install.sh`, `config/`, `integrations/`, and `tests/` are active first-class parts of the app, not support-only extras.
 - `docs/` keeps active operator docs at the top level, while longer-term planning notes live under `docs/plans/`.
 

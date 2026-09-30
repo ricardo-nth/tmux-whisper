@@ -119,7 +119,7 @@ debug() {
   swift_model_version="$(resolve_swift_parakeet_model_version "${swift_model_path:-}")"
   swift_socket_path="$(resolve_swift_parakeet_socket_path)"
   swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
-  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
+  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$(tmux_whisperd_build_root)/.build/release/tmux-whisperd}}"
   local cfg_schema_status cfg_schema_version cfg_parse_error
   cfg_schema_status="$(config_schema_status)"
   cfg_schema_version="$(config_schema_version_label)"
@@ -374,7 +374,7 @@ PYEOF
   echo "  parakeet_dir: $swift_models_dir"
   echo "  backend:      $backend_requested"
   echo "  whisperd_src: ${swift_root:-<none>} $([[ -n "$swift_root" && -f "$swift_root/Package.swift" ]] && echo '(ok)' || echo '(missing)')"
-  echo "  whisperd_bin: ${swift_binary:-<none>} $([[ -n "$swift_binary" && -x "$swift_binary" ]] && echo '(ok)' || echo '(not built)')"
+  echo "  whisperd_bin: ${swift_binary:-<none>} $([[ -n "$swift_binary" && -x "$swift_binary" ]] && echo "($(tmux_whisperd_binary_state))" || echo '(not built)')"
   echo "  whisperd_sock:${swift_socket_path:-<none>} $([[ -S "$swift_socket_path" ]] && echo '(live)' || echo '(offline)')"
   echo "  parakeet_mod: ${swift_model_path:-<none>} $([[ -n "$swift_model_path" && -d "$swift_model_path" ]] && echo "(ok, ${swift_model_version})" || echo '(missing)')"
   echo "  raycast_dir:  $DICTATE_CONFIG_DIR/integrations/raycast $([[ -d "$DICTATE_CONFIG_DIR/integrations/raycast" ]] && echo '(ok)' || echo '(missing)')"
@@ -679,7 +679,7 @@ doctor_json() {
 
   local swift_root swift_binary swift_socket_path swift_model_path swift_model_version swift_models_dir
   swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
-  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
+  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$(tmux_whisperd_build_root)/.build/release/tmux-whisperd}}"
   swift_socket_path="$(resolve_swift_parakeet_socket_path)"
   swift_model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
   swift_model_version="$(resolve_swift_parakeet_model_version "${swift_model_path:-}")"
@@ -1327,7 +1327,7 @@ doctor() {
   echo "  - swiftbar plugin: $swiftbar_plugin ($swiftbar_state)"
   local swift_root swift_binary swift_socket_path swift_model_path swift_model_version swift_models_dir
   swift_root="$(resolve_tmux_whisperd_root 2>/dev/null || true)"
-  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$swift_root/.build/release/tmux-whisperd}}"
+  swift_binary="${DICTATE_TMUX_WHISPERD_BIN:-${swift_root:+$(tmux_whisperd_build_root)/.build/release/tmux-whisperd}}"
   swift_socket_path="$(resolve_swift_parakeet_socket_path)"
   swift_model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
   swift_model_version="$(resolve_swift_parakeet_model_version "${swift_model_path:-}")"

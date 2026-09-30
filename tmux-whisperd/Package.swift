@@ -11,17 +11,36 @@ let package = Package(
       name: "tmux-whisperd",
       targets: ["tmux-whisperd"]
     ),
+    // Shared engine, protocol, and socket server for the daemon and the
+    // future native macOS app.
+    .library(
+      name: "TmuxWhisperKit",
+      targets: ["TmuxWhisperKit"]
+    ),
   ],
   dependencies: [
-    .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.12.4"),
+    // 0.12.x only: 0.13+ changed the transcription API and model files, so
+    // moving on needs its own migration. 0.12.6 makes AsrManager an actor,
+    // which the Swift 6.3 compiler requires.
+    .package(url: "https://github.com/FluidInference/FluidAudio.git", .upToNextMinor(from: "0.12.6")),
   ],
   targets: [
-    .executableTarget(
-      name: "tmux-whisperd",
+    .target(
+      name: "TmuxWhisperKit",
       dependencies: [
         .product(name: "FluidAudio", package: "FluidAudio"),
       ],
+      path: "Sources/TmuxWhisperKit"
+    ),
+    .executableTarget(
+      name: "tmux-whisperd",
+      dependencies: ["TmuxWhisperKit"],
       path: "Sources/tmux-whisperd"
+    ),
+    .testTarget(
+      name: "TmuxWhisperKitTests",
+      dependencies: ["TmuxWhisperKit"],
+      path: "Tests/TmuxWhisperKitTests"
     ),
   ]
 )

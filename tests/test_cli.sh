@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_ROOT="$(mktemp -d)"
+# Never read or write the real user's ~/.local/share (daemon build, models).
+export XDG_DATA_HOME="$TMP_ROOT/xdg-data"
+export DICTATE_DAEMON_BACKGROUND_REFRESH=0
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
 BIN_DIR="$TMP_ROOT/bin"
