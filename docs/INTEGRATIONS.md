@@ -23,7 +23,8 @@ Use this document to decide whether an integration issue belongs in the supporte
 | Raycast tmux-toggle script | Supported adapter | `./install.sh --force` or `tmux-whisper integrations repair` | Requires `tmux`; uses the same runtime state as the CLI tmux flow. |
 | Raycast cancel script | Supported adapter | `./install.sh --force` or `tmux-whisper integrations repair` | Cancels active tmux or inline state through the shared runtime markers. |
 | SwiftBar plugin | Supported adapter | `./install.sh --force` or `tmux-whisper integrations repair` | Polls runtime state and may receive best-effort refresh requests. The CLI remains usable with SwiftBar off or absent. |
-| Native macOS companion | Experimental/future | None yet | A future prototype will consume stable CLI state and usage contracts; keep it separate from v0.7 adapter lifecycle work. |
+| Finder Quick Action (transcribe files) | Experimental adapter | `tmux-whisper finder install` | Runs `integrations/finder/tmux-whisper-transcribe.sh`, which calls `tmux-whisper transcribe --beside --clipboard`. Not yet covered by `integrations doctor`. |
+| Native macOS app | Planned | None yet | See issue #30: a native app that owns capture, Parakeet, and paste, serving the existing daemon socket so the CLI and tmux flow stay clients. |
 | Alternate backend experiments | Experimental/future | None supported | Parakeet/CoreML is the active runtime path; alternate engines belong outside the near-term support boundary. |
 
 ## Environment Expectations

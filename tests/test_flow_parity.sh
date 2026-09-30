@@ -1254,6 +1254,205 @@ run_status_backend_round() {
   assert_contains "status_backend_model" "$out" "swift_parakeet.model: $CASE_DIR/swift-model (v3)"
 }
 
+assert_path_absent() {
+  local name="$1"
+  local path="$2"
+  if [[ -e "$path" ]]; then
+    echo "Unexpected path: $path" >&2
+    fail "$name"
+  fi
+  pass "$name"
+}
+
+setup_transcribe_case() {
+  setup_case "$1"
+  export DICTATE_TEST_FFPROBE_DURATION_MS=5000
+  export DICTATE_TRANSCRIBE_FILE_LOG="$CASE_DIR/logs/transcribe-file.log"
+  mkdir -p "$CASE_DIR/memos"
+  printf '%s\n' "original memo bytes" >"$CASE_DIR/memos/memo.m4a"
+  cp "$CASE_DIR/memos/memo.m4a" "$CASE_DIR/memo.orig"
+}
+
+run_transcribe_file_raw_round() {
+  setup_transcribe_case "transcribe-raw"
+  # Dictation cleanup that must NOT apply to file transcripts.
+  printf '%s\n' 'codex -> Codex' >"$DICTATE_CONFIG_DIR/vocab"
+  export DICTATE_TEST_SWIFT_TEXT="codex picked a color um [BLANK_AUDIO]"
+  local out
+  out="$("$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" 2>"$CASE_DIR/logs/stderr.txt")"
+
+  assert_equals "transcribe_raw_stdout" "$out" "codex picked a color um"
+  assert_file_contains "transcribe_raw_progress_stderr" "$CASE_DIR/logs/stderr.txt" "Transcribing $CASE_DIR/memos/memo.m4a (5s)"
+  cmp -s "$CASE_DIR/memos/memo.m4a" "$CASE_DIR/memo.orig" || fail "transcribe_raw_original_untouched"
+  pass "transcribe_raw_original_untouched"
+  assert_file_contains "transcribe_raw_ffmpeg_input" "$DICTATE_TEST_FFMPEG_LOG" "$CASE_DIR/memos/memo.m4a -vn"
+  assert_file_contains "transcribe_raw_ffmpeg_format" "$DICTATE_TEST_FFMPEG_LOG" "ac 1 -ar 16000 -c:a pcm_s16le"
+  assert_file_not_contains "transcribe_raw_ffmpeg_never_writes_input" "$DICTATE_TEST_FFMPEG_LOG" "pcm_s16le $CASE_DIR/memos/memo.m4a"
+  assert_path_absent "transcribe_raw_no_clipboard" "$DICTATE_TEST_PBCOPY_OUT"
+  assert_path_absent "transcribe_raw_no_usage_ledger" "$DICTATE_CONFIG_DIR/usage.json"
+  assert_path_absent "transcribe_raw_no_history" "$DICTATE_CONFIG_DIR/history"
+  assert_path_absent "transcribe_raw_no_sounds" "$DICTATE_TEST_SOUND_LOG"
+  assert_path_absent "transcribe_raw_no_swiftbar_refresh" "$DICTATE_SWIFTBAR_REFRESH_LOG"
+  assert_path_absent "transcribe_raw_no_osascript" "$DICTATE_TEST_OSASCRIPT_LOG"
+  if compgen -G "$CASE_DIR/tmp/tmux-whisper-transcribe.*" >/dev/null; then
+    fail "transcribe_raw_temp_cleaned"
+  fi
+  pass "transcribe_raw_temp_cleaned"
+}
+
+run_transcribe_file_outputs_round() {
+  setup_transcribe_case "transcribe-outputs"
+  export DICTATE_TEST_SWIFT_TEXT="file transcript text"
+  local out rc
+
+  out="$("$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" --beside -q)"
+  assert_equals "transcribe_beside_stdout_empty" "$out" ""
+  assert_file_contains "transcribe_beside_written" "$CASE_DIR/memos/memo.txt" "file transcript text"
+
+  rc=0
+  "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" --beside -q 2>"$CASE_DIR/logs/exists.txt" || rc=$?
+  assert_equals "transcribe_beside_exists_exit" "$rc" "1"
+  assert_file_contains "transcribe_beside_exists_message" "$CASE_DIR/logs/exists.txt" "use --force to overwrite"
+  assert_file_not_contains "transcribe_exists_fails_before_decode" "$CASE_DIR/logs/exists.txt" "Transcribing"
+
+  printf '%s\n' "stale" >"$CASE_DIR/memos/memo.txt"
+  "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" --beside --force -q
+  assert_file_contains "transcribe_beside_force" "$CASE_DIR/memos/memo.txt" "file transcript text"
+  assert_file_not_contains "transcribe_beside_force_replaced" "$CASE_DIR/memos/memo.txt" "stale"
+
+  "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" -o "$CASE_DIR/out/one.txt" -q
+  assert_file_contains "transcribe_output_file" "$CASE_DIR/out/one.txt" "file transcript text"
+
+  cp "$CASE_DIR/memos/memo.m4a" "$CASE_DIR/memos/second.mp3"
+  "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" "$CASE_DIR/memos/second.mp3" --out-dir "$CASE_DIR/out-dir" --format json -q
+  assert_file_contains "transcribe_out_dir_json_first" "$CASE_DIR/out-dir/memo.json" '"text": "file transcript text"'
+  assert_file_contains "transcribe_out_dir_json_duration" "$CASE_DIR/out-dir/second.json" '"audio_duration_ms": 5000'
+
+  out="$("$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" "$CASE_DIR/memos/second.mp3" -q -c)"
+  assert_contains "transcribe_multi_header_first" "$out" "==> $CASE_DIR/memos/memo.m4a <=="
+  assert_contains "transcribe_multi_header_second" "$out" "==> $CASE_DIR/memos/second.mp3 <=="
+  assert_file_contains "transcribe_clipboard_combined" "$DICTATE_TEST_PBCOPY_OUT" "file transcript text"
+
+  out="$("$DICTATE_BIN" transcribe - --format json -q <"$CASE_DIR/memos/memo.m4a")"
+  assert_contains "transcribe_stdin_json_file" "$out" '"file": "stdin"'
+  assert_contains "transcribe_stdin_json_engine" "$out" '"engine": "swift_parakeet"'
+}
+
+run_transcribe_file_errors_round() {
+  setup_transcribe_case "transcribe-errors"
+  local rc out
+
+  rc=0
+  "$DICTATE_BIN" transcribe "$CASE_DIR/memos/missing.m4a" >/dev/null 2>"$CASE_DIR/logs/missing.txt" || rc=$?
+  assert_equals "transcribe_missing_exit" "$rc" "2"
+  assert_file_contains "transcribe_missing_message" "$CASE_DIR/logs/missing.txt" "not a readable file"
+
+  rc=0
+  "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" "$CASE_DIR/memo.orig" -o "$CASE_DIR/x.txt" >/dev/null 2>&1 || rc=$?
+  assert_equals "transcribe_output_single_input_exit" "$rc" "2"
+
+  rc=0
+  "$DICTATE_BIN" transcribe - --beside </dev/null >/dev/null 2>&1 || rc=$?
+  assert_equals "transcribe_stdin_beside_rejected" "$rc" "2"
+
+  export DICTATE_TEST_SWIFT_DAEMON_FAIL=1
+  rc=0
+  out="$("$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" --beside -q 2>"$CASE_DIR/logs/daemon.txt")" || rc=$?
+  assert_equals "transcribe_daemon_fail_exit" "$rc" "1"
+  assert_equals "transcribe_daemon_fail_no_stdout" "$out" ""
+  assert_file_contains "transcribe_daemon_fail_message" "$CASE_DIR/logs/daemon.txt" "transcription failed"
+  assert_path_absent "transcribe_daemon_fail_no_output_file" "$CASE_DIR/memos/memo.txt"
+}
+
+run_transcribe_file_no_speech_round() {
+  setup_transcribe_case "transcribe-no-speech"
+  export DICTATE_TEST_SWIFT_TEXT="[BLANK_AUDIO]"
+  local rc=0
+  "$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" -q >/dev/null 2>"$CASE_DIR/logs/silent.txt" || rc=$?
+  assert_equals "transcribe_no_speech_exit" "$rc" "1"
+  assert_file_contains "transcribe_no_speech_message" "$CASE_DIR/logs/silent.txt" "no speech detected"
+}
+
+run_transcribe_file_long_round() {
+  setup_transcribe_case "transcribe-long"
+  # Files rely on FluidAudio's own chunking; the quarantined bash chunker must
+  # not engage even when enabled for dictation.
+  export DICTATE_SWIFT_PARAKEET_CHUNKING=1
+  export DICTATE_TEST_FFPROBE_DURATION_MS=1200000
+  export DICTATE_TEST_SWIFT_TEXT_SEQUENCE="alpha beta gamma delta epsilon zeta|epsilon zeta eta theta"
+  local out
+  out="$("$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" -q)"
+  assert_equals "transcribe_long_tail_rescue_merge" "$out" "alpha beta gamma delta epsilon zeta eta theta"
+  assert_file_contains "transcribe_long_tail_rescue_logged" "$DICTATE_TRANSCRIBE_FILE_LOG" "swift_parakeet_tail_rescue: duration_ms=1200000"
+  assert_file_not_contains "transcribe_long_no_bash_chunker" "$DICTATE_TRANSCRIBE_FILE_LOG" "swift_parakeet_chunked"
+  assert_path_absent "transcribe_long_dictation_log_untouched" "$DICTATE_TRANSCRIBE_LOG"
+}
+
+run_transcribe_file_no_tail_rescue_round() {
+  setup_transcribe_case "transcribe-no-tail"
+  export DICTATE_TEST_FFPROBE_DURATION_MS=1200000
+  export DICTATE_TEST_SWIFT_TEXT_SEQUENCE="only the main pass|should not appear"
+  local out
+  out="$("$DICTATE_BIN" transcribe "$CASE_DIR/memos/memo.m4a" -q --no-tail-rescue)"
+  assert_equals "transcribe_no_tail_rescue" "$out" "only the main pass"
+  assert_file_not_contains "transcribe_no_tail_rescue_logged" "$DICTATE_TRANSCRIBE_FILE_LOG" "swift_parakeet_tail_rescue"
+}
+
+
+run_finder_quick_action_round() {
+  setup_case "finder-quick-action"
+  local services="$CASE_DIR/services" workflow out
+  workflow="$services/Transcribe with Tmux Whisper.workflow"
+
+  out="$(DICTATE_SERVICES_DIR="$services" "$DICTATE_BIN" finder install)"
+  assert_contains "finder_install_message" "$out" "Installed Finder Quick Action: Transcribe with Tmux Whisper"
+  assert_contains "finder_install_handler" "$out" "handler: $ROOT/integrations/finder/tmux-whisper-transcribe.sh"
+  WORKFLOW="$workflow" HANDLER="$ROOT/integrations/finder/tmux-whisper-transcribe.sh" python3 - <<'PYEOF2'
+import os, plistlib
+wf = os.environ["WORKFLOW"]
+info = plistlib.load(open(os.path.join(wf, "Contents/Info.plist"), "rb"))
+service = info["NSServices"][0]
+assert service["NSMenuItem"]["default"] == "Transcribe with Tmux Whisper"
+assert service["NSRequiredContext"]["NSApplicationIdentifier"] == "com.apple.finder"
+assert "public.audio" in service["NSSendFileTypes"]
+doc = plistlib.load(open(os.path.join(wf, "Contents/document.wflow"), "rb"))
+params = doc["actions"][0]["action"]["ActionParameters"]
+assert params["inputMethod"] == 1, params["inputMethod"]
+assert params["shell"] == "/bin/bash"
+assert os.environ["HANDLER"] in params["COMMAND_STRING"]
+assert doc["workflowMetaData"]["workflowTypeIdentifier"] == "com.apple.Automator.servicesMenu"
+PYEOF2
+  pass "finder_install_workflow_plists"
+
+  out="$(DICTATE_SERVICES_DIR="$services" "$DICTATE_BIN" finder status)"
+  assert_contains "finder_status_installed" "$out" "(installed)"
+  out="$(DICTATE_SERVICES_DIR="$services" "$DICTATE_BIN" finder remove)"
+  assert_contains "finder_remove_message" "$out" "Removed Finder Quick Action"
+  assert_path_absent "finder_remove_workflow" "$workflow"
+}
+
+run_finder_handler_round() {
+  setup_case "finder-handler"
+  local stub="$CASE_DIR/stub-cli" args_log="$CASE_DIR/logs/cli-args.txt" notify_log="$CASE_DIR/logs/notify.txt"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s"\nexit "${STUB_CLI_EXIT:-0}"\n' "$args_log" >"$stub"
+  chmod +x "$stub"
+  mkdir -p "$CASE_DIR/memos"
+  : >"$CASE_DIR/memos/idea one.m4a"
+
+  DICTATE_BIN="$stub" DICTATE_FINDER_NOTIFY_LOG="$notify_log" DICTATE_FINDER_TRANSCRIBE_LOG="$CASE_DIR/logs/finder.log" \
+    bash "$ROOT/integrations/finder/tmux-whisper-transcribe.sh" "$CASE_DIR/memos/idea one.m4a"
+  assert_file_contains "finder_handler_cli_args" "$args_log" "transcribe --beside --clipboard $CASE_DIR/memos/idea one.m4a"
+  assert_file_contains "finder_handler_notify_start" "$notify_log" "Transcribing idea one.m4a..."
+  assert_file_contains "finder_handler_notify_done" "$notify_log" "Saved idea one.txt and copied it to the clipboard."
+
+  local rc=0
+  printf 'tmux-whisper: output exists (use --force to overwrite): x.txt\n' >>"$CASE_DIR/logs/finder.log"
+  STUB_CLI_EXIT=1 DICTATE_BIN="$stub" DICTATE_FINDER_NOTIFY_LOG="$notify_log" DICTATE_FINDER_TRANSCRIBE_LOG="$CASE_DIR/logs/finder.log" \
+    bash "$ROOT/integrations/finder/tmux-whisper-transcribe.sh" "$CASE_DIR/memos/idea one.m4a" || rc=$?
+  assert_equals "finder_handler_failure_exit_clean" "$rc" "0"
+  assert_file_contains "finder_handler_notify_failure" "$notify_log" "Transcription failed: output exists"
+}
+
 write_stubs
 run_tmux_round "enter"
 run_tmux_round "codex"
@@ -1280,6 +1479,14 @@ run_tmux_audio_cache_note_round
 run_status_postprocess_round
 run_status_model_mode_round
 run_status_backend_round
+run_transcribe_file_raw_round
+run_transcribe_file_outputs_round
+run_transcribe_file_errors_round
+run_transcribe_file_no_speech_round
+run_transcribe_file_long_round
+run_transcribe_file_no_tail_rescue_round
+run_finder_quick_action_round
+run_finder_handler_round
 
 assert_registered_stub_process
 cleanup_stub_daemons

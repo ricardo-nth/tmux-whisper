@@ -1,5 +1,14 @@
 # Tmux Whisper changelog
 
+## v0.8.0 — Unreleased
+
+- **Audio-file transcription**: `tmux-whisper transcribe <file|->...` transcribes voice memos and other recordings (anything ffmpeg decodes) with the local Parakeet model and prints the raw transcript. Options: `-o FILE`, `--beside`, `--out-dir DIR`, `-c/--clipboard`, `--format txt|json`, `--force`, `--no-tail-rescue`, `-q`.
+  - Inputs are decoded into a private 16 kHz mono WAV (sub-second clips padded to Parakeet's 1s minimum); the original is never modified.
+  - Output is raw: no vocab, British spelling, filler/repeat, mode, or LLM cleanup. File transcripts never touch history, the usage ledger, sounds, paste targets, or SwiftBar.
+  - Long files use FluidAudio's own chunking (the quarantined bash chunker is never used); the daemon socket timeout scales with audio length, and file jobs log to their own transcribe log so they cannot clobber the dictation log.
+  - Output destinations are validated before transcription, so an existing file fails fast; writes are atomic and existing files need `--force`.
+- **Finder Quick Action**: `tmux-whisper finder install|remove|status` manages a "Transcribe with Tmux Whisper" Quick Action for audio/video files that writes `<name>.txt` beside each file, copies the transcript to the clipboard, and posts a notification. The handler ships in `integrations/finder/` and in the installed adapter snapshot.
+
 ## v0.7.0 — 2026-09-30
 
 - **Integration lifecycle**: `tmux-whisper integrations`, `integrations doctor`, and adapter-only `integrations repair` now inspect and refresh Raycast and SwiftBar adapters. They report source provenance and explicit adapter versions; `repair --dry-run` previews changes before mutation.

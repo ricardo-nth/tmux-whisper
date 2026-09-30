@@ -70,6 +70,21 @@ if [[ "$output" != *"tmux-whisper history sessions [N] [--json]"* ]]; then
   echo "Expected help output to document history sessions" >&2
   exit 1
 fi
+if [[ "$output" != *"tmux-whisper transcribe <file>..."* ]]; then
+  echo "Expected help output to document file transcription" >&2
+  exit 1
+fi
+transcribe_help="$(HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= "$BIN_DIR/tmux-whisper" transcribe --help)"
+if [[ "$transcribe_help" != *"usage: tmux-whisper transcribe <file|->..."* || "$transcribe_help" != *"--beside"* ]]; then
+  echo "Expected transcribe --help to describe inputs and output options" >&2
+  exit 1
+fi
+transcribe_rc=0
+HOME="$HOME_DIR" PATH="$BIN_DIR:/usr/bin:/bin" DICTATE_LIB_PATH= "$BIN_DIR/tmux-whisper" transcribe >/dev/null 2>&1 || transcribe_rc=$?
+if [[ "$transcribe_rc" != "2" ]]; then
+  echo "Expected transcribe without inputs to exit 2 (got $transcribe_rc)" >&2
+  exit 1
+fi
 if [[ "$output" != *"tmux-whisper usage [--json]"* ]]; then
   echo "Expected help output to document durable usage summary" >&2
   exit 1

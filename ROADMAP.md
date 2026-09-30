@@ -91,7 +91,7 @@ Focus: turn trusted local usage data into small, useful surfaces without changin
 - **Durable CLI usage metrics** ([#29](https://github.com/ricardo-nth/tmux-whisper/issues/29)): complete. The CLI persists privacy-preserving aggregates for successful deliveries and exposes coverage plus estimated typing-time assumptions in text and JSON.
 - **SwiftBar usage metrics** ([#31](https://github.com/ricardo-nth/tmux-whisper/issues/31)): complete. The ready menu consumes the CLI usage summary while recording and processing remain clear.
 - **Native macOS app** ([#30](https://github.com/ricardo-nth/tmux-whisper/issues/30)): the shell-out companion prototype (#33) was closed. The revised plan extracts a shared Swift kit from `tmux-whisperd`, then builds a signed menu bar app that owns hotkey, capture, Parakeet, paste, and sounds, and serves the existing daemon socket so the CLI and tmux flow become clients. Raycast and SwiftBar stay available until it replaces them.
-- **Audio-file transcription** (v0.8): `tmux-whisper transcribe <file>` for voice memos (m4a/mp3/wav/ogg via ffmpeg) with raw Parakeet output, excluded from dictation usage and history. The native app later exposes it through drag-and-drop and a Finder Quick Action.
+- **Audio-file transcription** (v0.8): `tmux-whisper transcribe <file>` for voice memos with raw Parakeet output, excluded from dictation usage and history, plus a Finder Quick Action (`tmux-whisper finder install`). Next steps: daemon-side progress events and timestamped `srt`/`vtt`/segment output from Parakeet token timings; letting a long file job run without blocking dictation; drag-and-drop in the native app.
 
 Success criteria:
 

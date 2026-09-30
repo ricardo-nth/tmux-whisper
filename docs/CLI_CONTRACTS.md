@@ -77,6 +77,11 @@ These are useful but not yet promised as stable contracts:
   - Human-readable adapter-only repair action for Raycast scripts and the SwiftBar plugin. It creates missing adapter directories, refreshes adapter files from the recorded source tree, ensures executable bits, and backs up replaced adapter files.
 - `tmux-whisper swiftbar refresh`
   - Human-readable, best-effort event refresh for the SwiftBar plugin. It is safe when SwiftBar is missing and exists to accelerate polling after lifecycle transitions, not to replace polling as the correctness mechanism.
+- `tmux-whisper transcribe <file>... --format json`
+  - One JSON object per input, newline-delimited: `file`, `text`, `audio_duration_ms`, `processing_ms`, `model`, `engine`. `text` is the raw Parakeet transcript with no dictation cleanup. Stdin input reports `file: "stdin"`. Exit status is non-zero if any input fails; successful inputs are still emitted.
+  - File transcripts are not deliveries: they never appear in `history` or `usage`.
+- `tmux-whisper finder install|remove|status`
+  - Human-readable management of the Finder Quick Action (`~/Library/Services/Transcribe with Tmux Whisper.workflow`).
 - `tmux-whisper logs follow ... --json`
   - Streaming newline-delimited JSON events. Treat event names as provisional.
 - `tmux-whisper watch ...`

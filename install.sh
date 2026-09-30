@@ -208,6 +208,8 @@ rm -rf "$ADAPTER_SHARE_DIR/integrations"
 mkdir -p "$ADAPTER_SHARE_DIR/integrations/raycast"
 install -m 0755 "$REPO_ROOT/integrations/raycast/"*.sh "$ADAPTER_SHARE_DIR/integrations/raycast/"
 install -m 0755 "$REPO_ROOT/integrations/tmux-whisper-status.0.2s.sh" "$ADAPTER_SHARE_DIR/integrations/tmux-whisper-status.0.2s.sh"
+mkdir -p "$ADAPTER_SHARE_DIR/integrations/finder"
+install -m 0755 "$REPO_ROOT/integrations/finder/tmux-whisper-transcribe.sh" "$ADAPTER_SHARE_DIR/integrations/finder/tmux-whisper-transcribe.sh"
 
 if [[ "$INSTALL_SWIFTBAR" == "1" ]]; then
   mkdir -p "$SWIFTBAR_DIR"
