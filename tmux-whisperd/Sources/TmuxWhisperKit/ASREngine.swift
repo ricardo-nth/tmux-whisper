@@ -51,8 +51,9 @@ actor SerialGate {
 
 /// Parakeet (FluidAudio) speech recognition with a warm, reusable model.
 ///
-/// FluidAudio's `AsrManager` is a non-thread-safe class with per-stream decoder
-/// state, so model loading and transcription run one at a time through a gate.
+/// FluidAudio's `AsrManager` is an actor, but actors are reentrant at `await`
+/// points and it keeps per-source decoder state, so two transcriptions must not
+/// interleave. Model loading and transcription run one at a time through a gate.
 public actor ASREngine {
   private var currentKey: LoadedModelKey?
   private var manager: AsrManager?
@@ -76,7 +77,6 @@ public actor ASREngine {
     }
   }
 
-  // Runs on the actor so the non-Sendable AsrManager never leaves it.
   private func runTranscription(
     audioURL: URL,
     modelURL: URL,
@@ -89,9 +89,6 @@ public actor ASREngine {
     }
 
     let started = ContinuousClock.now
-    // FluidAudio's nonisolated async API on a non-Sendable class makes Swift
-    // warn about "sending 'manager'". Exclusive use is guaranteed by `gate`:
-    // no other task touches this manager until this call returns.
     let result = try await manager.transcribe(audioURL, source: .system)
     return TranscriptionResult(
       text: result.text,
