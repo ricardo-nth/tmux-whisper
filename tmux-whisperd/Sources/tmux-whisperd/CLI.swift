@@ -1,4 +1,5 @@
 import Foundation
+import TmuxWhisperKit
 
 enum CLIError: Error, LocalizedError {
   case usage(String)
@@ -32,14 +33,30 @@ enum TmuxWhisperdMain {
     switch command {
     case "serve":
       let socketPath = try parseSocketPath(arguments)
-      let server = UnixSocketServer(socketPath: socketPath, service: TranscriptionService())
+      let server = UnixSocketServer(socketPath: socketPath, handler: TranscriptionService())
+      let signalSources = installShutdownHandlers(server: server)
+      defer { signalSources.forEach { $0.cancel() } }
       try await server.run()
     case "version", "--version":
-      print("tmux-whisperd 0.1.0")
+      print("tmux-whisperd \(DaemonInfo.daemonVersion)")
     case "help", "-h", "--help":
       printUsage()
     default:
       throw CLIError.usage("unknown command: \(command)")
+    }
+  }
+
+  /// Stop cleanly on SIGTERM/SIGINT so the socket file is removed.
+  private static func installShutdownHandlers(server: UnixSocketServer) -> [DispatchSourceSignal] {
+    [SIGTERM, SIGINT].map { signalNumber in
+      signal(signalNumber, SIG_IGN)
+      let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
+      source.setEventHandler {
+        server.stop()
+        exit(0)
+      }
+      source.resume()
+      return source
     }
   }
 
