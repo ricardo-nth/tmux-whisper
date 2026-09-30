@@ -24,6 +24,24 @@ recording_resolve_audio_context() {
   preferred_audio_name="${DICTATE_AUDIO_NAME:-${CFG_AUDIO_DEVICE_NAME:-MacBook Air Microphone}}"
   RECORDING_PREFERRED_AUDIO_NAME="$preferred_audio_name"
 
+  # Inline capture opens the device by name when the source is `mac` or
+  # `name`, so resolving an index is unnecessary on the hot path. That lookup
+  # enumerates devices through ffmpeg when the cache is stale (0.5-3.4s in real
+  # use); if opening by name fails, inline_start's retry resolves the index.
+  if [[ "$flow" == "inline" && -z "${DICTATE_AUDIO_INDEX:-}" ]]; then
+    local name_selector=""
+    case "$configured_audio_source" in
+      mac) name_selector="$mac_audio_name" ;;
+      name) name_selector="$preferred_audio_name" ;;
+    esac
+    if [[ -n "$name_selector" ]]; then
+      RECORDING_AUDIO_SOURCE="name:source(${configured_audio_source}):name(${name_selector})"
+      RECORDING_AUDIO_SELECTOR="$name_selector"
+      RECORDING_AUDIO_SELECTOR_KIND="name"
+      return 0
+    fi
+  fi
+
   local audio_index="${DICTATE_AUDIO_INDEX:-}"
   if [[ -n "$audio_index" ]]; then
     RECORDING_AUDIO_SOURCE="env:DICTATE_AUDIO_INDEX"
@@ -53,23 +71,6 @@ recording_resolve_audio_context() {
   RECORDING_AUDIO_INDEX="$audio_index"
   RECORDING_AUDIO_SELECTOR="$audio_index"
   RECORDING_AUDIO_SELECTOR_KIND="index"
-
-  if [[ "$flow" == "inline" && -z "${DICTATE_AUDIO_INDEX:-}" ]]; then
-    case "$configured_audio_source" in
-      mac)
-        if [[ -n "$mac_audio_name" ]]; then
-          RECORDING_AUDIO_SELECTOR="$mac_audio_name"
-          RECORDING_AUDIO_SELECTOR_KIND="name"
-        fi
-        ;;
-      name)
-        if [[ -n "$preferred_audio_name" ]]; then
-          RECORDING_AUDIO_SELECTOR="$preferred_audio_name"
-          RECORDING_AUDIO_SELECTOR_KIND="name"
-        fi
-        ;;
-    esac
-  fi
 }
 
 recording_retry_audio_index() {

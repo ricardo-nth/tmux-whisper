@@ -2,6 +2,10 @@
 
 ## v0.9.0 — Unreleased
 
+- **Faster inline start**: measured on 796 real inline runs, the time before you can speak was dominated by (a) a device-index lookup that enumerated audio devices through ffmpeg whenever the cache was over 6 hours old or devices changed (0.5–3.4 s, about 8% of starts, typically the first dictation of the day), and (b) the start chime, which `afplay` takes ~0.3–0.9 s to make audible.
+  - Inline capture with `audio.source = "mac"` or `"name"` opens the microphone by name and no longer resolves a device index at start. If opening by name fails, the existing retry resolves the index (now covered by a test).
+  - The start chime is triggered as soon as `inline start` runs, overlapping with device and ffmpeg setup instead of queueing behind them.
+  - Transcription itself was not the cause: short clips take ~0.8 s regardless of idle time, and larger times track recording length.
 - **TmuxWhisperKit (native app, phase 1 of #30)**: `tmux-whisperd` is now a thin executable over a reusable Swift library, `TmuxWhisperKit`: the daemon protocol, `ASREngine` (Parakeet via FluidAudio), `TranscriptionService`, and `UnixSocketServer`. The planned menu-bar app will link it in-process. Daemon version 0.2.0.
 - **Daemon no longer serves one client at a time**: accept runs on its own thread and each client gets a thread, so a ping answers in about a millisecond while a long file transcription runs. Requests are capped at 1 MiB and idle clients time out after 10 s instead of blocking the daemon. The socket is created `0600`, a regular file at the socket path is never replaced, and SIGTERM removes the socket.
 - **Builds on the current stable toolchain**: FluidAudio 0.12.4 failed to compile under Swift 6.3 (Xcode 26's stable toolchain) with data-race errors, so source builds of the daemon failed there, including for v0.8.0. Now pinned to 0.12.6, which makes `AsrManager` an actor, and constrained to the 0.12 line: 0.13+ changes the transcription API and model files and needs its own migration.

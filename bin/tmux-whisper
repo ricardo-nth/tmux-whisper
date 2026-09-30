@@ -5946,6 +5946,12 @@ inline_start() {
 
   [[ ! -f "$INLINE_STATE_FILE" ]] || die "already recording. Run: tmux-whisper inline stop"
 
+  # The chime is the user's cue to speak. afplay takes ~0.3-0.9s to become
+  # audible, so start it now and let device/ffmpeg setup (~50ms) overlap
+  # with it instead of queueing it behind them. Capture starts well before
+  # the chime is heard.
+  play_sound start
+
   local model_id
   model_id="$(current_transcribe_model_label)"
   local inline_session_id
@@ -6080,7 +6086,6 @@ inline_start() {
   maybe_warmup_swift_parakeet_in_background
 
   swiftbar_refresh
-  play_sound start
   echo "🎙️ RECORDING → inline"
 }
 

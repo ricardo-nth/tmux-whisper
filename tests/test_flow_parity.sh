@@ -264,6 +264,7 @@ write_stubs() {
 set -euo pipefail
 
 if [[ "$*" == *"-list_devices true"* ]]; then
+  [[ -n "${DICTATE_TEST_FFMPEG_LIST_LOG:-}" ]] && printf 'list_devices\n' >>"$DICTATE_TEST_FFMPEG_LIST_LOG"
   cat >&2 <<'OUT'
 [AVFoundation input device @ 0x0] AVFoundation audio devices:
 [AVFoundation input device @ 0x0] [0] MacBook Air Microphone
@@ -275,6 +276,12 @@ fi
 
 if [[ -n "${DICTATE_TEST_FFMPEG_LOG:-}" ]]; then
   printf '%s\n' "$*" >>"$DICTATE_TEST_FFMPEG_LOG"
+fi
+
+# Simulate a device that can't be opened by name (renamed/unplugged).
+if [[ "${DICTATE_TEST_FFMPEG_FAIL_NAME:-0}" == "1" && "$*" == *"-i :MacBook Air Microphone"* ]]; then
+  echo "[avfoundation] Could not find audio device with name MacBook Air Microphone" >&2
+  exit 1
 fi
 
 out="${!#}"
@@ -900,13 +907,7 @@ run_inline_processing_marker_immediate_after_stop_round() {
   wait_for_file_contains "$DICTATE_TEST_PBCOPY_OUT" "inline immediate marker transcript" || fail "inline_processing_immediate_paste_done"
 }
 
-run_inline_audio_cache_note_round() {
-  setup_case "inline-audio-cache"
-  export DICTATE_TEST_FFMPEG_HOLD=1
-  export DICTATE_TEST_SWIFT_TEXT="inline audio cache transcript"
-  export DICTATE_AUTOSEND=1
-  unset DICTATE_AUDIO_INDEX
-
+write_stale_mac_audio_cache() {
   cat >"$CASE_DIR/config/config.toml" <<'EOF'
 [meta]
 config_version = 1
@@ -915,7 +916,6 @@ config_version = 1
 source = "mac"
 mac_name = "MacBook Air Microphone"
 EOF
-
   mkdir -p "$CASE_DIR/config/.cache"
   cat >"$CASE_DIR/config/.cache/audio-index.sh" <<'EOF'
 CACHED_AUDIO_KEY=source=mac\;preferred=MacBook\ Air\ Microphone\;mac=MacBook\ Air\ Microphone\;iphone=
@@ -925,57 +925,53 @@ CACHED_AUDIO_INDEX=1
 CACHED_AUDIO_AT=2026-03-20T08:47:56Z
 EOF
   touch -t 202603200847 "$CASE_DIR/config/.cache/audio-index.sh" 2>/dev/null || true
+}
+
+run_inline_by_name_skips_device_lookup_round() {
+  setup_case "inline-by-name-no-lookup"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline by name transcript"
+  export DICTATE_AUTOSEND=1
+  export DICTATE_TEST_FFMPEG_LIST_LOG="$CASE_DIR/logs/ffmpeg-list.log"
+  unset DICTATE_AUDIO_INDEX
+  # A stale cache used to force a device enumeration (seconds) at start.
+  write_stale_mac_audio_cache
+  local cache_file="$CASE_DIR/config/.cache/audio-index.sh" before start_out stop_out
+  before="$(cat "$cache_file")"
+
+  start_out="$(DICTATE_AUDIO_CACHE_SKIP_VALIDATE=0 "$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_by_name_start" "$start_out" "RECORDING"
+  assert_file_contains "inline_by_name_ffmpeg_selector" "$DICTATE_TEST_FFMPEG_LOG" "avfoundation -i :MacBook Air Microphone"
+  [[ -e "$DICTATE_TEST_FFMPEG_LIST_LOG" ]] && fail "inline_by_name_no_device_enumeration"
+  pass "inline_by_name_no_device_enumeration"
+  assert_equals "inline_by_name_cache_untouched" "$(cat "$cache_file")" "$before"
+  assert_contains "inline_by_name_startup_source" "$(. "$DICTATE_INLINE_STATE_FILE"; printf '%s' "$startup_audio_source")" "name:source(mac):name(MacBook Air Microphone)"
+
+  stop_out="$("$DICTATE_BIN" inline toggle)"
+  assert_contains "inline_by_name_stop" "$stop_out" "STOPPED"
+  unset DICTATE_TEST_FFMPEG_LIST_LOG
+}
+
+run_inline_by_name_failure_falls_back_to_index_round() {
+  setup_case "inline-by-name-fallback"
+  export DICTATE_TEST_FFMPEG_HOLD=1
+  export DICTATE_TEST_SWIFT_TEXT="inline fallback transcript"
+  export DICTATE_AUTOSEND=1
+  export DICTATE_TEST_FFMPEG_FAIL_NAME=1
+  unset DICTATE_AUDIO_INDEX
+  write_stale_mac_audio_cache
 
   local start_out stop_out inline_record_log
   inline_record_log="$CASE_DIR/tmp/whisper-dictate-inline.record.log"
-
   start_out="$(DICTATE_AUDIO_CACHE_SKIP_VALIDATE=0 "$DICTATE_BIN" inline toggle)"
-  assert_contains "inline_audio_cache_start" "$start_out" "RECORDING"
+  assert_contains "inline_fallback_start" "$start_out" "RECORDING"
+  # The name failed, so the index was re-resolved (stale cache replaced) and used.
+  assert_file_contains "inline_fallback_index_selector" "$DICTATE_TEST_FFMPEG_LOG" "avfoundation -i :0"
+  assert_file_contains "inline_fallback_cache_note" "$inline_record_log" "audio cache: stale cache invalidated: cached idx=1 name=MacBook Air Microphone match=mac at=2026-03-20T08:47:56Z; re-resolved idx=0 match=mac name=MacBook Air Microphone"
 
   stop_out="$("$DICTATE_BIN" inline toggle)"
-  assert_contains "inline_audio_cache_stop" "$stop_out" "STOPPED"
-
-  assert_file_contains "inline_audio_cache_log_note" "$inline_record_log" "audio cache: stale cache invalidated: cached idx=1 name=MacBook Air Microphone match=mac at=2026-03-20T08:47:56Z; re-resolved idx=0 match=mac name=MacBook Air Microphone"
-}
-
-run_inline_audio_cache_refresh_round() {
-  setup_case "inline-audio-cache-refresh"
-  export DICTATE_TEST_FFMPEG_HOLD=1
-  export DICTATE_TEST_SWIFT_TEXT="inline audio cache refresh transcript"
-  export DICTATE_AUTOSEND=1
-  unset DICTATE_AUDIO_INDEX
-
-  cat >"$CASE_DIR/config/config.toml" <<'EOF'
-[meta]
-config_version = 1
-
-[audio]
-source = "mac"
-mac_name = "MacBook Air Microphone"
-EOF
-
-  mkdir -p "$CASE_DIR/config/.cache"
-  cat >"$CASE_DIR/config/.cache/audio-index.sh" <<'EOF'
-CACHED_AUDIO_KEY=source=mac\;preferred=MacBook\ Air\ Microphone\;mac=MacBook\ Air\ Microphone\;iphone=
-CACHED_AUDIO_NAME=MacBook\ Air\ Microphone
-CACHED_AUDIO_MATCH=mac
-CACHED_AUDIO_INDEX=0
-CACHED_AUDIO_AT=2026-03-20T08:47:56Z
-EOF
-
-  local start_out stop_out inline_record_log cache_file
-  inline_record_log="$CASE_DIR/tmp/whisper-dictate-inline.record.log"
-  cache_file="$CASE_DIR/config/.cache/audio-index.sh"
-
-  start_out="$(DICTATE_AUDIO_CACHE_SKIP_VALIDATE=0 "$DICTATE_BIN" inline toggle)"
-  assert_contains "inline_audio_cache_refresh_start" "$start_out" "RECORDING"
-  assert_file_not_contains "inline_audio_cache_refresh_no_stale_note" "$inline_record_log" "stale cache invalidated"
-  assert_file_contains "inline_audio_cache_refresh_index" "$cache_file" "CACHED_AUDIO_INDEX=0"
-  wait_for_file_not_contains "$cache_file" "CACHED_AUDIO_AT=2026-03-20T08:47:56Z" || fail "inline_audio_cache_refresh_timestamp_rewritten"
-  pass "inline_audio_cache_refresh_timestamp_rewritten"
-
-  stop_out="$("$DICTATE_BIN" inline toggle)"
-  assert_contains "inline_audio_cache_refresh_stop" "$stop_out" "STOPPED"
+  assert_contains "inline_fallback_stop" "$stop_out" "STOPPED"
+  unset DICTATE_TEST_FFMPEG_FAIL_NAME
 }
 
 run_inline_keep_logs_archive_round() {
@@ -1612,8 +1608,8 @@ run_inline_toggle_process_sound_immediate_round
 run_inline_cancel_refresh_round
 run_inline_processing_marker_immediate_after_stop_round
 run_inline_processing_marker_until_paste_round
-run_inline_audio_cache_note_round
-run_inline_audio_cache_refresh_round
+run_inline_by_name_skips_device_lookup_round
+run_inline_by_name_failure_falls_back_to_index_round
 run_inline_keep_logs_archive_round
 run_inline_audio_retention_round
 run_inline_swift_round
