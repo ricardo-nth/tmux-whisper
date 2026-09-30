@@ -23,8 +23,8 @@ Any arguments after `bash -s --` are forwarded to install.sh.
 Examples:
   curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash
   curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --force
-  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --ref v0.8.0 --force
-  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.8.0/bootstrap.sh | bash -s -- --no-sounds
+  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/main/bootstrap.sh | bash -s -- --ref v0.9.0 --force
+  curl -fsSL https://raw.githubusercontent.com/ricardo-nth/tmux-whisper/v0.9.0/bootstrap.sh | bash -s -- --no-sounds
 USAGE
 }
 

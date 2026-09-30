@@ -1,6 +1,6 @@
 # Tmux Whisper changelog
 
-## v0.9.0 — Unreleased
+## v0.9.0 — 2026-09-30
 
 - **Faster inline start**: measured on 796 real inline runs, the time before you can speak was dominated by (a) a device-index lookup that enumerated audio devices through ffmpeg whenever the cache was over 6 hours old or devices changed (0.5–3.4 s, about 8% of starts, typically the first dictation of the day), and (b) the start chime, which `afplay` takes ~0.3–0.9 s to make audible.
   - Inline capture with `audio.source = "mac"` or `"name"` opens the microphone by name and no longer resolves a device index at start. If the device can't be opened by name, the start now falls back to resolving an index. Previously that retry could never fire: recording was declared live once ffmpeg was merely running (~160 ms), but ffmpeg takes 0.2–0.8 s to give up on a missing device, so the failure only surfaced at stop. Recording is now live once ffmpeg writes output, or after ~1.2 s still running.
@@ -11,6 +11,7 @@
 - **Builds on the current stable toolchain**: FluidAudio 0.12.4 failed to compile under Swift 6.3 (Xcode 26's stable toolchain) with data-race errors, so source builds of the daemon failed there, including for v0.8.0. Now pinned to 0.12.6, which makes `AsrManager` an actor, and constrained to the 0.12 line: 0.13+ changes the transcription API and model files and needs its own migration.
 - **Safe concurrency**: model loading and transcription run through a serial gate even with concurrent clients, because FluidAudio keeps per-source decoder state and actors are reentrant at `await` points.
 - **Daemon updates now reach existing installs**: the CLI hashes the daemon sources, rebuilds when they change, and records which build a running daemon came from. `install.sh` (and bootstrap) start a background refresh that rebuilds and swaps the daemon only when nothing is recording, processing, or in flight. Dictation never waits for a rebuild: an out-of-date binary is used immediately while the refresh runs. A failed rebuild keeps the working binary.
+- **Homebrew installs ship the daemon source** (`share/tmux-whisper/tmux-whisperd`), so brew-only installs can build the Parakeet backend without a local clone or `install.sh`.
 - **Builds happen in one user-writable place** (`~/.local/share/tmux-whisper/native/tmux-whisperd`), with sources synced from a repo checkout, Homebrew's `share/tmux-whisper/tmux-whisperd`, or the installer. `install.sh` now ships `Package.resolved` so installed builds use the same FluidAudio pin as CI.
 - **Ping reports** `version` and `active_requests`; `debug` shows whether the daemon binary is `current` or `stale`.
 - **CI**: new macOS workflow builds and tests the Swift package when `tmux-whisperd/` changes (16 Swift Testing cases).
