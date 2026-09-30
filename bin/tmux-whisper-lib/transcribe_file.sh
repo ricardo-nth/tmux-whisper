@@ -428,6 +428,18 @@ with open(os.path.join(contents, "document.wflow"), "wb") as fh:
 PYEOF
 }
 
+# Mark the service enabled for Finder's context menu, the same entry System
+# Settings > Keyboard Shortcuts > Services writes. Only for the real Services
+# folder, so tests with DICTATE_SERVICES_DIR never touch user preferences.
+finder_enable_service() {
+  [[ -z "${DICTATE_SERVICES_DIR:-}" ]] || return 0
+  command -v defaults >/dev/null 2>&1 || return 0
+  defaults write pbs NSServicesStatus -dict-add \
+    "com.ricardo-nth.tmux-whisper.transcribe-quick-action - $FINDER_QUICK_ACTION_NAME - runWorkflowAsService" \
+    '{ "enabled_context_menu" = 1; "enabled_services_menu" = 1; "presentation_modes" = { ContextMenu = 1; FinderPreview = 1; ServicesMenu = 1; TouchBar = 0; }; }' \
+    >/dev/null 2>&1 || true
+}
+
 finder_refresh_services() {
   [[ -x /System/Library/CoreServices/pbs ]] || return 0
   /System/Library/CoreServices/pbs -flush >/dev/null 2>&1 || true
@@ -454,13 +466,14 @@ manage_finder() {
         rm -rf "$workflow" || die "cannot replace $workflow"
       fi
       finder_write_quick_action "$workflow" "$handler" || die "failed to write $workflow"
+      finder_enable_service
       finder_refresh_services
       echo "Installed Finder Quick Action: $FINDER_QUICK_ACTION_NAME"
       echo "  workflow: $workflow"
       echo "  handler: $handler"
       echo "Right-click audio files in Finder > Quick Actions > $FINDER_QUICK_ACTION_NAME."
       echo "It writes <name>.txt next to each file and copies the transcript to the clipboard."
-      echo "If it doesn't appear, enable it in System Settings > Keyboard > Keyboard Shortcuts > Services."
+      echo "If it doesn't appear yet, relaunch Finder (Option-right-click its Dock icon > Relaunch)."
       ;;
     remove|uninstall)
       if [[ -e "$workflow" ]]; then

@@ -180,7 +180,7 @@ For right-click transcription in Finder:
 tmux-whisper finder install   # adds Quick Actions > "Transcribe with Tmux Whisper"
 ```
 
-It writes `<name>.txt` next to each selected audio file, copies the transcript to the clipboard, and posts a notification. The first run may ask for permission to access the folder the memo is in. Remove it with `tmux-whisper finder remove`.
+It writes `<name>.txt` next to each selected audio file, copies the transcript to the clipboard, and posts a notification. It is enabled for the Finder context menu automatically (no System Settings step). The first run may ask for permission to access the folder the memo is in. Remove it with `tmux-whisper finder remove`.
 
 ### Durable usage summary
 
