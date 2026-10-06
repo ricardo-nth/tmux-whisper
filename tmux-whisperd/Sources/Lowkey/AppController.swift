@@ -134,7 +134,11 @@ final class AppController: NSObject, NSApplicationDelegate {
       finishProcessing(error: "tmux-whisper CLI not found")
       return
     }
-    let appName = take.originalApp?.localizedName
+    // Match the CLI: "restore" uses the app from recording start; "current"
+    // uses whatever is frontmost when processing begins (for mode detection).
+    let appName = config?.inline.pasteTarget == "restore"
+      ? take.originalApp?.localizedName
+      : NSWorkspace.shared.frontmostApplication?.localizedName
     work.async { [weak self] in
       let wav = FileManager.default.temporaryDirectory.appendingPathComponent("lowkey-\(UUID().uuidString).wav")
       defer { try? FileManager.default.removeItem(at: wav) }

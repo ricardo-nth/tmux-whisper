@@ -8,7 +8,7 @@ final class HotkeyMonitor {
   private var hotKeyRef: EventHotKeyRef?
   private var handlerRef: EventHandlerRef?
   private let action: () -> Void
-  private static var current: HotkeyMonitor?
+  private static weak var current: HotkeyMonitor?
 
   init(action: @escaping () -> Void) {
     self.action = action
@@ -35,6 +35,7 @@ final class HotkeyMonitor {
     let hotKeyID = EventHotKeyID(signature: OSType(0x4C4F574B), id: 1) // 'LOWK'
     let status = RegisterEventHotKey(spec.keyCode, spec.carbonModifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
     guard status == noErr else {
+      unregister()
       throw NSError(domain: "Lowkey", code: Int(status), userInfo: [
         NSLocalizedDescriptionKey: "hotkey \(spec.display) is unavailable (already used by another app?) [\(status)]",
       ])
@@ -49,6 +50,9 @@ final class HotkeyMonitor {
     if let handlerRef {
       RemoveEventHandler(handlerRef)
       self.handlerRef = nil
+    }
+    if HotkeyMonitor.current === self {
+      HotkeyMonitor.current = nil
     }
   }
 }

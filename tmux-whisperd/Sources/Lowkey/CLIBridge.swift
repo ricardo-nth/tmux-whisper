@@ -92,6 +92,10 @@ struct CLIBridge {
     try process.run()
     if finished.wait(timeout: .now() + timeout) == .timedOut {
       process.terminate()
+      // A wedged CLI that ignores SIGTERM must not outlive the request.
+      if finished.wait(timeout: .now() + 3) == .timedOut {
+        kill(process.processIdentifier, SIGKILL)
+      }
       throw BridgeError.timedOut(timeout)
     }
     try? outHandle.close()

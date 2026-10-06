@@ -100,6 +100,9 @@ inline_process_json() {
   # The pipeline pads/trims its WAV in place and removes it afterwards; work
   # on a private copy so the caller's file is left alone.
   work_wav="$(mktemp "${TMPDIR:-/tmp}/tmux-whisper-app-take.XXXXXX")" || die "inline process: cannot create a temporary file"
+  # This runs as its own CLI process, so an EXIT trap also covers early exits.
+  # shellcheck disable=SC2064
+  trap "rm -f '$log' '$work_wav'" EXIT
   cp "$wav" "$work_wav" || die "inline process: cannot read $wav"
   INLINE_DELIVERY_MODE="external"
   INLINE_EXTERNAL_TEXT=""

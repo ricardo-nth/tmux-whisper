@@ -25,6 +25,8 @@ struct HotkeyTests {
 
   @Test func rejectsBadInput() {
     #expect(throws: HotkeySpec.ParseError.noModifier) { try HotkeySpec.parse("space") }
+    // "F" is a letter, not a function key, despite its label.
+    #expect(throws: HotkeySpec.ParseError.noModifier) { try HotkeySpec.parse("f") }
     #expect(throws: HotkeySpec.ParseError.unknownKey("banana")) { try HotkeySpec.parse("ctrl+banana") }
     #expect(throws: HotkeySpec.ParseError.missingKey) { try HotkeySpec.parse("ctrl+option") }
     #expect(throws: HotkeySpec.ParseError.missingKey) { try HotkeySpec.parse("ctrl++space") }
@@ -99,7 +101,7 @@ struct DeliveryPlanTests {
     let steps = DeliveryPlan.steps(text: "hi", delivery: delivery(), hasOriginalApp: true)
     #expect(steps == [
       .setClipboard("hi"),
-      .key(code: 9, command: true, control: false),
+      .shortcut(character: "v", command: true, control: false),
       .wait(milliseconds: 35),
       .key(code: 36, command: false, control: false),
     ])
@@ -111,7 +113,7 @@ struct DeliveryPlanTests {
       .setClipboard("hi"),
       .activateOriginalApp,
       .wait(milliseconds: 90),
-      .key(code: 9, command: true, control: false),
+      .shortcut(character: "v", command: true, control: false),
     ])
   }
 
@@ -119,11 +121,11 @@ struct DeliveryPlanTests {
     let cmd = DeliveryPlan.steps(text: "x", delivery: delivery(sendMode: "cmd_enter"), hasOriginalApp: false)
     #expect(cmd.last == .key(code: 36, command: true, control: false))
     let ctrlJ = DeliveryPlan.steps(text: "x", delivery: delivery(sendMode: "ctrl_j"), hasOriginalApp: false)
-    #expect(ctrlJ.last == .key(code: 38, command: false, control: true))
+    #expect(ctrlJ.last == .shortcut(character: "j", command: false, control: true))
   }
 
   @Test func restoreWithoutAnOriginalAppJustPastes() {
     let steps = DeliveryPlan.steps(text: "x", delivery: delivery(autosend: false, pasteTarget: "restore"), hasOriginalApp: false)
-    #expect(steps == [.setClipboard("x"), .key(code: 9, command: true, control: false)])
+    #expect(steps == [.setClipboard("x"), .shortcut(character: "v", command: true, control: false)])
   }
 }

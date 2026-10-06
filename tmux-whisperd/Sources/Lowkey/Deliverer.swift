@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon.HIToolbox
 import Foundation
 import LowkeyCore
 
@@ -13,18 +14,29 @@ enum Deliverer {
 
   /// Runs on a background queue; waits are real sleeps between steps.
   static func perform(_ steps: [DeliveryStep], originalApp: NSRunningApplication?) throws {
+    // The clipboard needs no permission, so the text is never lost: copy it
+    // first, then require Accessibility only for activation and key events.
+    var remaining = steps[...]
+    while case .setClipboard(let text)? = remaining.first {
+      DispatchQueue.main.sync {
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setString(text, forType: .string)
+      }
+      remaining = remaining.dropFirst()
+    }
     guard isTrusted(prompt: false) else {
       throw NSError(domain: "Lowkey", code: 2, userInfo: [
         NSLocalizedDescriptionKey: "Accessibility permission missing: text is on the clipboard (System Settings → Privacy & Security → Accessibility → Lowkey)",
       ])
     }
-    for step in steps {
+
+    for step in remaining {
       switch step {
       case .setClipboard(let text):
         DispatchQueue.main.sync {
-          let board = NSPasteboard.general
-          board.clearContents()
-          board.setString(text, forType: .string)
+          NSPasteboard.general.clearContents()
+          NSPasteboard.general.setString(text, forType: .string)
         }
       case .activateOriginalApp:
         DispatchQueue.main.sync {
@@ -32,6 +44,14 @@ enum Deliverer {
         }
       case .wait(let milliseconds):
         usleep(useconds_t(milliseconds * 1000))
+      case .shortcut(let character, let command, let control):
+        let code = DispatchQueue.main.sync { KeyboardLayout.keyCode(for: character) }
+        guard let code else {
+          throw NSError(domain: "Lowkey", code: 3, userInfo: [
+            NSLocalizedDescriptionKey: "no key types \"\(character)\" in the current keyboard layout: text is on the clipboard",
+          ])
+        }
+        postKey(code: code, command: command, control: control)
       case .key(let code, let command, let control):
         postKey(code: code, command: command, control: control)
       }
@@ -50,4 +70,39 @@ enum Deliverer {
     down?.post(tap: .cghidEventTap)
     up?.post(tap: .cghidEventTap)
   }
+}
+
+/// Maps a character to the virtual key that types it in the active keyboard
+/// layout (US: v = 9; Dvorak: v = 47), as AppleScript's `keystroke` does.
+enum KeyboardLayout {
+  static func keyCode(for character: Character) -> UInt16? {
+    let target = String(character).lowercased()
+    guard
+      let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()
+        ?? TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+      let dataPointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+    else {
+      return fallback[target]
+    }
+    let layoutData = Unmanaged<CFData>.fromOpaque(dataPointer).takeUnretainedValue() as Data
+    return layoutData.withUnsafeBytes { raw -> UInt16? in
+      guard let layout = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return nil }
+      for code in UInt16(0)..<128 {
+        var deadKeyState: UInt32 = 0
+        var length = 0
+        var chars = [UniChar](repeating: 0, count: 4)
+        let status = UCKeyTranslate(
+          layout, code, UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()),
+          OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeyState, chars.count, &length, &chars
+        )
+        if status == noErr, length > 0, String(utf16CodeUnits: chars, count: length).lowercased() == target {
+          return code
+        }
+      }
+      return fallback[target]
+    }
+  }
+
+  /// US positions, used only if the layout data is unavailable.
+  private static let fallback: [String: UInt16] = ["v": 9, "j": 38]
 }

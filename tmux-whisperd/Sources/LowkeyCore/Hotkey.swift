@@ -57,8 +57,8 @@ public struct HotkeySpec: Equatable, Sendable {
       key = found
     }
     guard let key else { throw ParseError.missingKey }
-    // A bare letter would hijack normal typing; function keys are fine alone.
-    if modifiers == 0 && !key.label.hasPrefix("F") {
+    // A bare key would hijack normal typing; only F1-F20 may stand alone.
+    if modifiers == 0 && !functionKeyCodes.contains(key.code) {
       throw ParseError.noModifier
     }
 
@@ -76,6 +76,11 @@ public struct HotkeySpec: Equatable, Sendable {
     "option": optionMask, "opt": optionMask, "alt": optionMask, "⌥": optionMask,
     "shift": shiftMask, "⇧": shiftMask,
     "cmd": commandMask, "command": commandMask, "⌘": commandMask,
+  ]
+
+  static let functionKeyCodes: Set<UInt32> = [
+    122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
+    105, 107, 113, 106, 64, 79, 80, 90,
   ]
 
   // ANSI virtual key codes (HIToolbox/Events.h).

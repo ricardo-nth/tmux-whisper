@@ -25,6 +25,19 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# Refuse destinations that aren't a .app path or are anything other than an
+# existing Lowkey bundle, so a mistyped --out can never delete a folder.
+[[ "$OUT" == *.app ]] || { echo "--out must end in .app: $OUT" >&2; exit 2; }
+if [[ -L "$OUT" ]]; then
+  echo "refusing to replace a symlink: $OUT" >&2; exit 2
+fi
+if [[ -e "$OUT" ]]; then
+  existing_id="$(plutil -extract CFBundleIdentifier raw -o - "$OUT/Contents/Info.plist" 2>/dev/null || true)"
+  if [[ "$existing_id" != "$BUNDLE_ID" ]]; then
+    echo "refusing to replace $OUT: not a $APP_NAME bundle (bundle id: ${existing_id:-none})" >&2; exit 2
+  fi
+fi
+
 version="$(sed -n 's/^TMUX_WHISPER_CLI_VERSION="\(.*\)"$/\1/p' "$ROOT/bin/tmux-whisper")"
 build_number="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
 

@@ -5,14 +5,16 @@ public enum DeliveryStep: Equatable, Sendable {
   /// Re-activate the app that was frontmost when recording started.
   case activateOriginalApp
   case wait(milliseconds: Int)
-  /// A key press with modifiers, as ANSI virtual key code + CGEventFlags-style mask.
+  /// A character shortcut (Cmd+V, Ctrl+J). Resolved to a key code through the
+  /// active keyboard layout at delivery time, like AppleScript's `keystroke`,
+  /// so it works on Dvorak, AZERTY, etc.
+  case shortcut(character: Character, command: Bool, control: Bool)
+  /// A layout-independent key (Return), as an ANSI virtual key code.
   case key(code: UInt16, command: Bool, control: Bool)
 }
 
 public enum DeliveryPlan {
-  public static let keyV: UInt16 = 9
   public static let keyReturn: UInt16 = 36
-  public static let keyJ: UInt16 = 38
 
   public static func steps(text: String, delivery: Delivery, hasOriginalApp: Bool) -> [DeliveryStep] {
     var steps: [DeliveryStep] = [.setClipboard(text)]
@@ -22,7 +24,7 @@ public enum DeliveryPlan {
         steps.append(.wait(milliseconds: delivery.activateDelayMs))
       }
     }
-    steps.append(.key(code: keyV, command: true, control: false))
+    steps.append(.shortcut(character: "v", command: true, control: false))
     guard delivery.autosend else { return steps }
 
     // Give the target app a moment to insert the paste before sending.
@@ -31,7 +33,7 @@ public enum DeliveryPlan {
     }
     switch delivery.sendMode {
     case "ctrl_j":
-      steps.append(.key(code: keyJ, command: false, control: true))
+      steps.append(.shortcut(character: "j", command: false, control: true))
     case "cmd_enter":
       steps.append(.key(code: keyReturn, command: true, control: false))
     default:
