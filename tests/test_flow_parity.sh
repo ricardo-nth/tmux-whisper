@@ -1541,6 +1541,12 @@ EOF
   "$DICTATE_BIN" warmup --restart-stale >/dev/null
   assert_equals "daemon_no_rebuild_when_current" "$(grep -c . "$build_log")" "1"
 
+  # Lowkey app sources share the package but are not part of the daemon.
+  mkdir -p "$src/Sources/Lowkey"
+  printf '%s\n' '// app-only change' >"$src/Sources/Lowkey/AppController.swift"
+  "$DICTATE_BIN" warmup --restart-stale >/dev/null
+  assert_equals "daemon_ignores_app_sources" "$(grep -c . "$build_log")" "1"
+
   # A busy pipeline blocks the swap even though a new build exists.
   printf '%s\n' 'print("v2")' >"$src/Sources/tmux-whisperd/main.swift"
   : >"$DICTATE_INLINE_STATE_FILE"

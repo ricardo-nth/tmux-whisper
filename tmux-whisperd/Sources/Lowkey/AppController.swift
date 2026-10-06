@@ -64,10 +64,11 @@ final class AppController: NSObject, NSApplicationDelegate {
   }
 
   private func startRecording(hotkeyAt: Double) {
-    // Chime first: it's the cue to speak, and capture starts well before it
-    // is audible.
-    sounds.play(.start)
-    let chimeAt = monotonicMs()
+    // Chime first: it's the cue to speak. It plays on its own queue, so the
+    // microphone starts in parallel instead of waiting for the audio device.
+    sounds.play(.start) { playMs in
+      Log.write(String(format: "start: chime play() %.1fms (hotkey→chime ≈ %.1fms)", playMs, monotonicMs() - hotkeyAt))
+    }
     let original = NSWorkspace.shared.frontmostApplication
     do {
       let engineMs = try recorder.start()
@@ -80,8 +81,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         originalApp: original
       )
       phase = .recording
-      Log.write(String(format: "start: hotkey→chime %.1fms, engine.start %.1fms, hotkey→capturing %.1fms, app=%@",
-                       chimeAt - hotkeyAt, engineMs, startedAt - hotkeyAt, original?.localizedName ?? "-"))
+      Log.write(String(format: "start: engine.start %.1fms, hotkey→capturing %.1fms, app=%@",
+                       engineMs, startedAt - hotkeyAt, original?.localizedName ?? "-"))
     } catch {
       sounds.play(.error)
       fail("could not start recording: \(error.localizedDescription)")

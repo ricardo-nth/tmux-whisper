@@ -25,10 +25,18 @@ final class SoundPlayer {
     }
   }
 
-  func play(_ event: Event) {
+  private let queue = DispatchQueue(label: "lowkey.sound", qos: .userInteractive)
+
+  /// Plays without blocking the caller: on a cold output device `play()` can
+  /// take 100+ ms, which must not delay starting the microphone.
+  func play(_ event: Event, onStarted: ((Double) -> Void)? = nil) {
     guard let player = players[event] else { return }
-    player.stop()
-    player.currentTime = 0
-    player.play()
+    queue.async {
+      let started = monotonicMs()
+      player.stop()
+      player.currentTime = 0
+      player.play()
+      onStarted?(monotonicMs() - started)
+    }
   }
 }

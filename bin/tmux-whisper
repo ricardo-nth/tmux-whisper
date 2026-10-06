@@ -2131,16 +2131,20 @@ tmux_whisperd_built_stamp() {
   printf "%s\n" "$(tmux_whisperd_build_root)/.build/tmux-whisper-built-source-hash"
 }
 
-# Content hash of the files that determine the daemon binary.
+# Content hash of the files that determine the daemon binary. Only the
+# daemon's own targets count: the package also holds the Lowkey app, whose
+# changes must not trigger a daemon rebuild.
 tmux_whisperd_source_hash() {
-  local dir="${1:-}"
+  local dir="${1:-}" target
   [[ -n "$dir" && -f "$dir/Package.swift" ]] || return 1
   (
     cd "$dir" || exit 1
     {
       printf '%s\0' Package.swift
       [[ -f Package.resolved ]] && printf '%s\0' Package.resolved
-      [[ -d Sources ]] && find Sources -type f -name '*.swift' -print0
+      for target in Sources/TmuxWhisperKit Sources/tmux-whisperd; do
+        [[ -d "$target" ]] && find "$target" -type f -name '*.swift' -print0
+      done
     } | LC_ALL=C sort -z | xargs -0 shasum -a 256
   ) | shasum -a 256 | awk '{print $1}'
 }
