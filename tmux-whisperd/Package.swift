@@ -17,6 +17,12 @@ let package = Package(
       name: "TmuxWhisperKit",
       targets: ["TmuxWhisperKit"]
     ),
+    // Lowkey: the native menu-bar dictation app (assembled into Lowkey.app by
+    // tools/build-lowkey-app.sh).
+    .executable(
+      name: "Lowkey",
+      targets: ["Lowkey"]
+    ),
   ],
   dependencies: [
     // 0.12.x only: 0.13+ changed the transcription API and model files, so
@@ -41,6 +47,24 @@ let package = Package(
       name: "TmuxWhisperKitTests",
       dependencies: ["TmuxWhisperKit"],
       path: "Tests/TmuxWhisperKitTests"
+    ),
+    // Pure, testable logic for Lowkey (no AppKit).
+    .target(
+      name: "LowkeyCore",
+      path: "Sources/LowkeyCore"
+    ),
+    .executableTarget(
+      name: "Lowkey",
+      dependencies: ["LowkeyCore"],
+      path: "Sources/Lowkey",
+      // AppKit/Carbon/AVAudioEngine callbacks predate strict concurrency;
+      // the app shell uses Swift 5 mode, the core stays in Swift 6 mode.
+      swiftSettings: [.swiftLanguageMode(.v5)]
+    ),
+    .testTarget(
+      name: "LowkeyCoreTests",
+      dependencies: ["LowkeyCore"],
+      path: "Tests/LowkeyCoreTests"
     ),
   ]
 )

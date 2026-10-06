@@ -37,3 +37,6 @@ jobs:
 
       - name: Build release daemon
         run: swift build -c release --product tmux-whisperd && .build/release/tmux-whisperd version
+
+      - name: Build Lowkey app binary
+        run: swift build -c release --product Lowkey

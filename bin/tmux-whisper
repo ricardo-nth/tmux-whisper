@@ -21,7 +21,7 @@ TMUX_JOBS_DIR="${DICTATE_TMUX_JOBS_DIR:-/tmp/dictate-tmux-jobs}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEFAULT_SWIFT_PARAKEET_MODELS_DIR="$XDG_DATA_HOME/tmux-whisper/models"
 DICTATE_CONFIG_SCHEMA_VERSION=1
-TMUX_WHISPER_CLI_VERSION="0.9.0"
+TMUX_WHISPER_CLI_VERSION="0.10.0-dev"
 
 # Readers such as SwiftBar and `tmux-whisper doctor` inspect these files while
 # recording starts. Publish a complete replacement so they never observe the
@@ -58,6 +58,10 @@ FILES:
   tmux-whisper transcribe <file> --format json # JSON per file (text, durations, model)
   tmux-whisper transcribe --help           # all options
   tmux-whisper finder install|remove|status # Finder right-click Quick Action for audio files
+
+NATIVE APP BACK-END (used by the menu-bar app):
+  tmux-whisper app-config --json           # hotkey, sounds, delivery settings
+  tmux-whisper inline process <wav> --json # inline pipeline without paste (app delivers)
 
 AUDIO:
   tmux-whisper devices [--json]   # list macOS audio devices
@@ -288,13 +292,13 @@ fi
 source "$DICTATE_LIB_PATH"
 
 DICTATE_INTERNAL_LIB_DIR="${DICTATE_INTERNAL_LIB_DIR:-$HOME/.local/bin/tmux-whisper-lib}"
-if [[ ! -r "$DICTATE_INTERNAL_LIB_DIR/transcribe_file.sh" ]]; then
+if [[ ! -r "$DICTATE_INTERNAL_LIB_DIR/app.sh" ]]; then
   FALLBACK_INTERNAL_LIB_DIR="$SCRIPT_DIR/tmux-whisper-lib"
-  if [[ -r "$FALLBACK_INTERNAL_LIB_DIR/transcribe_file.sh" ]]; then
+  if [[ -r "$FALLBACK_INTERNAL_LIB_DIR/app.sh" ]]; then
     DICTATE_INTERNAL_LIB_DIR="$FALLBACK_INTERNAL_LIB_DIR"
   fi
 fi
-for internal_runtime_module in config.sh audio.sh mode.sh recording.sh integrations.sh history.sh diagnostics.sh version.sh transcribe_file.sh; do
+for internal_runtime_module in config.sh audio.sh mode.sh recording.sh integrations.sh history.sh diagnostics.sh version.sh transcribe_file.sh app.sh; do
   [[ -r "$DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module" ]] || die "missing internal runtime module: $DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module"
   # shellcheck disable=SC1090
   source "$DICTATE_INTERNAL_LIB_DIR/$internal_runtime_module"
@@ -2127,16 +2131,20 @@ tmux_whisperd_built_stamp() {
   printf "%s\n" "$(tmux_whisperd_build_root)/.build/tmux-whisper-built-source-hash"
 }
 
-# Content hash of the files that determine the daemon binary.
+# Content hash of the files that determine the daemon binary. Only the
+# daemon's own targets count: the package also holds the Lowkey app, whose
+# changes must not trigger a daemon rebuild.
 tmux_whisperd_source_hash() {
-  local dir="${1:-}"
+  local dir="${1:-}" target
   [[ -n "$dir" && -f "$dir/Package.swift" ]] || return 1
   (
     cd "$dir" || exit 1
     {
       printf '%s\0' Package.swift
       [[ -f Package.resolved ]] && printf '%s\0' Package.resolved
-      [[ -d Sources ]] && find Sources -type f -name '*.swift' -print0
+      for target in Sources/TmuxWhisperKit Sources/tmux-whisperd; do
+        [[ -d "$target" ]] && find "$target" -type f -name '*.swift' -print0
+      done
     } | LC_ALL=C sort -z | xargs -0 shasum -a 256
   ) | shasum -a 256 | awk '{print $1}'
 }
@@ -5813,102 +5821,111 @@ process_inline_recording() {
   fi
   
   stage_started_ms="$(now_ms)"
-  # Copy to clipboard
-  if ! printf "%s" "$txt" | pbcopy; then
-    echo "Clipboard copy failed (pbcopy)."
-    echo "Text:"
-    echo "$txt"
-    paste_ms=$(( $(now_ms) - stage_started_ms ))
-    total_ms=$(( $(now_ms) - flow_started_ms ))
-    append_bench_entry "inline" "clipboard_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
-      "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
-    archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "clipboard_failed" \
-      "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
-    touch "$ERROR_FLAG" 2>/dev/null || true
-    swiftbar_refresh
-    return 1
-  fi
-  
-  # Determine paste target based on config/env
-  # "restore/origin" = use app from recording start (target_app captured at start)
-  # "current" = paste to whatever is frontmost now
-  local activate_delay_ms="${DICTATE_INLINE_ACTIVATE_DELAY_MS:-90}"
-  local send_delay_default_ms="35"
-  local send_delay_ms="${DICTATE_INLINE_SEND_DELAY_MS:-$send_delay_default_ms}"
-  local inline_send_mode
-  inline_send_mode="$(normalize_inline_send_mode "${DICTATE_INLINE_SEND_MODE:-${CFG_INLINE_SEND_MODE:-enter}}")"
-  [[ "$activate_delay_ms" =~ ^[0-9]+$ ]] || activate_delay_ms=90
-  [[ "$send_delay_ms" =~ ^[0-9]+$ ]] || send_delay_ms="$send_delay_default_ms"
-
-  # Auto-send (press Enter) unless disabled via env or config file
-  local do_autosend="${DICTATE_AUTOSEND:-}"
-  [[ -z "$do_autosend" ]] && do_autosend="${CFG_INLINE_AUTOSEND:-}"
-  # Default to ON if not set
-  [[ -z "$do_autosend" ]] && do_autosend="1"
-
-  # Activate target app (best effort), then paste.
-  # NOTE: `target_app` is the *process name* (e.g. "wezterm-gui"), which may not
-  # match the app name for `tell application "X"`. Setting frontmost via System
-  # Events works reliably with process names.
-  local osa_err=""
-  if [[ "$paste_target" == "restore" && -n "$target_app" ]]; then
-    local target_app_escaped="${target_app//\"/\\\"}"
-    if ! osa_err="$(osascript -e "tell application \"System Events\" to set frontmost of process \"$target_app_escaped\" to true" 2>&1)"; then
-      echo "Warning: couldn't activate target app process: $target_app"
-      [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
-    fi
-    if (( activate_delay_ms > 0 )); then
-      sleep_ms "$activate_delay_ms"
-    fi
-  fi
-
-  if [[ "$do_autosend" == "1" ]]; then
-    if ! osa_err="$(inline_paste_via_osascript 2>&1)"; then
-      echo "Paste/send failed (text is on clipboard)."
-      echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
-      [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
-      paste_ms=$(( $(now_ms) - stage_started_ms ))
-      total_ms=$(( $(now_ms) - flow_started_ms ))
-      append_bench_entry "inline" "autosend_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
-        "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
-      archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "autosend_failed_paste" \
-        "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
-      touch "$ERROR_FLAG" 2>/dev/null || true
-      swiftbar_refresh
-      return 1
-    fi
-    sleep_ms "$send_delay_ms"
-    if ! osa_err="$(inline_send_key_via_osascript "$inline_send_mode" 2>&1)"; then
-      echo "Paste/send failed (text is on clipboard)."
-      echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
-      [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
-      paste_ms=$(( $(now_ms) - stage_started_ms ))
-      total_ms=$(( $(now_ms) - flow_started_ms ))
-      append_bench_entry "inline" "autosend_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
-        "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
-      archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "autosend_failed_send" \
-        "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
-      touch "$ERROR_FLAG" 2>/dev/null || true
-      swiftbar_refresh
-      return 1
-    fi
-    echo "✅ Sent ($(inline_send_mode_desc "$inline_send_mode"))"
+  if [[ "${INLINE_DELIVERY_MODE:-paste}" == "external" ]]; then
+    # The caller (the native app) pastes/sends and plays sounds itself; hand
+    # the final text back. History, bench and usage are still recorded below.
+    INLINE_EXTERNAL_TEXT="$txt"
+    INLINE_EXTERNAL_RAW_TEXT="$raw_txt"
+    INLINE_EXTERNAL_MODE="$detected_mode"
   else
-    if ! osa_err="$(inline_paste_via_osascript 2>&1)"; then
-      echo "Paste failed (text is on clipboard)."
-      echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
-      [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+    stage_started_ms="$(now_ms)"
+    # Copy to clipboard
+    if ! printf "%s" "$txt" | pbcopy; then
+      echo "Clipboard copy failed (pbcopy)."
+      echo "Text:"
+      echo "$txt"
       paste_ms=$(( $(now_ms) - stage_started_ms ))
       total_ms=$(( $(now_ms) - flow_started_ms ))
-      append_bench_entry "inline" "paste_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+      append_bench_entry "inline" "clipboard_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
         "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
-      archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "paste_failed" \
+      archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "clipboard_failed" \
         "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
       touch "$ERROR_FLAG" 2>/dev/null || true
       swiftbar_refresh
       return 1
     fi
-    echo "✅ Pasted (no Enter)"
+  
+    # Determine paste target based on config/env
+    # "restore/origin" = use app from recording start (target_app captured at start)
+    # "current" = paste to whatever is frontmost now
+    local activate_delay_ms="${DICTATE_INLINE_ACTIVATE_DELAY_MS:-90}"
+    local send_delay_default_ms="35"
+    local send_delay_ms="${DICTATE_INLINE_SEND_DELAY_MS:-$send_delay_default_ms}"
+    local inline_send_mode
+    inline_send_mode="$(normalize_inline_send_mode "${DICTATE_INLINE_SEND_MODE:-${CFG_INLINE_SEND_MODE:-enter}}")"
+    [[ "$activate_delay_ms" =~ ^[0-9]+$ ]] || activate_delay_ms=90
+    [[ "$send_delay_ms" =~ ^[0-9]+$ ]] || send_delay_ms="$send_delay_default_ms"
+
+    # Auto-send (press Enter) unless disabled via env or config file
+    local do_autosend="${DICTATE_AUTOSEND:-}"
+    [[ -z "$do_autosend" ]] && do_autosend="${CFG_INLINE_AUTOSEND:-}"
+    # Default to ON if not set
+    [[ -z "$do_autosend" ]] && do_autosend="1"
+
+    # Activate target app (best effort), then paste.
+    # NOTE: `target_app` is the *process name* (e.g. "wezterm-gui"), which may not
+    # match the app name for `tell application "X"`. Setting frontmost via System
+    # Events works reliably with process names.
+    local osa_err=""
+    if [[ "$paste_target" == "restore" && -n "$target_app" ]]; then
+      local target_app_escaped="${target_app//\"/\\\"}"
+      if ! osa_err="$(osascript -e "tell application \"System Events\" to set frontmost of process \"$target_app_escaped\" to true" 2>&1)"; then
+        echo "Warning: couldn't activate target app process: $target_app"
+        [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+      fi
+      if (( activate_delay_ms > 0 )); then
+        sleep_ms "$activate_delay_ms"
+      fi
+    fi
+
+    if [[ "$do_autosend" == "1" ]]; then
+      if ! osa_err="$(inline_paste_via_osascript 2>&1)"; then
+        echo "Paste/send failed (text is on clipboard)."
+        echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
+        [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+        paste_ms=$(( $(now_ms) - stage_started_ms ))
+        total_ms=$(( $(now_ms) - flow_started_ms ))
+        append_bench_entry "inline" "autosend_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+          "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+        archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "autosend_failed_paste" \
+          "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
+        touch "$ERROR_FLAG" 2>/dev/null || true
+        swiftbar_refresh
+        return 1
+      fi
+      sleep_ms "$send_delay_ms"
+      if ! osa_err="$(inline_send_key_via_osascript "$inline_send_mode" 2>&1)"; then
+        echo "Paste/send failed (text is on clipboard)."
+        echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
+        [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+        paste_ms=$(( $(now_ms) - stage_started_ms ))
+        total_ms=$(( $(now_ms) - flow_started_ms ))
+        append_bench_entry "inline" "autosend_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+          "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+        archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "autosend_failed_send" \
+          "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
+        touch "$ERROR_FLAG" 2>/dev/null || true
+        swiftbar_refresh
+        return 1
+      fi
+      echo "✅ Sent ($(inline_send_mode_desc "$inline_send_mode"))"
+    else
+      if ! osa_err="$(inline_paste_via_osascript 2>&1)"; then
+        echo "Paste failed (text is on clipboard)."
+        echo "Fix: System Settings → Privacy & Security → Accessibility → enable your terminal (WezTerm), and Automation → allow it to control System Events."
+        [[ -n "$osa_err" ]] && echo "AppleScript: $osa_err"
+        paste_ms=$(( $(now_ms) - stage_started_ms ))
+        total_ms=$(( $(now_ms) - flow_started_ms ))
+        append_bench_entry "inline" "paste_failed" "$model_id" "$detected_mode" "$do_postprocess" "${#raw_txt}" "${#txt}" "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" \
+          "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
+        archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "paste_failed" \
+          "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
+        touch "$ERROR_FLAG" 2>/dev/null || true
+        swiftbar_refresh
+        return 1
+      fi
+      echo "✅ Pasted (no Enter)"
+    fi
   fi
 
   paste_ms=$(( $(now_ms) - stage_started_ms ))
@@ -5929,7 +5946,10 @@ process_inline_recording() {
     "$startup_total_ms" "$startup_audio_ms" "$startup_ffmpeg_live_ms" "$startup_target_ms" "$startup_audio_source"
 
   signal_just_processed
-  play_sound stop
+  if [[ "${INLINE_DELIVERY_MODE:-paste}" != "external" ]]; then
+    play_sound stop
+  fi
+  INLINE_EXTERNAL_TIMINGS="record_ms=$record_ms transcribe_ms=$transcribe_ms clean_ms=$clean_ms postprocess_ms=$postprocess_ms total_ms=$total_ms"
 
   archive_inline_debug_artifacts "$archive_prefix" "$wav" "$record_log" "$transcribe_log" "ok" \
     "$record_ms" "$transcribe_ms" "$clean_ms" "$postprocess_ms" "$paste_ms" "$total_ms" "$inline_session_id"
@@ -7802,6 +7822,7 @@ case "$cmd" in
   warmup) warmup_backend "${@:2}" ;;
   transcribe) manage_transcribe "${@:2}" ;;
   finder) manage_finder "${2:-}" ;;
+  app-config) app_config_json "${@:2}" ;;
   bench) bench "${@:2}" ;;
   bench-matrix|bench_matrix) bench_matrix "${2:-}" "${3:-}" ;;
   changelog) changelog ;;
@@ -7816,8 +7837,9 @@ case "$cmd" in
       start) inline_start ;;
       stop) inline_stop ;;
       toggle) inline_toggle ;;
+      process) inline_process_json "${@:3}" ;;
       process-sound|process_sound|processsound) set_inline_process_sound "${3:-}" ;;
-      *) die "usage: tmux-whisper inline [start|stop|toggle|process-sound]" ;;
+      *) die "usage: tmux-whisper inline [start|stop|toggle|process <wav> --json|process-sound]" ;;
     esac
     ;;
   sound|sounds) manage_sounds "${2:-}" "${3:-}" ;;

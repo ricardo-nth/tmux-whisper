@@ -1541,6 +1541,12 @@ EOF
   "$DICTATE_BIN" warmup --restart-stale >/dev/null
   assert_equals "daemon_no_rebuild_when_current" "$(grep -c . "$build_log")" "1"
 
+  # Lowkey app sources share the package but are not part of the daemon.
+  mkdir -p "$src/Sources/Lowkey"
+  printf '%s\n' '// app-only change' >"$src/Sources/Lowkey/AppController.swift"
+  "$DICTATE_BIN" warmup --restart-stale >/dev/null
+  assert_equals "daemon_ignores_app_sources" "$(grep -c . "$build_log")" "1"
+
   # A busy pipeline blocks the swap even though a new build exists.
   printf '%s\n' 'print("v2")' >"$src/Sources/tmux-whisperd/main.swift"
   : >"$DICTATE_INLINE_STATE_FILE"
@@ -1598,6 +1604,70 @@ EOF
   unset DICTATE_TEST_SWIFT_BUILD_LOG DICTATE_TEST_STUB_DAEMON
 }
 
+
+run_app_backend_round() {
+  setup_case "app-backend"
+  export DICTATE_TEST_SWIFT_TEXT="codex app transcript"
+  printf '%s\n' 'codex -> Codex' >"$DICTATE_CONFIG_DIR/vocab"
+  export DICTATE_TEST_FFPROBE_DURATION_MS=3000
+  printf '%s\n' "app take" >"$CASE_DIR/take.wav"
+  local out
+
+  out="$("$DICTATE_BIN" app-config --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+c = json.load(sys.stdin)
+assert c["schema_version"] == 1, c
+assert c["hotkey"] == "ctrl+option+space", c["hotkey"]
+assert set(c["sounds"]) == {"start", "stop", "process", "error", "cancel"}, c["sounds"]
+assert c["sounds"]["start"]["path"].endswith("/dictate/start.wav"), c["sounds"]["start"]
+assert c["inline"]["send_mode"] in ("enter", "cmd_enter", "ctrl_j"), c["inline"]
+assert c["inline"]["send_delay_ms"] == 0 and c["inline"]["activate_delay_ms"] == 0, c["inline"]
+' || fail "app_config_json_shape"
+  pass "app_config_json_shape"
+
+  out="$(DICTATE_APP_HOTKEY="cmd+shift+d" "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_hotkey_override" "$out" '"hotkey": "cmd+shift+d"'
+
+  out="$("$DICTATE_BIN" inline process "$CASE_DIR/take.wav" --app Safari --record-ms 3000 --startup-ms 9 --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["ok"] and r["status"] == "ok", r
+assert r["text"] == "Codex app transcript", r["text"]
+assert r["raw_text"] == "codex app transcript", r["raw_text"]
+assert r["delivery"]["autosend"] is True and r["delivery"]["paste_target"] == "current", r["delivery"]
+assert r["timings"]["record_ms"] == 3000, r["timings"]
+' || { echo "$out" >&2; fail "app_process_json_ok"; }
+  pass "app_process_json_ok"
+  assert_path_absent "app_process_no_clipboard" "$DICTATE_TEST_PBCOPY_OUT"
+  assert_path_absent "app_process_no_osascript" "$DICTATE_TEST_OSASCRIPT_LOG"
+  assert_path_absent "app_process_no_sounds" "$DICTATE_TEST_SOUND_LOG"
+  assert_file_contains "app_process_usage_recorded" "$DICTATE_CONFIG_DIR/usage.json" '"inline": 1'
+  assert_file_contains "app_process_bench_source" "$DICTATE_CONFIG_DIR/history/bench.tsv" "app:avaudioengine"
+  [[ -f "$CASE_DIR/take.wav" ]] || fail "app_process_keeps_callers_wav"
+  pass "app_process_keeps_callers_wav"
+}
+
+run_app_backend_failure_round() {
+  setup_case "app-backend-failure"
+  export DICTATE_TEST_SWIFT_DAEMON_FAIL=1
+  export DICTATE_TEST_FFPROBE_DURATION_MS=3000
+  printf '%s\n' "app take" >"$CASE_DIR/take.wav"
+  local out rc=0
+  out="$("$DICTATE_BIN" inline process "$CASE_DIR/take.wav" --json)" || rc=$?
+  assert_equals "app_process_failure_exit_zero" "$rc" "0"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["ok"] is False and r["status"] == "failed", r
+assert r["text"] == "" and r["message"], r
+' || { echo "$out" >&2; fail "app_process_failure_json"; }
+  pass "app_process_failure_json"
+  assert_path_absent "app_process_failure_no_usage" "$DICTATE_CONFIG_DIR/usage.json"
+  unset DICTATE_TEST_SWIFT_DAEMON_FAIL
+}
+
 write_stubs
 run_tmux_round "enter"
 run_tmux_round "codex"
@@ -1633,6 +1703,8 @@ run_transcribe_file_no_tail_rescue_round
 run_transcribe_file_daemon_unavailable_round
 run_transcribe_file_write_race_round
 run_daemon_build_and_refresh_round
+run_app_backend_round
+run_app_backend_failure_round
 run_finder_quick_action_round
 run_finder_handler_round
 
