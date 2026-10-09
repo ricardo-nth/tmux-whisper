@@ -3,12 +3,45 @@ import Foundation
 import Testing
 @testable import TmuxWhisperKit
 
+/// One-shot latch: `wait()` suspends until `open()` has been called.
+private final class Gate: @unchecked Sendable {
+  private let lock = NSLock()
+  private var isOpen = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    await withCheckedContinuation { continuation in
+      let resumeNow: Bool = lock.withLock {
+        if isOpen { return true }
+        waiters.append(continuation)
+        return false
+      }
+      if resumeNow { continuation.resume() }
+    }
+  }
+
+  func open() {
+    let pending: [CheckedContinuation<Void, Never>] = lock.withLock {
+      isOpen = true
+      defer { waiters = [] }
+      return waiters
+    }
+    for waiter in pending { waiter.resume() }
+  }
+}
+
 /// Answers pings instantly and "transcribes" slowly, without a model.
+/// With gates, a transcription opens `entered` and then holds until `release`
+/// opens, so a test controls exactly when it is in flight.
 private struct FakeHandler: DaemonRequestHandling {
   let transcribeDelay: Duration
+  var entered: Gate? = nil
+  var release: Gate? = nil
 
   func handle(_ request: DaemonRequest) async -> DaemonResponse {
     if request.op == .transcribe {
+      entered?.open()
+      await release?.wait()
       try? await Task.sleep(for: transcribeDelay)
       return DaemonResponse(id: request.id, ok: true, text: "slow result")
     }
@@ -77,23 +110,32 @@ private func makeSocketPath() -> String {
 @Suite(.serialized)
 struct UnixSocketServerTests {
   @Test func answersPingWhileATranscriptionIsInFlight() async throws {
+    // The transcription cannot finish until the ping has been answered, so a
+    // server that served clients one at a time would never answer the ping
+    // (the client's 10 s read timeout turns that into a failure, not a hang).
+    // No wall-clock bound, so a slow CI runner can't make this flaky.
+    let entered = Gate()
+    let release = Gate()
+    let handler = FakeHandler(transcribeDelay: .zero, entered: entered, release: release)
     let path = makeSocketPath()
-    let server = UnixSocketServer(socketPath: path, handler: FakeHandler(transcribeDelay: .seconds(3)))
+    let server = UnixSocketServer(socketPath: path, handler: handler)
     try server.start()
     defer { server.stop() }
+    defer { release.open() }
 
     let slow = Task.detached {
-      try TestClient.request(path, DaemonRequest(id: "slow", op: .transcribe, wavPath: "/x"))
+      // If the request fails before reaching the handler, don't leave the
+      // test waiting on `entered`; `slow.value` reports the error below.
+      defer { entered.open() }
+      return try TestClient.request(path, DaemonRequest(id: "slow", op: .transcribe, wavPath: "/x"))
     }
-    try await Task.sleep(for: .milliseconds(200))
+    await entered.wait()
 
-    let started = ContinuousClock.now
     let ping = try TestClient.request(path, DaemonRequest(id: "p", op: .ping))
-    let elapsed = started.duration(to: .now)
     #expect(ping.ok)
     #expect(ping.id == "p")
-    #expect(elapsed < .seconds(1))
 
+    release.open()
     let slowResult = try await slow.value
     #expect(slowResult.text == "slow result")
   }
