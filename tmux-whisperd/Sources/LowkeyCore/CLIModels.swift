@@ -30,6 +30,9 @@ public struct AppConfig: Decodable, Equatable, Sendable {
   public let hotkey: String
   public let sounds: [String: Sound]
   public let inline: Inline
+  /// Text cleanup settings for the native TextPipeline. Absent from CLIs
+  /// older than 0.10.
+  public let cleanup: CleanupSettings?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -37,6 +40,22 @@ public struct AppConfig: Decodable, Equatable, Sendable {
     case hotkey
     case sounds
     case inline
+    case cleanup
+  }
+}
+
+/// `tmux-whisper inline cleanup --app NAME --json` (transcript on stdin).
+public struct CleanupResult: Decodable, Equatable, Sendable {
+  public let ok: Bool
+  public let status: String
+  public let rawText: String
+  public let text: String
+  public let mode: String?
+  public let cleanup: CleanupSettings
+
+  enum CodingKeys: String, CodingKey {
+    case ok, status, text, mode, cleanup
+    case rawText = "raw_text"
   }
 }
 

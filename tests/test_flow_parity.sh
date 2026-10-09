@@ -1623,8 +1623,29 @@ assert set(c["sounds"]) == {"start", "stop", "process", "error", "cancel"}, c["s
 assert c["sounds"]["start"]["path"].endswith("/dictate/start.wav"), c["sounds"]["start"]
 assert c["inline"]["send_mode"] in ("enter", "cmd_enter", "ctrl_j"), c["inline"]
 assert c["inline"]["send_delay_ms"] == 0 and c["inline"]["activate_delay_ms"] == 0, c["inline"]
+cl = c["cleanup"]
+assert cl["config_dir"] and cl["vocab_clean"] == "1" and cl["british_spelling"] == "1", cl
+assert cl["code_paragraph_min_words"] == "70" and cl["long_paragraph_min_words"] == "55", cl
+assert cl["force_mode"] is None and cl["postprocess"] is False, cl
 ' || fail "app_config_json_shape"
   pass "app_config_json_shape"
+
+  out="$(DICTATE_CLEAN=1 DICTATE_REPEATS_LEVEL=2 "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_cleanup_env" "$out" '"clean": "1", "repeats_level": "2"'
+
+  out="$(printf 'um the the codex [blank audio] color\n\n' | DICTATE_CLEAN=1 "$DICTATE_BIN" inline cleanup --app Safari --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["ok"] and r["status"] == "ok", r
+assert r["raw_text"] == "the codex color", r["raw_text"]
+assert r["text"] == "the Codex colour", r["text"]
+assert r["cleanup"]["clean"] == "1", r["cleanup"]
+' || { echo "$out" >&2; fail "app_inline_cleanup_json"; }
+  pass "app_inline_cleanup_json"
+
+  out="$(printf '[blank audio]' | "$DICTATE_BIN" inline cleanup --app Safari --json)"
+  assert_contains "app_inline_cleanup_no_speech" "$out" '"status": "no_speech"'
 
   out="$(DICTATE_APP_HOTKEY="cmd+shift+d" "$DICTATE_BIN" app-config --json)"
   assert_contains "app_config_hotkey_override" "$out" '"hotkey": "cmd+shift+d"'

@@ -76,6 +76,18 @@ struct CLIModelTests {
     #expect(config.sounds["start"]?.path == "/s/start.wav")
     #expect(config.sounds["cancel"]?.enabled == false)
     #expect(config.inline.sendDelayMs == 35)
+    #expect(config.cleanup == nil)
+  }
+
+  @Test func decodesAppConfigCleanupSection() throws {
+    let json = #"""
+    {"schema_version":1,"cli_version":"0.10.0-dev","hotkey":"ctrl+option+space","sounds":{},
+     "inline":{"autosend":true,"send_mode":"enter","paste_target":"current","process_sound":true,"activate_delay_ms":90,"send_delay_ms":35},
+     "cleanup":{"config_dir":"/c","clean":"0","repeats_level":"1","vocab_clean":"1","british_spelling":"1",
+       "code_paragraph_min_words":"70","long_paragraph_min_words":"55","force_mode":null,"postprocess":false}}
+    """#
+    let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+    #expect(config.cleanup == CleanupSettings(configDir: "/c"))
   }
 
   @Test func decodesProcessResult() throws {

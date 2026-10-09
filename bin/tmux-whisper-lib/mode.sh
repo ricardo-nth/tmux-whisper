@@ -321,6 +321,18 @@ get_current_mode() {
   detect_mode "$target_app"
 }
 
+# Mode for an inline take: the current/auto mode, falling back to the default
+# inline mode when that mode is missing or not allowed inline.
+resolve_inline_mode() {
+  local target_app="${1:-}"
+  local mode
+  mode="$(get_current_mode "$target_app")"
+  if ! mode_exists "$mode" || ! mode_allows_flow "$mode" "inline"; then
+    mode="$(default_inline_mode)"
+  fi
+  printf '%s\n' "$mode"
+}
+
 build_mode_prompt() {
   local mode
   mode="$(canonical_mode_name "$1")"

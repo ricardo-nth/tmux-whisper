@@ -83,6 +83,16 @@ These must stay byte-compatible with the CLI's files and locking:
   - Unicode and line-ending cases; cascading vocab rules.
 - Shadow-compare harness ready (used from 3b).
 
+**3a status (2026-10-09): done, not yet wired into the app.**
+- `LowkeyCore/Cleanup/`: `TextPipeline` (stage order of `process_inline_recording`, with bash's `$(...)` newline stripping between stages), `TextCleanup` (sanitize, fillers, repeats, paragraphs, British spelling), `VocabCorrector`, `ModeResolver`, `CleanupSettings` (the new `cleanup` section of `app-config --json`), `ShadowCompare` (for 3b's `verify_pipeline`).
+- Perl semantics reproduced: per-line processing (`perl -p`); byte-mode filters run on a byte-faithful view (UTF-8 bytes ≥ 0x80 mapped to private-use scalars), so `\s`/`\b`/`/i` stay ASCII-only as in Perl; vocab uses Perl's Unicode `\s` list, code-point lengths/ordering and literal replacements; mode folders in C-locale byte order; app names matched as BSD grep BREs.
+- Corpus: `tests/fixtures/cleanup/` (`cases.json` + seeded random cases → `expected.json`, 1,015 stage and 135 pipeline cases), generated from the real bash by `tests/gen-cleanup-fixtures.sh` (pipeline cases run the new `tmux-whisper inline cleanup --json` with `LC_ALL=C`, scratch HOME and config copies). CI (macOS Swift workflow) runs `--check` before `swift test`.
+- Cost: ~4 ms per 200-word take (debug build), including config reads and vocab compilation.
+- Known, accepted differences (none reachable from Lowkey today):
+  - No app name: the CLI asks System Events for the frontmost process; Swift uses the default inline mode. Lowkey always passes the frontmost app's name.
+  - App names containing `[` (a grep bracket expression), a newline, or BRE `\{…\}`/`\(…\)`: Swift never matches/treats them literally.
+  - Invalid UTF-8 in config files is decoded leniently; Unicode-version differences between Perl 5.34 and ICU only affect characters newer than Unicode 13.
+
 **3b — Drop the CLI from the dictation path (model stays in tmux-whisperd)**
 - Swift socket client (TmuxWhisperKit protocol) to the existing daemon:
   - Short ping timeout; a longer per-request timeout scaled to audio length.
