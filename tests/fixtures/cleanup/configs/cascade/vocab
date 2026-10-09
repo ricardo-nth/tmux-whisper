@@ -1,0 +1,32 @@
+﻿bom rule -> BOM
+# Cascading rules: longer left sides run first, so "open ai" becomes
+# "OpenAI" and then the shorter "OpenAI" rule rewrites it again.
+open ai -> OpenAI
+OpenAI::OpenAI Inc
+jason :: JSON
+get hub → GitHub
+a p i::A.P.I.
+api::API
+node.js::Node.js
+c++::C++
+.net::.NET
+café::Café Bar
+naïve::naive
+strasse::Straße
+k8s::Kubernetes
+foo   bar :: baz
+x->y::z
+a::b::c
+::no left
+no right::
+tab	sep -> tabbed
+  indented -> Indented  
+no separator here
+teh::the
+the the::the
+wez term::WezTerm
+wez term::WezTerm
+zzz → Zz
+# Canonically equivalent, different code points: Perl sorts them by code point.
+q̣́ :: end
+q̣́ :: q̣́

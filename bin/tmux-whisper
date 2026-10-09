@@ -365,6 +365,48 @@ apply_vocab_corrections() {
   dictate_lib_apply_vocab_corrections "$mode" "$DICTATE_CONFIG_DIR"
 }
 
+# First cleanup pass on a fresh transcript: artefacts, then fillers/repeats
+# when DICTATE_CLEAN=1. Each stage goes through $(...), so trailing newlines
+# are dropped between stages; Lowkey's TextPipeline mirrors this exactly.
+# Sets CLEANUP_TEXT rather than printing, so callers run the stages in their
+# own shell: a failing stage aborts under set -e with its own status, and
+# keeps going (as the code did before extraction) where errexit is off.
+# Usage: cleanup_raw_transcript <text> <do_postprocess:0|1>; txt="$CLEANUP_TEXT"
+cleanup_raw_transcript() {
+  local txt="$1"
+  local do_postprocess="${2:-0}"
+  txt="$(printf "%s" "$txt" | sanitize_transcript_artifacts)"
+  if [[ "${DICTATE_CLEAN:-0}" == "1" ]]; then
+    local run_repeats="1"
+    if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_REPEATS_WITH_POSTPROCESS:-0}"; then
+      run_repeats="0"
+    fi
+    txt="$(printf "%s" "$txt" | clean_fillers)"
+    if [[ "$run_repeats" == "1" ]]; then
+      local repeats_level="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}"
+      if [[ "$repeats_level" != "0" ]]; then
+        txt="$(printf "%s" "$txt" | clean_repeats "$repeats_level")"
+      fi
+    fi
+  fi
+  CLEANUP_TEXT="$txt"
+}
+
+# Final deterministic pass: vocab corrections (only when no LLM ran), mode
+# paragraphs, British spelling. Sets CLEANUP_TEXT (see cleanup_raw_transcript).
+# Usage: finish_transcript_text <text> <mode> <postprocessed:0|1>; txt="$CLEANUP_TEXT"
+finish_transcript_text() {
+  local txt="$1"
+  local mode="$2"
+  local postprocessed="${3:-0}"
+  if [[ "$postprocessed" != "1" ]] && bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
+    txt="$(printf "%s" "$txt" | apply_vocab_corrections "$mode")"
+  fi
+  txt="$(printf "%s" "$txt" | apply_mode_cleanup "$mode")"
+  txt="$(printf "%s" "$txt" | normalize_british_spelling)"
+  CLEANUP_TEXT="$txt"
+}
+
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 DICTATE_CONFIG_DIR="${DICTATE_CONFIG_DIR:-$XDG_CONFIG_HOME/dictate}"
 DICTATE_CONFIG_FILE="${DICTATE_CONFIG_FILE:-$DICTATE_CONFIG_DIR/config.toml}"
@@ -5173,6 +5215,17 @@ resolve_tmux_postprocess_requested() {
   fi
 }
 
+# Inline LLM post-processing runs only when enabled and a key is present.
+resolve_inline_postprocess_effective() {
+  local do_postprocess="${DICTATE_POSTPROCESS:-}"
+  [[ -z "$do_postprocess" ]] && do_postprocess="${CFG_POSTPROCESS_ENABLED:-0}"
+  if bool_is_on "$do_postprocess" && [[ -n "${CEREBRAS_API_KEY:-}" ]]; then
+    echo "1"
+  else
+    echo "0"
+  fi
+}
+
 resolve_tmux_postprocess_effective() {
   local requested
   requested="$(resolve_tmux_postprocess_requested)"
@@ -5401,21 +5454,8 @@ stop() {
       exit 1
     fi
     stage_started_ms="$(now_ms)"
-    txt="$(printf "%s" "$txt" | sanitize_transcript_artifacts)"
-    # Clean filler words / stutters (regex-based, fast)
-    if [[ "${DICTATE_CLEAN:-0}" == "1" ]]; then
-      local run_repeats="1"
-      if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_REPEATS_WITH_POSTPROCESS:-0}"; then
-        run_repeats="0"
-      fi
-      txt="$(printf "%s" "$txt" | clean_fillers)"
-      if [[ "$run_repeats" == "1" ]]; then
-        local repeats_level="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}"
-        if [[ "$repeats_level" != "0" ]]; then
-          txt="$(printf "%s" "$txt" | clean_repeats "$repeats_level")"
-        fi
-      fi
-    fi
+    cleanup_raw_transcript "$txt" "$do_postprocess"
+    txt="$CLEANUP_TEXT"
     clean_ms=$(( $(now_ms) - stage_started_ms ))
     if [[ -z "${txt//[[:space:]]/}" ]]; then
       rm -f "$wav"
@@ -5453,13 +5493,10 @@ stop() {
       # Signal "just processed" for SwiftBar
       signal_just_processed
       postprocess_ms=$(( $(now_ms) - stage_started_ms ))
-    elif bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
-      txt="$(printf "%s" "$txt" | apply_vocab_corrections "$tmux_mode")"
     fi
 
-    txt="$(printf "%s" "$txt" | apply_mode_cleanup "$tmux_mode")"
-
-    txt="$(printf "%s" "$txt" | normalize_british_spelling)"
+    finish_transcript_text "$txt" "$tmux_mode" "$do_postprocess"
+    txt="$CLEANUP_TEXT"
 
     stage_started_ms="$(now_ms)"
     if [[ "$do_copy" != "0" ]]; then
@@ -5627,13 +5664,8 @@ process_inline_recording() {
     trap 'processing_marker_stop "$inline_proc_file"; trap - RETURN' RETURN
   fi
 
-  local do_postprocess="${DICTATE_POSTPROCESS:-}"
-  [[ -z "$do_postprocess" ]] && do_postprocess="${CFG_POSTPROCESS_ENABLED:-0}"
-  if bool_is_on "$do_postprocess" && [[ -n "${CEREBRAS_API_KEY:-}" ]]; then
-    do_postprocess="1"
-  else
-    do_postprocess="0"
-  fi
+  local do_postprocess
+  do_postprocess="$(resolve_inline_postprocess_effective)"
   local detected_mode="none"
   local flow_started_ms
   local transcribe_ms=0 clean_ms=0 postprocess_ms=0 paste_ms=0 total_ms=0
@@ -5737,21 +5769,8 @@ process_inline_recording() {
   fi
   
   stage_started_ms="$(now_ms)"
-  txt="$(printf "%s" "$txt" | sanitize_transcript_artifacts)"
-  # Clean filler words / stutters if enabled (regex-based, fast)
-  if [[ "${DICTATE_CLEAN:-0}" == "1" ]]; then
-    local run_repeats="1"
-    if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_REPEATS_WITH_POSTPROCESS:-0}"; then
-      run_repeats="0"
-    fi
-    txt="$(printf "%s" "$txt" | clean_fillers)"
-    if [[ "$run_repeats" == "1" ]]; then
-      local repeats_level="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}"
-      if [[ "$repeats_level" != "0" ]]; then
-        txt="$(printf "%s" "$txt" | clean_repeats "$repeats_level")"
-      fi
-    fi
-  fi
+  cleanup_raw_transcript "$txt" "$do_postprocess"
+  txt="$CLEANUP_TEXT"
   clean_ms=$(( $(now_ms) - stage_started_ms ))
 
   if [[ -z "${txt//[[:space:]]/}" ]]; then
@@ -5767,10 +5786,8 @@ process_inline_recording() {
 
   # Save raw transcript for history
   local raw_txt="$txt"
-  detected_mode="$(get_current_mode "$target_app")"
-  if ! mode_exists "$detected_mode" || ! mode_allows_flow "$detected_mode" "inline"; then
-    detected_mode="$(default_inline_mode)"
-  fi
+  resolve_inline_mode "$target_app"
+  detected_mode="$RESOLVED_MODE"
 
   if ! inline_session_is_current "$inline_session_id"; then
     echo "Skipping stale inline result because a newer recording started."
@@ -5799,13 +5816,10 @@ process_inline_recording() {
       txt="$(DICTATE_FORCE_MODE="$detected_mode" postprocess_llm "$txt" "$target_app")"
     fi
     postprocess_ms=$(( $(now_ms) - stage_started_ms ))
-  elif bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
-    txt="$(printf "%s" "$txt" | apply_vocab_corrections "$detected_mode")"
   fi
 
-  txt="$(printf "%s" "$txt" | apply_mode_cleanup "$detected_mode")"
-
-  txt="$(printf "%s" "$txt" | normalize_british_spelling)"
+  finish_transcript_text "$txt" "$detected_mode" "$do_postprocess"
+  txt="$CLEANUP_TEXT"
 
   if ! inline_session_is_current "$inline_session_id"; then
     echo "Skipping stale inline result because a newer recording started."
@@ -7838,6 +7852,7 @@ case "$cmd" in
       stop) inline_stop ;;
       toggle) inline_toggle ;;
       process) inline_process_json "${@:3}" ;;
+      cleanup) inline_cleanup_json "${@:3}" ;;
       process-sound|process_sound|processsound) set_inline_process_sound "${3:-}" ;;
       *) die "usage: tmux-whisper inline [start|stop|toggle|process <wav> --json|process-sound]" ;;
     esac

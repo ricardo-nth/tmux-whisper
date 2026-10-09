@@ -18,6 +18,53 @@ app_delivery_settings_env() {
     "$autosend" "$send_mode" "$paste_target" "$activate_delay_ms" "$send_delay_ms"
 }
 
+# Cleanup settings exactly as the CLI resolves them (env, ~/.zshenv, config),
+# kept as raw strings so the app can interpret them with the CLI's own rules.
+# Prints one JSON object (the "cleanup" section of app-config).
+app_cleanup_settings_json() {
+  APPCLEAN_CONFIG_DIR="$DICTATE_CONFIG_DIR" \
+  APPCLEAN_CLEAN="${DICTATE_CLEAN:-0}" \
+  APPCLEAN_REPEATS_LEVEL="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}" \
+  APPCLEAN_VOCAB_CLEAN="${DICTATE_VOCAB_CLEAN:-1}" \
+  APPCLEAN_BRITISH_SPELLING="${DICTATE_BRITISH_SPELLING:-1}" \
+  APPCLEAN_CODE_PARAGRAPH_MIN_WORDS="${DICTATE_CODE_PARAGRAPH_MIN_WORDS:-70}" \
+  APPCLEAN_LONG_PARAGRAPH_MIN_WORDS="${DICTATE_LONG_PARAGRAPH_MIN_WORDS:-55}" \
+  APPCLEAN_FORCE_MODE="${DICTATE_FORCE_MODE:-}" \
+  APPCLEAN_POSTPROCESS="$(resolve_inline_postprocess_effective)" \
+  APPCLEAN_LOCALE_CTYPE="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" \
+  APPCLEAN_LOCALE_COLLATE="${LC_ALL:-${LC_COLLATE:-${LANG:-}}}" \
+  python3 - <<'PYEOF'
+import json, os
+e = os.environ
+
+C_LOCALES = ("", "C", "POSIX")
+
+def effective_locale(category):
+    # The shell's own view (APPCLEAN_*, which includes unexported variables
+    # from ~/.zshenv) and the exported environment that grep/sed/sort inherit
+    # can disagree; report a non-C value if either side has one.
+    shell = e["APPCLEAN_LOCALE_" + category]
+    child = e.get("LC_ALL") or e.get("LC_" + category) or e.get("LANG") or ""
+    return shell if shell not in C_LOCALES else child
+
+print(json.dumps({
+    "config_dir": e["APPCLEAN_CONFIG_DIR"],
+    "clean": e["APPCLEAN_CLEAN"],
+    "repeats_level": e["APPCLEAN_REPEATS_LEVEL"],
+    "vocab_clean": e["APPCLEAN_VOCAB_CLEAN"],
+    "british_spelling": e["APPCLEAN_BRITISH_SPELLING"],
+    "code_paragraph_min_words": e["APPCLEAN_CODE_PARAGRAPH_MIN_WORDS"],
+    "long_paragraph_min_words": e["APPCLEAN_LONG_PARAGRAPH_MIN_WORDS"],
+    "force_mode": e["APPCLEAN_FORCE_MODE"] or None,
+    "postprocess": e["APPCLEAN_POSTPROCESS"] == "1",
+    # Mode detection (grep -i, sed, glob order) and the blank check depend on
+    # these; the native pipeline only reproduces the C locale.
+    "locale_ctype": effective_locale("CTYPE"),
+    "locale_collate": effective_locale("COLLATE"),
+}))
+PYEOF
+}
+
 # tmux-whisper app-config --json
 app_config_json() {
   [[ "${1:-}" == "--json" || -z "${1:-}" ]] || die "usage: tmux-whisper app-config --json"
@@ -43,6 +90,7 @@ app_config_json() {
     APPCFG_ACTIVATE_DELAY_MS="$APP_ACTIVATE_DELAY_MS" \
     APPCFG_SEND_DELAY_MS="$APP_SEND_DELAY_MS" \
     APPCFG_PROCESS_SOUND="${CFG_INLINE_PROCESS_SOUND:-1}" \
+    APPCFG_CLEANUP_JSON="$(app_cleanup_settings_json)" \
     python3 - <<'PYEOF'
 import json, os
 e = os.environ
@@ -65,6 +113,7 @@ print(json.dumps({
         "activate_delay_ms": int(e["APPCFG_ACTIVATE_DELAY_MS"]),
         "send_delay_ms": int(e["APPCFG_SEND_DELAY_MS"]),
     },
+    "cleanup": json.loads(e["APPCFG_CLEANUP_JSON"]),
 }))
 PYEOF
 }
@@ -164,4 +213,54 @@ print(json.dumps({
 PYEOF
   rm -f "$log" "$work_wav" 2>/dev/null || true
   return 0
+}
+
+# tmux-whisper inline cleanup [--app NAME] --json   (transcript on stdin)
+# Runs only the deterministic text cleanup of an inline take (artefacts,
+# fillers/repeats, mode, vocab, paragraphs, British spelling), never the LLM.
+# Used to generate Lowkey's TextPipeline parity fixtures and for shadow
+# compares. Prints {ok, status, raw_text, text, mode, cleanup}.
+inline_cleanup_json() {
+  local app=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) ;;
+      --app) [[ $# -ge 2 ]] || die "inline cleanup: --app requires a value"; app="$2"; shift ;;
+      *) die "usage: tmux-whisper inline cleanup [--app NAME] --json < transcript" ;;
+    esac
+    shift
+  done
+  need python3
+
+  local raw txt="" final="" mode="" status="no_speech"
+  # $(...) drops trailing newlines, like the transcription capture does.
+  raw="$(cat)"
+  cleanup_raw_transcript "$raw" "0"
+  txt="$CLEANUP_TEXT"
+  if [[ -n "${txt//[[:space:]]/}" ]]; then
+    status="ok"
+    resolve_inline_mode "$app"
+    mode="$RESOLVED_MODE"
+    finish_transcript_text "$txt" "$mode" "0"
+    final="$CLEANUP_TEXT"
+  fi
+
+  APPCLEANUP_STATUS="$status" \
+  APPCLEANUP_RAW="$txt" \
+  APPCLEANUP_TEXT="$final" \
+  APPCLEANUP_MODE="$mode" \
+  APPCLEANUP_SETTINGS="$(app_cleanup_settings_json)" \
+  python3 - <<'PYEOF'
+import json, os
+e = os.environ
+ok = e["APPCLEANUP_STATUS"] == "ok"
+print(json.dumps({
+    "ok": ok,
+    "status": e["APPCLEANUP_STATUS"],
+    "raw_text": e["APPCLEANUP_RAW"] if ok else "",
+    "text": e["APPCLEANUP_TEXT"] if ok else "",
+    "mode": e["APPCLEANUP_MODE"] if ok else None,
+    "cleanup": json.loads(e["APPCLEANUP_SETTINGS"]),
+}))
+PYEOF
 }

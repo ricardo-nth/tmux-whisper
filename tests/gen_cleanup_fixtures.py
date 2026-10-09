@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Generate (or check) Lowkey's TextPipeline parity fixtures.
+
+Expected outputs come from running the CLI's real bash/Perl cleanup:
+- stage cases call one bin/dictate-lib.sh function on the raw input;
+- pipeline cases run `bin/tmux-whisper inline cleanup --json` against a
+  scratch copy of a fixture config dir, with a scratch HOME and LC_ALL=C
+  (the environment Lowkey gives the CLI).
+
+Inputs are the hand-written cases in tests/fixtures/cleanup/cases.json plus
+seeded random "token soup" cases. The result, tests/fixtures/cleanup/
+expected.json, is self-contained: the Swift tests read only that file and the
+fixture config dirs.
+
+Usage: tests/gen-cleanup-fixtures.sh [--check]
+"""
+
+import json
+import os
+import random
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FIXTURES = os.path.join(ROOT, "tests", "fixtures", "cleanup")
+CASES = os.path.join(FIXTURES, "cases.json")
+EXPECTED = os.path.join(FIXTURES, "expected.json")
+SEED = 20261009
+
+STAGE_RUNNER = r"""
+set -u
+source "$1/bin/dictate-lib.sh"
+work="$2"
+while IFS=$'\x1f' read -r idx fn a1 a2 _end; do
+  in="$work/in/$idx"
+  out="$work/out/$idx"
+  case "$fn" in
+    sanitize) dictate_lib_sanitize_transcript_artifacts <"$in" >"$out" ;;
+    fillers) dictate_lib_clean_fillers <"$in" >"$out" ;;
+    repeats) dictate_lib_clean_repeats "$a1" <"$in" >"$out" ;;
+    british) dictate_lib_normalize_british_spelling "$a1" <"$in" >"$out" ;;
+    paragraphs) dictate_lib_auto_paragraphs "$a1" "$a2" <"$in" >"$out" ;;
+    vocab) dictate_lib_apply_vocab_corrections "$a1" "$a2" <"$in" >"$out" ;;
+    *) echo "unknown stage: $fn" >&2; exit 1 ;;
+  esac
+done <"$work/manifest"
+"""
+
+# Pieces the random cases are built from: fillers, stutters, artefacts,
+# vocab triggers, US spellings, spelled acronyms, punctuation, Unicode and
+# every whitespace/line-ending variant the filters treat specially.
+TOKENS = [
+    "um", "uh,", "Umm.", "er", "hmm", "you know", "I mean,", "actually", "actuallyish", "basically,", "like", "like,",
+    "so yeah", "anyways", "to be honest", "the", "The", "THE", "the the", "go to", "go to go to", "it's", "don't don't",
+    "color", "Colors", "COLOR", "cOlOr", "favorite", "analyze", "realized", "centering", "Behavior",
+    "[blank audio]", "( blank_audio )", "{BLANK - AUDIO}", "[blank]", "[", "]", "(", ")",
+    ",", ".", "!", "?", ";", ":", "...", " ", "  ", "\t", "\n", "\r\n", "\r", "\x0b", "\x0c",
+    " ", " ", "　", "\u0085", " ", "café", "naïve", "Straße", "STRASSE",
+    "K8s", "k8s", "ſo yeah", "a p i", "A.P.I", "g-p-t", "x x x", "a b c d e f g h i", "open ai",
+    "OPEN  AI", "open\tai", "jason", "Jason's", "get hub", "node.js", "c++", ".net", "api", "npm", "teh",
+    "\U0001F600", "é", "日本語", "foo_bar", "gpt-4", "iTerm2", "1.5", "Dr. Smith",
+    "wez term", "teamux", "tmux whisper", "source slash", "at saw slash", "regards", "kind regards", "zzz",
+]
+
+
+def soup(rng, max_tokens=24):
+    parts = []
+    for _ in range(rng.randint(1, max_tokens)):
+        parts.append(rng.choice(TOKENS))
+        parts.append(rng.choice([" ", " ", " ", "", ", ", ". "]))
+    return "".join(parts)
+
+
+def long_soup(rng):
+    sentences = []
+    for _ in range(rng.randint(3, 14)):
+        words = [rng.choice(TOKENS[:40] + ["word", "another", "text", "here", "it's", "well-known"]) for _ in range(rng.randint(2, 12))]
+        sentences.append(" ".join(words) + rng.choice([".", "!", "?", ".", "..."]))
+    return rng.choice([" ", "  ", " \t"]).join(sentences)
+
+
+def fuzz_cases(rng):
+    stage, pipeline = [], []
+
+    def add(fn, text, *args):
+        stage.append({"id": f"fuzz-{fn}-{sum(1 for c in stage if c['fn'] == fn) + 1:03d}", "fn": fn,
+                      "args": list(args), "input": text})
+
+    for _ in range(80):
+        add("sanitize", soup(rng))
+    for _ in range(80):
+        add("fillers", soup(rng))
+    for _ in range(80):
+        add("repeats", soup(rng), rng.choice(["0", "1", "2"]))
+    for _ in range(60):
+        add("british", soup(rng), rng.choice(["1", "1", "0"]))
+    for _ in range(60):
+        add("paragraphs", long_soup(rng), rng.choice(["code", "long"]), rng.choice(["10", "30", "55", "70"]))
+    for _ in range(100):
+        cfg, mode = rng.choice([("cascade", "code"), ("cascade", "email"), ("cascade", ""), ("repo", "code"), ("repo", "base")])
+        add("vocab", soup(rng), mode, cfg)
+
+    apps = ["Ghostty", "WezTerm", "Mail", "Notes", "Slack", "Messages", "TextEdit", "Other"]
+    envs = [{}, {"DICTATE_CLEAN": "1"}, {"DICTATE_CLEAN": "1", "DICTATE_REPEATS_LEVEL": "2"},
+            {"DICTATE_BRITISH_SPELLING": "0"}, {"DICTATE_VOCAB_CLEAN": "0"}]
+    for i in range(30):
+        text = long_soup(rng) if rng.random() < 0.3 else soup(rng)
+        pipeline.append({"id": f"fuzz-pipeline-{i + 1:03d}", "config": rng.choice(["repo", "cascade"]),
+                         "app": rng.choice(apps), "env": rng.choice(envs), "input": text})
+    return stage, pipeline
+
+
+def config_path(name):
+    return os.path.join(ROOT, "config") if name == "repo" else os.path.join(FIXTURES, "configs", name)
+
+
+def prepare_config(name, current_mode, dest):
+    """Scratch copy of a fixture config dir, with the case's current-mode."""
+    shutil.copytree(config_path(name), dest, symlinks=True)
+    mode_file = os.path.join(dest, "current-mode")
+    if current_mode is False:
+        if os.path.exists(mode_file):
+            os.remove(mode_file)
+    elif current_mode is not None:
+        with open(mode_file, "w", encoding="utf-8", newline="") as f:
+            f.write(current_mode)
+
+
+def run_stage_cases(cases, work):
+    os.makedirs(os.path.join(work, "in"))
+    os.makedirs(os.path.join(work, "out"))
+    with open(os.path.join(work, "manifest"), "w", encoding="utf-8", newline="") as manifest:
+        for idx, case in enumerate(cases):
+            with open(os.path.join(work, "in", str(idx)), "w", encoding="utf-8", newline="") as f:
+                f.write(case["input"])
+            args = list(case["args"]) + ["", ""]
+            if case["fn"] == "vocab":
+                args[1] = config_path(args[1])
+            manifest.write("\x1f".join([str(idx), case["fn"], args[0], args[1], "END"]) + "\n")
+    env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": work}
+    subprocess.run(["bash", "-c", STAGE_RUNNER, "runner", ROOT, work], env=env, check=True)
+    results = []
+    for idx, case in enumerate(cases):
+        with open(os.path.join(work, "out", str(idx)), "rb") as f:
+            results.append(dict(case, output=f.read().decode("utf-8")))
+    return results
+
+
+def run_pipeline_cases(cases, work):
+    results = []
+    for idx, case in enumerate(cases):
+        case_dir = os.path.join(work, f"p{idx}")
+        home = os.path.join(case_dir, "home")
+        cfg = os.path.join(case_dir, "config")
+        os.makedirs(home)
+        prepare_config(case["config"], case.get("current_mode"), cfg)
+        env = {
+            "HOME": home,
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "LC_ALL": "C",
+            "TMPDIR": case_dir,
+            "DICTATE_LIB_PATH": os.path.join(ROOT, "bin", "dictate-lib.sh"),
+            "DICTATE_INTERNAL_LIB_DIR": os.path.join(ROOT, "bin", "tmux-whisper-lib"),
+            "DICTATE_CONFIG_DIR": cfg,
+        }
+        env.update(case["env"])
+        proc = subprocess.run(
+            [os.path.join(ROOT, "bin", "tmux-whisper"), "inline", "cleanup", "--app", case["app"], "--json"],
+            input=case["input"].encode("utf-8"), env=env, capture_output=True)
+        if proc.returncode != 0:
+            sys.exit(f"{case['id']}: inline cleanup failed ({proc.returncode}): {proc.stderr.decode(errors='replace')}")
+        out = json.loads(proc.stdout)
+        settings = out["cleanup"]
+        if settings["config_dir"] != cfg:
+            sys.exit(f"{case['id']}: unexpected config_dir {settings['config_dir']!r}")
+        settings["config_dir"] = "@config"
+        results.append(dict(case, settings=settings, status=out["status"], raw_text=out["raw_text"],
+                            text=out["text"], mode=out["mode"]))
+    return results
+
+
+def generate():
+    with open(CASES, encoding="utf-8") as f:
+        cases = json.load(f)
+    fuzz_stage, fuzz_pipeline = fuzz_cases(random.Random(SEED))
+    stage = cases["stage"] + fuzz_stage
+    pipeline = cases["pipeline"] + fuzz_pipeline
+    ids = [c["id"] for c in stage + pipeline]
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    if duplicates:
+        sys.exit(f"duplicate case ids: {duplicates}")
+    with tempfile.TemporaryDirectory(prefix="cleanup-fixtures.") as work:
+        stage_results = run_stage_cases(stage, os.path.join(work, "stage"))
+        pipeline_results = run_pipeline_cases(pipeline, os.path.join(work, "pipeline"))
+    document = {
+        "generated_by": "tests/gen-cleanup-fixtures.sh (do not edit by hand)",
+        "stage": stage_results,
+        "pipeline": pipeline_results,
+    }
+    return json.dumps(document, ensure_ascii=False, indent=1) + "\n"
+
+
+def main():
+    check = "--check" in sys.argv[1:]
+    generated = generate()
+    if not check:
+        with open(EXPECTED, "w", encoding="utf-8", newline="") as f:
+            f.write(generated)
+        print(f"wrote {os.path.relpath(EXPECTED, ROOT)}")
+        return
+    try:
+        with open(EXPECTED, encoding="utf-8", newline="") as f:
+            committed = f.read()
+    except FileNotFoundError:
+        sys.exit("expected.json is missing; run tests/gen-cleanup-fixtures.sh")
+    if committed == generated:
+        print("cleanup fixtures are up to date")
+        return
+    old = {c["id"]: c for c in json.loads(committed)["stage"] + json.loads(committed)["pipeline"]}
+    new = {c["id"]: c for c in json.loads(generated)["stage"] + json.loads(generated)["pipeline"]}
+    changed = sorted(i for i in old.keys() | new.keys() if old.get(i) != new.get(i))
+    print("cleanup fixtures are stale: the bash cleanup or the cases changed.", file=sys.stderr)
+    print(f"changed cases ({len(changed)}): {', '.join(changed[:20])}{' ...' if len(changed) > 20 else ''}", file=sys.stderr)
+    print("Regenerate with tests/gen-cleanup-fixtures.sh, then make the Swift TextPipeline match.", file=sys.stderr)
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

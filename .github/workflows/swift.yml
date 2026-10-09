@@ -7,10 +7,26 @@ on:
     paths:
       - "tmux-whisperd/**"
       - ".github/workflows/swift.yml"
+      # Lowkey's TextPipeline must match the CLI cleanup byte for byte.
+      - "bin/dictate-lib.sh"
+      - "bin/tmux-whisper"
+      - "bin/tmux-whisper-lib/**"
+      - "config/**"
+      - "tests/fixtures/cleanup/**"
+      - "tests/gen-cleanup-fixtures.sh"
+      - "tests/gen_cleanup_fixtures.py"
   pull_request:
     paths:
       - "tmux-whisperd/**"
       - ".github/workflows/swift.yml"
+      # Lowkey's TextPipeline must match the CLI cleanup byte for byte.
+      - "bin/dictate-lib.sh"
+      - "bin/tmux-whisper"
+      - "bin/tmux-whisper-lib/**"
+      - "config/**"
+      - "tests/fixtures/cleanup/**"
+      - "tests/gen-cleanup-fixtures.sh"
+      - "tests/gen_cleanup_fixtures.py"
 
 jobs:
   tmux-whisper-kit:
@@ -32,7 +48,12 @@ jobs:
       - name: Toolchain
         run: swift --version
 
-      - name: Test TmuxWhisperKit
+      - name: Cleanup fixtures match the CLI
+        # Regenerates the expected outputs from the bash cleanup; fails if the
+        # committed tests/fixtures/cleanup/expected.json is stale.
+        run: ../tests/gen-cleanup-fixtures.sh --check
+
+      - name: Test TmuxWhisperKit and LowkeyCore
         run: swift test
 
       - name: Build release daemon

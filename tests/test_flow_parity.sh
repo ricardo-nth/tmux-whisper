@@ -1623,8 +1623,39 @@ assert set(c["sounds"]) == {"start", "stop", "process", "error", "cancel"}, c["s
 assert c["sounds"]["start"]["path"].endswith("/dictate/start.wav"), c["sounds"]["start"]
 assert c["inline"]["send_mode"] in ("enter", "cmd_enter", "ctrl_j"), c["inline"]
 assert c["inline"]["send_delay_ms"] == 0 and c["inline"]["activate_delay_ms"] == 0, c["inline"]
+cl = c["cleanup"]
+assert cl["config_dir"] and cl["vocab_clean"] == "1" and cl["british_spelling"] == "1", cl
+assert cl["code_paragraph_min_words"] == "70" and cl["long_paragraph_min_words"] == "55", cl
+assert cl["force_mode"] is None and cl["postprocess"] is False, cl
 ' || fail "app_config_json_shape"
   pass "app_config_json_shape"
+
+  out="$(DICTATE_CLEAN=1 DICTATE_REPEATS_LEVEL=2 "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_cleanup_env" "$out" '"clean": "1", "repeats_level": "2"'
+
+  # An unexported LC_ALL=C from ~/.zshenv must not hide the exported UTF-8
+  # LANG that grep/sed inherit: the native pipeline has to fall back.
+  printf '%s\n' 'LC_ALL=C' >"$HOME/.zshenv"
+  out="$(env -u LC_ALL -u LC_CTYPE -u LC_COLLATE LANG=en_US.UTF-8 "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_locale_exported_lang" "$out" '"locale_ctype": "en_US.UTF-8", "locale_collate": "en_US.UTF-8"'
+  printf '%s\n' 'export LC_ALL=C' >"$HOME/.zshenv"
+  out="$(env -u LC_ALL -u LC_CTYPE -u LC_COLLATE LANG=en_US.UTF-8 "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_locale_exported_c" "$out" '"locale_ctype": "C", "locale_collate": "C"'
+  rm -f "$HOME/.zshenv"
+
+  out="$(printf 'um the the codex [blank audio] color\n\n' | DICTATE_CLEAN=1 "$DICTATE_BIN" inline cleanup --app Safari --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["ok"] and r["status"] == "ok", r
+assert r["raw_text"] == "the codex color", r["raw_text"]
+assert r["text"] == "the Codex colour", r["text"]
+assert r["cleanup"]["clean"] == "1", r["cleanup"]
+' || { echo "$out" >&2; fail "app_inline_cleanup_json"; }
+  pass "app_inline_cleanup_json"
+
+  out="$(printf '[blank audio]' | "$DICTATE_BIN" inline cleanup --app Safari --json)"
+  assert_contains "app_inline_cleanup_no_speech" "$out" '"status": "no_speech"'
 
   out="$(DICTATE_APP_HOTKEY="cmd+shift+d" "$DICTATE_BIN" app-config --json)"
   assert_contains "app_config_hotkey_override" "$out" '"hotkey": "cmd+shift+d"'
@@ -1647,6 +1678,33 @@ assert r["timings"]["record_ms"] == 3000, r["timings"]
   assert_file_contains "app_process_bench_source" "$DICTATE_CONFIG_DIR/history/bench.tsv" "app:avaudioengine"
   [[ -f "$CASE_DIR/take.wav" ]] || fail "app_process_keeps_callers_wav"
   pass "app_process_keeps_callers_wav"
+}
+
+# A failing cleanup stage keeps its pre-extraction semantics: under set -e it
+# aborts with the stage's own status; where errexit is off (inline process
+# runs the pipeline under `|| rc=$?`) the partial text carries on.
+run_cleanup_stage_failure_round() {
+  setup_case "cleanup-stage-failure"
+  export DICTATE_TEST_SWIFT_TEXT="stage failure transcript"
+  export DICTATE_TEST_FFPROBE_DURATION_MS=3000
+  printf '%s\n' "app take" >"$CASE_DIR/take.wav"
+  local failing_lib="$CASE_DIR/dictate-lib-failing-sanitize.sh"
+  {
+    cat "$ROOT/bin/dictate-lib.sh"
+    printf '%s\n' 'dictate_lib_sanitize_transcript_artifacts() { cat; return 7; }'
+  } >"$failing_lib"
+  local out rc=0
+  out="$(printf 'hello there' | DICTATE_LIB_PATH="$failing_lib" "$DICTATE_BIN" inline cleanup --app Safari --json 2>/dev/null)" || rc=$?
+  assert_equals "cleanup_stage_failure_exit_status" "$rc" "7"
+
+  out="$(DICTATE_LIB_PATH="$failing_lib" "$DICTATE_BIN" inline process "$CASE_DIR/take.wav" --app Safari --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["ok"] and r["status"] == "ok", r
+assert r["raw_text"] == "stage failure transcript", r
+' || { echo "$out" >&2; fail "cleanup_stage_failure_inline_process_continues"; }
+  pass "cleanup_stage_failure_inline_process_continues"
 }
 
 run_app_backend_failure_round() {
@@ -1705,6 +1763,7 @@ run_transcribe_file_write_race_round
 run_daemon_build_and_refresh_round
 run_app_backend_round
 run_app_backend_failure_round
+run_cleanup_stage_failure_round
 run_finder_quick_action_round
 run_finder_handler_round
 
