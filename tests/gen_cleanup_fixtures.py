@@ -102,6 +102,23 @@ def fuzz_cases(rng):
         cfg, mode = rng.choice([("cascade", "code"), ("cascade", "email"), ("cascade", ""), ("repo", "code"), ("repo", "base")])
         add("vocab", soup(rng), mode, cfg)
 
+    words = ["so", "the", "plan", "is", "to", "ship", "it", "today", "tomorrow", "we", "can", "it's", "API",
+             "test", "again", "and", "then", "done", "3", "v2", "ok"]
+    for i in range(150):
+        spoken = [rng.choice(words) for _ in range(rng.randint(8, 40))]
+        cut = rng.randint(0, len(spoken))
+        tail = spoken[max(0, cut - rng.randint(0, 6)):]
+        if rng.random() < 0.3:
+            tail = tail + [rng.choice(words) for _ in range(rng.randint(1, 4))]
+        punct = lambda ws: "".join(w + rng.choice([" ", " ", ", ", ". ", "? ", " - "]) for w in ws).strip()
+        full = punct(spoken[:rng.randint(cut, len(spoken))])
+        tail_text = punct(tail)
+        if rng.random() < 0.15:
+            tail_text = tail_text.upper()
+        if rng.random() < 0.1:
+            tail_text = rng.choice(["", "  ", "\n", "\u00a0", tail_text + "\n" + tail_text])
+        add("merge", full, tail_text)
+
     apps = ["Ghostty", "WezTerm", "Mail", "Notes", "Slack", "Messages", "TextEdit", "Other"]
     envs = [{}, {"DICTATE_CLEAN": "1"}, {"DICTATE_CLEAN": "1", "DICTATE_REPEATS_LEVEL": "2"},
             {"DICTATE_BRITISH_SPELLING": "0"}, {"DICTATE_VOCAB_CLEAN": "0"}]
@@ -126,6 +143,34 @@ def prepare_config(name, current_mode, dest):
     elif current_mode is not None:
         with open(mode_file, "w", encoding="utf-8", newline="") as f:
             f.write(current_mode)
+
+
+def merge_script():
+    """The Python body of merge_transcript_chunks, taken from bin/tmux-whisper."""
+    with open(os.path.join(ROOT, "bin", "tmux-whisper"), encoding="utf-8") as f:
+        source = f.read()
+    start = source.index("merge_transcript_chunks() {")
+    body_start = source.index("<<'PYEOF'\n", start) + len("<<'PYEOF'\n")
+    body_end = source.index("\nPYEOF\n", body_start)
+    return source[body_start:body_end] + "\n"
+
+
+def run_merge_cases(cases, work):
+    """Tail-rescue merge: the CLI writes the full transcript and the tail
+    transcript (newlines turned into spaces) as two lines, then merges."""
+    os.makedirs(work)
+    script = os.path.join(work, "merge.py")
+    with open(script, "w", encoding="utf-8") as f:
+        f.write(merge_script())
+    results = []
+    for idx, case in enumerate(cases):
+        chunks = os.path.join(work, f"chunks-{idx}.txt")
+        with open(chunks, "w", encoding="utf-8", newline="") as f:
+            f.write(case["input"] + "\n" + case["args"][0].replace("\n", " ") + "\n")
+        proc = subprocess.run([sys.executable, "-I", script, chunks], capture_output=True, check=True,
+                              env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"})
+        results.append(dict(case, output=proc.stdout.decode("utf-8")))
+    return results
 
 
 def run_stage_cases(cases, work):
@@ -191,8 +236,11 @@ def generate():
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
     if duplicates:
         sys.exit(f"duplicate case ids: {duplicates}")
+    merge = [c for c in stage if c["fn"] == "merge"]
+    stage = [c for c in stage if c["fn"] != "merge"]
     with tempfile.TemporaryDirectory(prefix="cleanup-fixtures.") as work:
         stage_results = run_stage_cases(stage, os.path.join(work, "stage"))
+        stage_results += run_merge_cases(merge, os.path.join(work, "merge"))
         pipeline_results = run_pipeline_cases(pipeline, os.path.join(work, "pipeline"))
     document = {
         "generated_by": "tests/gen-cleanup-fixtures.sh (do not edit by hand)",

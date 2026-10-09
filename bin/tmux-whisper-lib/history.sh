@@ -26,10 +26,18 @@ save_history() {
   # Clean old entries first
   cleanup_history "$retention"
 
-  # Generate timestamp filename
+  # Generate timestamp filename. Claim it with noclobber so two takes saved
+  # in the same second (Lowkey's background recorder plus a CLI flow) never
+  # overwrite each other; later ones get _2, _3, ... which sort after it.
   local ts
   ts="$(date '+%Y-%m-%dT%H-%M-%S')"
   local filename="$HISTORY_DIR/${ts}.json"
+  local collision=1
+  while ! ( set -C; : >"$filename" ) 2>/dev/null; do
+    collision=$((collision + 1))
+    (( collision > 50 )) && break
+    filename="$HISTORY_DIR/${ts}_${collision}.json"
+  done
 
   # Escape for JSON
   local raw_escaped processed_escaped mode_escaped app_escaped

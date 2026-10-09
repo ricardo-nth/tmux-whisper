@@ -9209,6 +9209,1554 @@
    ],
    "input": "c++ color ",
    "output": "c++ color"
+  },
+  {
+   "id": "merge-001",
+   "fn": "merge",
+   "args": [
+    "ship it today and test it tomorrow"
+   ],
+   "input": "so the plan is to ship it today",
+   "output": "so the plan is to ship it today and test it tomorrow"
+  },
+  {
+   "id": "merge-002",
+   "fn": "merge",
+   "args": [
+    "plan is to ship it today"
+   ],
+   "input": "so the plan is to ship it today",
+   "output": "so the plan is to ship it today"
+  },
+  {
+   "id": "merge-003",
+   "fn": "merge",
+   "args": [
+    "six seven"
+   ],
+   "input": "one two three four five",
+   "output": "one two three four five six seven"
+  },
+  {
+   "id": "merge-004",
+   "fn": "merge",
+   "args": [
+    "hello there friend"
+   ],
+   "input": "we said hello",
+   "output": "we said hello hello there friend"
+  },
+  {
+   "id": "merge-005",
+   "fn": "merge",
+   "args": [
+    "x y c d e f g"
+   ],
+   "input": "a b c d e f",
+   "output": "a b c d e f g"
+  },
+  {
+   "id": "merge-006",
+   "fn": "merge",
+   "args": [
+    "the end."
+   ],
+   "input": "the end.",
+   "output": "the end."
+  },
+  {
+   "id": "merge-007",
+   "fn": "merge",
+   "args": [
+    "it today, and then test."
+   ],
+   "input": "Ship it today.",
+   "output": "Ship it today. and then test."
+  },
+  {
+   "id": "merge-008",
+   "fn": "merge",
+   "args": [
+    "it's done, OK"
+   ],
+   "input": "it's done it's done",
+   "output": "it's done it's done OK"
+  },
+  {
+   "id": "merge-009",
+   "fn": "merge",
+   "args": [
+    "tail only"
+   ],
+   "input": "",
+   "output": "tail only"
+  },
+  {
+   "id": "merge-010",
+   "fn": "merge",
+   "args": [
+    ""
+   ],
+   "input": "full only",
+   "output": "full only"
+  },
+  {
+   "id": "merge-011",
+   "fn": "merge",
+   "args": [
+    "tail"
+   ],
+   "input": "full\nwith newline",
+   "output": "full with newline tail"
+  },
+  {
+   "id": "merge-012",
+   "fn": "merge",
+   "args": [
+    "crlf words here then more"
+   ],
+   "input": "full\r\ncrlf words here",
+   "output": "full crlf words here then more"
+  },
+  {
+   "id": "merge-013",
+   "fn": "merge",
+   "args": [
+    "lait is good indeed"
+   ],
+   "input": "café au lait is good",
+   "output": "café au lait is good indeed"
+  },
+  {
+   "id": "merge-014",
+   "fn": "merge",
+   "args": [
+    "   spaces and more"
+   ],
+   "input": "trailing spaces   ",
+   "output": "trailing spaces spaces and more"
+  },
+  {
+   "id": "merge-015",
+   "fn": "merge",
+   "args": [
+    "separator here too"
+   ],
+   "input": "  odd separator here",
+   "output": "odd separator here too"
+  },
+  {
+   "id": "merge-016",
+   "fn": "merge",
+   "args": [
+    " end more"
+   ],
+   "input": "nbsp end",
+   "output": "nbsp end end more"
+  },
+  {
+   "id": "merge-017",
+   "fn": "merge",
+   "args": [
+    "separated words - continued"
+   ],
+   "input": "tab\tseparated words",
+   "output": "tab\tseparated words continued"
+  },
+  {
+   "id": "merge-018",
+   "fn": "merge",
+   "args": [
+    "3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27"
+   ],
+   "input": "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26",
+   "output": "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27"
+  },
+  {
+   "id": "merge-019",
+   "fn": "merge",
+   "args": [
+    "zz yy xx ww vv uu tt ss rr qq pp oo beta gamma delta epsilon"
+   ],
+   "input": "alpha beta gamma delta",
+   "output": "alpha beta gamma delta epsilon"
+  },
+  {
+   "id": "merge-020",
+   "fn": "merge",
+   "args": [
+    "zz yy xx ww vv uu tt ss rr qq pp oo nn beta gamma delta epsilon"
+   ],
+   "input": "alpha beta gamma delta",
+   "output": "alpha beta gamma delta zz yy xx ww vv uu tt ss rr qq pp oo nn beta gamma delta epsilon"
+  },
+  {
+   "id": "merge-021",
+   "fn": "merge",
+   "args": [
+    "y z"
+   ],
+   "input": "x y",
+   "output": "x y y z"
+  },
+  {
+   "id": "merge-022",
+   "fn": "merge",
+   "args": [
+    "x y z"
+   ],
+   "input": "x y z",
+   "output": "x y z"
+  },
+  {
+   "id": "fuzz-merge-001",
+   "fn": "merge",
+   "args": [
+    "it is? to ok it 3 - to, can. to is? it's it."
+   ],
+   "input": "is done. to then, again tomorrow - ok? again test, today. so done? it, is, to - ok. it? 3 to. can. to, is it's",
+   "output": "is done. to then, again tomorrow - ok? again test, today. so done? it, is, to - ok. it? 3 to. can. to, is it's it."
+  },
+  {
+   "id": "fuzz-merge-002",
+   "fn": "merge",
+   "args": [
+    "it, to - API is, again and, today done? we can - then? API again. the, 3. ok - so, is, plan, today - we, v2 - API, and - we ok, 3. 3,"
+   ],
+   "input": "ship - so - the it - to? API - is? again, and? today done we can then, API again the 3 ok, so, is plan, today - we,",
+   "output": "ship - so - the it - to? API - is? again, and? today done we can then, API again the 3 ok, so, is plan, today - we, v2 - API, and - we ok, 3. 3,"
+  },
+  {
+   "id": "fuzz-merge-003",
+   "fn": "merge",
+   "args": [
+    "  "
+   ],
+   "input": "it's? it's - 3. so? it. API the? today",
+   "output": "it's? it's - 3. so? it. API the? today"
+  },
+  {
+   "id": "fuzz-merge-004",
+   "fn": "merge",
+   "args": [
+    "API - to, today? v2? test - can - can and? API API to - so can. done - we we,"
+   ],
+   "input": "API. to? today, v2, test, can - can and - API. API, to, so",
+   "output": "API. to? today, v2, test, can - can and - API. API, to, so can. done - we we,"
+  },
+  {
+   "id": "fuzz-merge-005",
+   "fn": "merge",
+   "args": [
+    "  "
+   ],
+   "input": "the ship ok then, and. again the? API - it's, today. it? today. it? it plan?",
+   "output": "the ship ok then, and. again the? API - it's, today. it? today. it? it plan?"
+  },
+  {
+   "id": "fuzz-merge-006",
+   "fn": "merge",
+   "args": [
+    "test - v2 - plan, test, is - today? ok. and. it. API - test? ok again? ship - API,"
+   ],
+   "input": "tomorrow today ok tomorrow? we - today - again test? v2 plan, test, is. today, ok",
+   "output": "tomorrow today ok tomorrow? we - today - again test? v2 plan, test, is. today, ok and. it. API - test? ok again? ship - API,"
+  },
+  {
+   "id": "fuzz-merge-007",
+   "fn": "merge",
+   "args": [
+    "to, done, test - ok"
+   ],
+   "input": "so - is tomorrow test to again. ok plan - and - so? it's today? ship - v2 - plan. so, we, ok? then, can done done, is, again. 3 plan? to, done - test?",
+   "output": "so - is tomorrow test to again. ok plan - and - so? it's today? ship - v2 - plan. so, we, ok? then, can done done, is, again. 3 plan? to, done - test? ok"
+  },
+  {
+   "id": "fuzz-merge-008",
+   "fn": "merge",
+   "args": [
+    "ship. we, it, can - so - to? ok tomorrow, test, ship? and, we can. then. test."
+   ],
+   "input": "to, the it? again ok. tomorrow ship. we it. can? so, to ok. tomorrow,",
+   "output": "to, the it? again ok. tomorrow ship. we it. can? so, to ok. tomorrow, test, ship? and, we can. then. test."
+  },
+  {
+   "id": "fuzz-merge-009",
+   "fn": "merge",
+   "args": [
+    "ship test, then - we. and, plan. 3, so the."
+   ],
+   "input": "we ship? today - to, plan - it. is then. so - is. ship. we so? v2, to 3? again - ship test, then we. and plan - 3 so. the.",
+   "output": "we ship? today - to, plan - it. is then. so - is. ship. we so? v2, to 3? again - ship test, then we. and plan - 3 so. the."
+  },
+  {
+   "id": "fuzz-merge-010",
+   "fn": "merge",
+   "args": [
+    "tomorrow again. and test tomorrow, to v2. again? test, today ok. ok - ship ok test?"
+   ],
+   "input": "tomorrow again - and, test",
+   "output": "tomorrow again - and, test tomorrow, to v2. again? test, today ok. ok - ship ok test?"
+  },
+  {
+   "id": "fuzz-merge-011",
+   "fn": "merge",
+   "args": [
+    "can API? so - again can? today, is then - can ship the -"
+   ],
+   "input": "test is, ship the - can API - so - again, can,",
+   "output": "test is, ship the - can API - so - again, can, today, is then - can ship the -"
+  },
+  {
+   "id": "fuzz-merge-012",
+   "fn": "merge",
+   "args": [
+    "today v2 ok. again, so? ok?"
+   ],
+   "input": "then and - to, so, today 3 - ok today - v2 - ok? again. so -",
+   "output": "then and - to, so, today 3 - ok today - v2 - ok? again. so - ok?"
+  },
+  {
+   "id": "fuzz-merge-013",
+   "fn": "merge",
+   "args": [
+    "\n"
+   ],
+   "input": "we we is, the it - we, to. 3, it's 3",
+   "output": "we we is, the it - we, to. 3, it's 3"
+  },
+  {
+   "id": "fuzz-merge-014",
+   "fn": "merge",
+   "args": [
+    "plan and - then tomorrow? the - 3 again? the can the - test. can? v2 3 today - then? again to, then, tomorrow it again test? v2. then - we. plan,"
+   ],
+   "input": "plan. it? it's? and plan and, then tomorrow, the? 3, again -",
+   "output": "plan. it? it's? and plan and, then tomorrow, the? 3, again - the can the - test. can? v2 3 today - then? again to, then, tomorrow it again test? v2. then - we. plan,"
+  },
+  {
+   "id": "fuzz-merge-015",
+   "fn": "merge",
+   "args": [
+    "it's - again 3. v2. today - is - API. today. ok. ok 3"
+   ],
+   "input": "plan then - it's? again 3? v2 today - is",
+   "output": "plan then - it's? again 3? v2 today - is API. today. ok. ok 3"
+  },
+  {
+   "id": "fuzz-merge-016",
+   "fn": "merge",
+   "args": [
+    "and. it's - is plan, ok tomorrow ship. can? API. so? the then - and, and it's so, v2 it, the - then we and. plan tomorrow is test. v2 is 3? again it's - it -"
+   ],
+   "input": "tomorrow? can? it? again. and it's is? plan ok, tomorrow ship? can. API? so. the? then, and. and? it's so, v2? it the, then.",
+   "output": "tomorrow? can? it? again. and it's is? plan ok, tomorrow ship? can. API? so. the? then, and. and? it's so, v2? it the, then. we and. plan tomorrow is test. v2 is 3? again it's - it -"
+  },
+  {
+   "id": "fuzz-merge-017",
+   "fn": "merge",
+   "args": [
+    "it we? is. it - tomorrow - test, it ship, it? can. test tomorrow? tomorrow, then today, to then"
+   ],
+   "input": "done done? plan - ok. to API. test, and plan? then? the and and. it we. is. it - tomorrow",
+   "output": "done done? plan - ok. to API. test, and plan? then? the and and. it we. is. it - tomorrow test, it ship, it? can. test tomorrow? tomorrow, then today, to then"
+  },
+  {
+   "id": "fuzz-merge-018",
+   "fn": "merge",
+   "args": [
+    "tomorrow 3 -"
+   ],
+   "input": "then. ok? done. API. 3, API we. it's - can? v2, again - so. 3, can - test - plan ok, done, ship tomorrow,",
+   "output": "then. ok? done. API. 3, API we. it's - can? v2, again - so. 3, can - test - plan ok, done, ship tomorrow, tomorrow 3 -"
+  },
+  {
+   "id": "fuzz-merge-019",
+   "fn": "merge",
+   "args": [
+    "the, then - we ship? it's -"
+   ],
+   "input": "it it - ok, the then. we,",
+   "output": "it it - ok, the then. we, ship? it's -"
+  },
+  {
+   "id": "fuzz-merge-020",
+   "fn": "merge",
+   "args": [
+    "PLAN TOMORROW - TODAY, 3? API WE, WE, SHIP, TO? PLAN, TO DONE. PLAN SO - AND - AND - SO IT'S. TOMORROW? DONE, AND TOMORROW. PLAN TOMORROW 3 AGAIN? TOMORROW, SO. WE, THEN. SHIP TO"
+   ],
+   "input": "plan, tomorrow, today 3. API - we? we. ship. to plan to. done - plan so? and, and, so it's? tomorrow -",
+   "output": "plan, tomorrow, today 3. API - we? we. ship. to plan to. done - plan so? and, and, so it's? tomorrow - DONE, AND TOMORROW. PLAN TOMORROW 3 AGAIN? TOMORROW, SO. WE, THEN. SHIP TO"
+  },
+  {
+   "id": "fuzz-merge-021",
+   "fn": "merge",
+   "args": [
+    "is again. can, can? today, it, ok - the, plan? again - it's - ok. the then it done. ok, test is. test - can? we. today - then v2, done, ship, is, done - it's. API"
+   ],
+   "input": "then? tomorrow, we. 3. is, again can can today? it? ok - the. plan. again. it's ok? the? then. it done. ok - test? is, test - can we, today then. v2. done. ship, is done it's? API",
+   "output": "then? tomorrow, we. 3. is, again can can today? it? ok - the. plan. again. it's ok? the? then. it done. ok - test? is, test - can we, today then. v2. done. ship, is done it's? API"
+  },
+  {
+   "id": "fuzz-merge-022",
+   "fn": "merge",
+   "args": [
+    "AND. SHIP - TEST - AND? V2 PLAN PLAN? 3 PLAN DONE - THE, IS - AND - WE TEST CAN. SHIP? IT - WE - IT'S, CAN? SO TOMORROW, IT'S. THEN"
+   ],
+   "input": "and? ship, test and v2? plan. plan? 3 - plan, done the - is? and. we? test - can - ship it. we, it's - can so. tomorrow",
+   "output": "and? ship, test and v2? plan. plan? 3 - plan, done the - is? and. we? test - can - ship it. we, it's - can so. tomorrow IT'S. THEN"
+  },
+  {
+   "id": "fuzz-merge-023",
+   "fn": "merge",
+   "args": [
+    ""
+   ],
+   "input": "we? API to ship. so, again, it's to the is ship and today the, plan it 3 it? we, 3 API. is - done, ship, to. so",
+   "output": "we? API to ship. so, again, it's to the is ship and today the, plan it 3 it? we, 3 API. is - done, ship, to. so"
+  },
+  {
+   "id": "fuzz-merge-024",
+   "fn": "merge",
+   "args": [
+    "and. plan, v2? we? test - is it's the, 3 and, ship. again?"
+   ],
+   "input": "to tomorrow then, tomorrow? today? to. the, so to and. test - it's, ship, API? tomorrow. and plan v2",
+   "output": "to tomorrow then, tomorrow? today? to. the, so to and. test - it's, ship, API? tomorrow. and plan v2 we? test - is it's the, 3 and, ship. again?"
+  },
+  {
+   "id": "fuzz-merge-025",
+   "fn": "merge",
+   "args": [
+    "IT - THEN - CAN"
+   ],
+   "input": "so - done - API? then - so - API - ok and, to it?",
+   "output": "so - done - API? then - so - API - ok and, to it? IT - THEN - CAN"
+  },
+  {
+   "id": "fuzz-merge-026",
+   "fn": "merge",
+   "args": [
+    "ok? again, ok - tomorrow, and? v2. API - API. 3, and, then test API? plan? we, again v2 - and can? we to. test, we - so. the to 3 is, we again, today"
+   ],
+   "input": "the again? the - is - it's? we 3 ok - again - ok, tomorrow - and v2 - API. API. 3, and, then",
+   "output": "the again? the - is - it's? we 3 ok - again - ok, tomorrow - and v2 - API. API. 3, and, then test API? plan? we, again v2 - and can? we to. test, we - so. the to 3 is, we again, today"
+  },
+  {
+   "id": "fuzz-merge-027",
+   "fn": "merge",
+   "args": [
+    "it? to. v2 can plan. ship - it's, it's? can? v2 then it's - API, plan? ok? v2 - the? then is API. done, is? test?"
+   ],
+   "input": "can, done - API to v2 done is then ship. test - it's - tomorrow, the - it. to, v2, can. plan, ship, it's. it's.",
+   "output": "can, done - API to v2 done is then ship. test - it's - tomorrow, the - it. to, v2, can. plan, ship, it's. it's. can? v2 then it's - API, plan? ok? v2 - the? then is API. done, is? test?"
+  },
+  {
+   "id": "fuzz-merge-028",
+   "fn": "merge",
+   "args": [
+    "TO PLAN DONE - SHIP. API, THE IT'S PLAN. AND. V2 CAN? OK, WE."
+   ],
+   "input": "then, we - it - can? is it's? we - API. is so - test. API - it's again, to ok it's, 3, and ok, to - ok, today. to - plan. done - ship, API,",
+   "output": "then, we - it - can? is it's? we - API. is so - test. API - it's again, to ok it's, 3, and ok, to - ok, today. to - plan. done - ship, API, THE IT'S PLAN. AND. V2 CAN? OK, WE."
+  },
+  {
+   "id": "fuzz-merge-029",
+   "fn": "merge",
+   "args": [
+    "it's can. ok, then plan - 3? 3? ok - ok, done -"
+   ],
+   "input": "we, can API? 3 - API it. ok - it 3 tomorrow, then - ok, then, is so. tomorrow. tomorrow it. it's, can ok then - plan 3. 3 ok. ok done.",
+   "output": "we, can API? 3 - API it. ok - it 3 tomorrow, then - ok, then, is so. tomorrow. tomorrow it. it's, can ok then - plan 3. 3 ok. ok done."
+  },
+  {
+   "id": "fuzz-merge-030",
+   "fn": "merge",
+   "args": [
+    "to again, is. today it. v2 ship - API. tomorrow - v2 ship - then. the 3 again? to? is - test? is, it's. test, ship?"
+   ],
+   "input": "so - can, is. ship? ship. tomorrow? can, to, then. to - it - to, again - is",
+   "output": "so - can, is. ship? ship. tomorrow? can, to, then. to - it - to, again - is today it. v2 ship - API. tomorrow - v2 ship - then. the 3 again? to? is - test? is, it's. test, ship?"
+  },
+  {
+   "id": "fuzz-merge-031",
+   "fn": "merge",
+   "args": [
+    "IS? TEST? API OK, IT'S THEN IT'S, TO? AGAIN - TOMORROW"
+   ],
+   "input": "is test tomorrow - API. ok test, again.",
+   "output": "is test tomorrow - API. ok test, again. IS? TEST? API OK, IT'S THEN IT'S, TO? AGAIN - TOMORROW"
+  },
+  {
+   "id": "fuzz-merge-032",
+   "fn": "merge",
+   "args": [
+    "ship API. the. it's. 3. and? done, plan, today. API - test, 3\nship API. the. it's. 3. and? done, plan, today. API - test, 3"
+   ],
+   "input": "ok, API? it's - API. plan today, done and. ship API? the, it's 3. and? done. plan? today API. test,",
+   "output": "ok, API? it's - API. plan today, done and. ship API? the, it's 3. and? done. plan? today API. test, 3 ship API. the. it's. 3. and? done, plan, today. API - test, 3"
+  },
+  {
+   "id": "fuzz-merge-033",
+   "fn": "merge",
+   "args": [
+    "ship? plan - to - plan tomorrow, to - again - to - so, done the tomorrow, ship is? ok, it's? API, today 3? tomorrow to - can then? to,"
+   ],
+   "input": "v2 - it's - it's, and ship. plan - to - plan tomorrow, to again - to - so done, the tomorrow - ship - is, ok. it's",
+   "output": "v2 - it's - it's, and ship. plan - to - plan tomorrow, to again - to - so done, the tomorrow - ship - is, ok. it's API, today 3? tomorrow to - can then? to,"
+  },
+  {
+   "id": "fuzz-merge-034",
+   "fn": "merge",
+   "args": [
+    "again, plan API, tomorrow can, and? so? to? v2 tomorrow? API then, ok to. it, 3? and. again the?"
+   ],
+   "input": "it's test again plan - API - tomorrow, can. and, so to, v2. tomorrow. API, then ok.",
+   "output": "it's test again plan - API - tomorrow, can. and, so to, v2. tomorrow. API, then ok. to. it, 3? and. again the?"
+  },
+  {
+   "id": "fuzz-merge-035",
+   "fn": "merge",
+   "args": [
+    "ok - tomorrow again"
+   ],
+   "input": "v2 - so ship. done. ship 3? tomorrow. API? test, API - we, it plan - done ok, ok? v2 is is, to the it, we. it. plan - test again, can done? the - then 3 - ok - tomorrow",
+   "output": "v2 - so ship. done. ship 3? tomorrow. API? test, API - we, it plan - done ok, ok? v2 is is, to the it, we. it. plan - test again, can done? the - then 3 - ok - tomorrow again"
+  },
+  {
+   "id": "fuzz-merge-036",
+   "fn": "merge",
+   "args": [
+    "ship. API, ok, test - the. to. to? today done can. again - and is is - tomorrow, and API."
+   ],
+   "input": "and done? so? so - ship? API, ok. test the? to to, today. done, can, again and. is is",
+   "output": "and done? so? so - ship? API, ok. test the? to to, today. done, can, again and. is is tomorrow, and API."
+  },
+  {
+   "id": "fuzz-merge-037",
+   "fn": "merge",
+   "args": [
+    "3, today we so - again? tomorrow - test. then test ok the? we it's. then ok can - v2 can then? tomorrow, today. is done then? ok"
+   ],
+   "input": "again ship, so - test? 3 - then? today, is - done, ok - ship. 3. today - we - so again - tomorrow, test then, test",
+   "output": "again ship, so - test? 3 - then? today, is - done, ok - ship. 3. today - we - so again - tomorrow, test then, test ok the? we it's. then ok can - v2 can then? tomorrow, today. is done then? ok"
+  },
+  {
+   "id": "fuzz-merge-038",
+   "fn": "merge",
+   "args": [
+    "and - and and, ship. plan 3? API? it"
+   ],
+   "input": "v2? 3. can - ship. again? ok? so? done - today, we? so? tomorrow - API - today it's, tomorrow, ship can then - we? to, so. so? can plan. tomorrow ok. to, plan. test. and - and,",
+   "output": "v2? 3. can - ship. again? ok? so? done - today, we? so? tomorrow - API - today it's, tomorrow, ship can then - we? to, so. so? can plan. tomorrow ok. to, plan. test. and - and, and, ship. plan 3? API? it"
+  },
+  {
+   "id": "fuzz-merge-039",
+   "fn": "merge",
+   "args": [
+    "IS. TOMORROW DONE? SO IT 3 IT - 3. IS. PLAN, TODAY. OK. 3 TOMORROW API CAN. TEST. TO API - SO IT - TODAY TODAY, TO"
+   ],
+   "input": "is - tomorrow done - so. it? 3. it? 3 is? plan. today - ok 3 - tomorrow. API, can - test - to API - so? it,",
+   "output": "is - tomorrow done - so. it? 3. it? 3 is? plan. today - ok 3 - tomorrow. API, can - test - to API - so? it, TODAY TODAY, TO"
+  },
+  {
+   "id": "fuzz-merge-040",
+   "fn": "merge",
+   "args": [
+    "today we, ship plan? the ok? it's can? and so is. ship - we again so -"
+   ],
+   "input": "today, we ship plan - the? ok - it's can and?",
+   "output": "today, we ship plan - the? ok - it's can and? so is. ship - we again so -"
+  },
+  {
+   "id": "fuzz-merge-041",
+   "fn": "merge",
+   "args": [
+    "we ship - the, plan, then test"
+   ],
+   "input": "tomorrow - ship the. v2? to? v2 ship can. and, plan, is we. ship the plan? then",
+   "output": "tomorrow - ship the. v2? to? v2 ship can. and, plan, is we. ship the plan? then test"
+  },
+  {
+   "id": "fuzz-merge-042",
+   "fn": "merge",
+   "args": [
+    "tomorrow - it - ship ok - v2 tomorrow - tomorrow, plan it's?"
+   ],
+   "input": "tomorrow it?",
+   "output": "tomorrow it? ship ok - v2 tomorrow - tomorrow, plan it's?"
+  },
+  {
+   "id": "fuzz-merge-043",
+   "fn": "merge",
+   "args": [
+    "then? ok. ok - test it. so test done is? it v2. is"
+   ],
+   "input": "can? can it is? again? test. to is - test 3 again - can - plan. plan and? plan - tomorrow. 3 - tomorrow then? and? again then. the? plan - then, ok ok, test.",
+   "output": "can? can it is? again? test. to is - test 3 again - can - plan. plan and? plan - tomorrow. 3 - tomorrow then? and? again then. the? plan - then, ok ok, test. it. so test done is? it v2. is"
+  },
+  {
+   "id": "fuzz-merge-044",
+   "fn": "merge",
+   "args": [
+    "API, we then is ok then. 3 can? 3? and it. v2 it. then to? can plan ship."
+   ],
+   "input": "again. 3? it's ok - it API, tomorrow, tomorrow - API we then, is? ok - then. 3 can? 3 and it v2 -",
+   "output": "again. 3? it's ok - it API, tomorrow, tomorrow - API we then, is? ok - then. 3 can? 3 and it v2 - it. then to? can plan ship."
+  },
+  {
+   "id": "fuzz-merge-045",
+   "fn": "merge",
+   "args": [
+    "so, the is, so, then ok, ship? to - is - plan is - again, test then. is - 3 - test. ship to then. plan. then"
+   ],
+   "input": "done we? again. 3 today tomorrow - v2? is? v2, the - so, again - we? the, test it's, so - it, so, the is so then ok. ship - to is plan is again? test? then, is 3? test ship, to? then plan -",
+   "output": "done we? again. 3 today tomorrow - v2? is? v2, the - so, again - we? the, test it's, so - it, so, the is so then ok. ship - to is plan is again? test? then, is 3? test ship, to? then plan - then"
+  },
+  {
+   "id": "fuzz-merge-046",
+   "fn": "merge",
+   "args": [
+    "it today? ship we then? the -"
+   ],
+   "input": "ok - v2, test, v2, ok ship - today. ok, we test - API, test - ok we? then? v2? the again - tomorrow - then - today to we - and. is. we, then so? it, today ship - we then -",
+   "output": "ok - v2, test, v2, ok ship - today. ok, we test - API, test - ok we? then? v2? the again - tomorrow - then - today to we - and. is. we, then so? it, today ship - we then - the -"
+  },
+  {
+   "id": "fuzz-merge-047",
+   "fn": "merge",
+   "args": [
+    "we. so? v2? done - and then. done,"
+   ],
+   "input": "to. and 3 - we - the, today and, the it's it so? test - again. ship ok? again. it's, v2 then, then today - again, API. plan? 3. so. 3, tomorrow. so - can? and? we so v2 done",
+   "output": "to. and 3 - we - the, today and, the it's it so? test - again. ship ok? again. it's, v2 then, then today - again, API. plan? 3. so. 3, tomorrow. so - can? and? we so v2 done and then. done,"
+  },
+  {
+   "id": "fuzz-merge-048",
+   "fn": "merge",
+   "args": [
+    "\n"
+   ],
+   "input": "ship it plan, then we - v2 - v2, ship it, can. API again plan 3 - ship",
+   "output": "ship it plan, then we - v2 - v2, ship it, can. API again plan 3 - ship"
+  },
+  {
+   "id": "fuzz-merge-049",
+   "fn": "merge",
+   "args": [
+    "the - ok - again - can, done? again, it's, ok ship v2 - test? it? it's? so,"
+   ],
+   "input": "the. ok? again? can done - again.",
+   "output": "the. ok? again? can done - again. it's, ok ship v2 - test? it? it's? so,"
+  },
+  {
+   "id": "fuzz-merge-050",
+   "fn": "merge",
+   "args": [
+    "AGAIN? AGAIN AND. THEN TODAY? SHIP?"
+   ],
+   "input": "done, so, v2, today - test, then? 3. it's plan - and - again, we it - 3? ok again",
+   "output": "done, so, v2, today - test, then? 3. it's plan - and - again, we it - 3? ok again AGAIN? AGAIN AND. THEN TODAY? SHIP?"
+  },
+  {
+   "id": "fuzz-merge-051",
+   "fn": "merge",
+   "args": [
+    "test ok, so. we we? is? then. the it's ok, it today then done it's, ship - to, the? 3? 3 it - the API test."
+   ],
+   "input": "tomorrow test. ok so we we is",
+   "output": "tomorrow test. ok so we we is then. the it's ok, it today then done it's, ship - to, the? 3? 3 it - the API test."
+  },
+  {
+   "id": "fuzz-merge-052",
+   "fn": "merge",
+   "args": [
+    "IT'S? IT'S - THE TOMORROW THEN, WE, TEST CAN OK TODAY V2 WE -"
+   ],
+   "input": "is done - again - test - tomorrow? then - is it's, it it's, then, tomorrow, ok? the tomorrow the? can can, test? so - today - ship? we it's - 3 3. test can, it's it's? the tomorrow. then. we test, can - ok - today",
+   "output": "is done - again - test - tomorrow? then - is it's, it it's, then, tomorrow, ok? the tomorrow the? can can, test? so - today - ship? we it's - 3 3. test can, it's it's? the tomorrow. then. we test, can - ok - today V2 WE -"
+  },
+  {
+   "id": "fuzz-merge-053",
+   "fn": "merge",
+   "args": [
+    "so, so. tomorrow? ok, the? to ship? then"
+   ],
+   "input": "test so - so? tomorrow - ok. the? to, ship -",
+   "output": "test so - so? tomorrow - ok. the? to, ship - then"
+  },
+  {
+   "id": "fuzz-merge-054",
+   "fn": "merge",
+   "args": [
+    "it, again. and is so today. ok. we. it and - then."
+   ],
+   "input": "the - ship? we ok? and - ok API, again. test is? again - and - ship? today is. it, again and is so today - ok - we? it, and? then",
+   "output": "the - ship? we ok? and - ok API, again. test is? again - and - ship? today is. it, again and is so today - ok - we? it, and? then"
+  },
+  {
+   "id": "fuzz-merge-055",
+   "fn": "merge",
+   "args": [
+    "done the. plan? so? ship. ship?"
+   ],
+   "input": "3 then. test, the. is - ship. is, we? v2 done",
+   "output": "3 then. test, the. is - ship. is, we? v2 done done the. plan? so? ship. ship?"
+  },
+  {
+   "id": "fuzz-merge-056",
+   "fn": "merge",
+   "args": [
+    "we. API, and - test done? we. it v2? we? we - so, 3 ok ok, API test it. again so? v2,"
+   ],
+   "input": "we. API - and? test, done - we, it. v2 we. we.",
+   "output": "we. API - and? test, done - we, it. v2 we. we. so, 3 ok ok, API test it. again so? v2,"
+  },
+  {
+   "id": "fuzz-merge-057",
+   "fn": "merge",
+   "args": [
+    "can - the it is - it's? tomorrow? plan, API tomorrow - v2 so. so - to, can so, done then to tomorrow, today - then and - tomorrow? 3, it's it's, we, is."
+   ],
+   "input": "API to. we v2? it so it, tomorrow. can, the? it is. it's tomorrow? plan API. tomorrow v2 so so to, can, so? done, then - to tomorrow?",
+   "output": "API to. we v2? it so it, tomorrow. can, the? it is. it's tomorrow? plan API. tomorrow v2 so so to, can, so? done, then - to tomorrow? today - then and - tomorrow? 3, it's it's, we, is."
+  },
+  {
+   "id": "fuzz-merge-058",
+   "fn": "merge",
+   "args": [
+    "test? to, v2, v2 to. to - to again API done. tomorrow done plan, API?"
+   ],
+   "input": "v2. API then? we, test, ship is - we? to test done? it's again? is. the, today, the? we, to we? so done? is - the to. done? test. to v2.",
+   "output": "v2. API then? we, test, ship is - we? to test done? it's again? is. the, today, the? we, to we? so done? is - the to. done? test. to v2. v2 to. to - to again API done. tomorrow done plan, API?"
+  },
+  {
+   "id": "fuzz-merge-059",
+   "fn": "merge",
+   "args": [
+    "plan. 3 tomorrow we ship, can? so ship and, can can - we API. so, ship."
+   ],
+   "input": "plan is again 3? to so? tomorrow? plan. then, then API - so. plan",
+   "output": "plan is again 3? to so? tomorrow? plan. then, then API - so. plan plan. 3 tomorrow we ship, can? so ship and, can can - we API. so, ship."
+  },
+  {
+   "id": "fuzz-merge-060",
+   "fn": "merge",
+   "args": [
+    "and. ship - it - plan"
+   ],
+   "input": "done to. 3? it and ship, it. plan.",
+   "output": "done to. 3? it and ship, it. plan."
+  },
+  {
+   "id": "fuzz-merge-061",
+   "fn": "merge",
+   "args": [
+    "is? and - API to 3? it, test, ok ok is - 3 it. today? the? 3, done. done - plan, ok ok we - then? ok it plan. ship -"
+   ],
+   "input": "test. ship v2 is the plan. API. again, it's ship. again and? is and? API to - 3 it test ok ok is. 3, it. today the. 3, done? done - plan ok.",
+   "output": "test. ship v2 is the plan. API. again, it's ship. again and? is and? API to - 3 it test ok ok is. 3, it. today the. 3, done? done - plan ok. ok we - then? ok it plan. ship -"
+  },
+  {
+   "id": "fuzz-merge-062",
+   "fn": "merge",
+   "args": [
+    "today? again - ok - again - plan - to? is can, again tomorrow can the. and? it it's,"
+   ],
+   "input": "we. today, again ok again. plan - to. is? can?",
+   "output": "we. today, again ok again. plan - to. is? can? again tomorrow can the. and? it it's,"
+  },
+  {
+   "id": "fuzz-merge-063",
+   "fn": "merge",
+   "args": [
+    "3? 3? v2 we again - API v2, 3 is?"
+   ],
+   "input": "it's - API then and. it's is. test? done - it, so? can - v2 - so - done - it? again - the. 3 3 - v2? we. again",
+   "output": "it's - API then and. it's is. test? done - it, so? can - v2 - so - done - it? again - the. 3 3 - v2? we. again API v2, 3 is?"
+  },
+  {
+   "id": "fuzz-merge-064",
+   "fn": "merge",
+   "args": [
+    "we it - and ship? 3? v2? API? today? tomorrow? the 3. then ok ship. the, the? ok, so? tomorrow then, plan? ship? today. today? can is test to to ship plan? so to today so can? we? done again so - it's v2."
+   ],
+   "input": "can tomorrow - we? it. and? ship, 3, v2 API - today. tomorrow the - 3 then? ok - ship? the the. ok? so - tomorrow then, plan - ship today today? can is test - to - to, ship? plan? so? to? today?",
+   "output": "can tomorrow - we? it. and? ship, 3, v2 API - today. tomorrow the - 3 then? ok - ship? the the. ok? so - tomorrow then, plan - ship today today? can is test - to - to, ship? plan? so? to? today? so can? we? done again so - it's v2."
+  },
+  {
+   "id": "fuzz-merge-065",
+   "fn": "merge",
+   "args": [
+    "tomorrow v2 done v2"
+   ],
+   "input": "API. today? it's - to - can? plan, again - ship ship. plan - is? the. is - tomorrow, v2 - done. v2",
+   "output": "API. today? it's - to - can? plan, again - ship ship. plan - is? the. is - tomorrow, v2 - done. v2"
+  },
+  {
+   "id": "fuzz-merge-066",
+   "fn": "merge",
+   "args": [
+    "\n"
+   ],
+   "input": "the - can? is, is - today, so test - ship, test - plan - test so plan",
+   "output": "the - can? is, is - today, so test - ship, test - plan - test so plan"
+  },
+  {
+   "id": "fuzz-merge-067",
+   "fn": "merge",
+   "args": [
+    "so, is? it's can - can, so - it? API? 3 again, is. and. the? is? and. API done - to - we? again"
+   ],
+   "input": "v2 can, the - we - it - done. it's - so. is - it's can,",
+   "output": "v2 can, the - we - it - done. it's - so. is - it's can, can, so - it? API? 3 again, is. and. the? is? and. API done - to - we? again"
+  },
+  {
+   "id": "fuzz-merge-068",
+   "fn": "merge",
+   "args": [
+    "DONE. TODAY, CAN TO. WE, WE. SO TEST -"
+   ],
+   "input": "plan ok - can? can v2 it done. done - ok, it's? API 3? it's. ok, and? is? it's - can - it's? test v2. done today",
+   "output": "plan ok - can? can v2 it done. done - ok, it's? API 3? it's. ok, and? is? it's - can - it's? test v2. done today CAN TO. WE, WE. SO TEST -"
+  },
+  {
+   "id": "fuzz-merge-069",
+   "fn": "merge",
+   "args": [
+    "v2. can then. again? to. 3 - tomorrow. so? done then - the the - ship then, to. test today can? test is - and? done?"
+   ],
+   "input": "API? it, done it it. API - the, API today - done. to v2 can, then, again? to? 3. tomorrow, so done. then - the the, ship then to - test. today -",
+   "output": "API? it, done it it. API - the, API today - done. to v2 can, then, again? to? 3. tomorrow, so done. then - the the, ship then to - test. today - can? test is - and? done?"
+  },
+  {
+   "id": "fuzz-merge-070",
+   "fn": "merge",
+   "args": [
+    "ok ship - can, it's - so today and again, to - to. ok it's v2 - and. v2 so. then - can - to? done? can it. tomorrow, 3 it's - API"
+   ],
+   "input": "is we then. can? ship then? ok. ship, can - it's so, today, and? again, to - to ok? it's, v2, and, v2. so? then, can. to, done. can",
+   "output": "is we then. can? ship then? ok. ship, can - it's so, today, and? again, to - to ok? it's, v2, and, v2. so? then, can. to, done. can it. tomorrow, 3 it's - API"
+  },
+  {
+   "id": "fuzz-merge-071",
+   "fn": "merge",
+   "args": [
+    "then? done 3. we, 3 is it's to the, we - to so and - so done? can done so. ok?"
+   ],
+   "input": "then done. 3? we, 3. is it's to the, we? to so -",
+   "output": "then done. 3? we, 3. is it's to the, we? to so - and - so done? can done so. ok?"
+  },
+  {
+   "id": "fuzz-merge-072",
+   "fn": "merge",
+   "args": [
+    "to? API today? test API today - tomorrow then the, test - it's, tomorrow - ok. the? to can."
+   ],
+   "input": "is plan done, we ship - so - and API ship, ship? 3, 3, v2 again done, test. can. it to, API. today? test API? today?",
+   "output": "is plan done, we ship - so - and API ship, ship? 3, 3, v2 again done, test. can. it to, API. today? test API? today? tomorrow then the, test - it's, tomorrow - ok. the? to can."
+  },
+  {
+   "id": "fuzz-merge-073",
+   "fn": "merge",
+   "args": [
+    "plan it is - so. ok - can? we. v2 - test, the. it's. it's. API. so, v2? plan, ship, it's, we, tomorrow? we. API, again. so, and. we? ok so it to - we. today. we is we - it? ship. is? and is"
+   ],
+   "input": "plan. it. is, so, ok. can we, v2 - test, the, it's it's, API. so. v2? plan ship, it's, we, tomorrow, we API? again, so - and, we ok - so it. to, we. today we",
+   "output": "plan. it. is, so, ok. can we, v2 - test, the, it's it's, API. so. v2? plan ship, it's, we, tomorrow, we API? again, so - and, we ok - so it. to, we. today we is we - it? ship. is? and is"
+  },
+  {
+   "id": "fuzz-merge-074",
+   "fn": "merge",
+   "args": [
+    "then,"
+   ],
+   "input": "API, tomorrow. again, again. can? tomorrow? the? it - then?",
+   "output": "API, tomorrow. again, again. can? tomorrow? the? it - then? then,"
+  },
+  {
+   "id": "fuzz-merge-075",
+   "fn": "merge",
+   "args": [
+    " "
+   ],
+   "input": "then? ok, ok plan? plan? is we. the so. again. ship test - the. v2,",
+   "output": "then? ok, ok plan? plan? is we. the so. again. ship test - the. v2,"
+  },
+  {
+   "id": "fuzz-merge-076",
+   "fn": "merge",
+   "args": [
+    "TOMORROW - DONE. OK - OK, CAN OK THEN. 3. OK, TO,"
+   ],
+   "input": "done - ship. tomorrow. today. ok ship. plan, done, API, it again. 3 plan. then, v2, tomorrow.",
+   "output": "done - ship. tomorrow. today. ok ship. plan, done, API, it again. 3 plan. then, v2, tomorrow. TOMORROW - DONE. OK - OK, CAN OK THEN. 3. OK, TO,"
+  },
+  {
+   "id": "fuzz-merge-077",
+   "fn": "merge",
+   "args": [
+    "v2, ok - v2 then the, the -"
+   ],
+   "input": "it. plan - again, ok ok. API. test 3 ok, 3 - then? again - it? today plan? can tomorrow. is? then. API? to, so tomorrow, to, ship. test - today we done is, done? v2 - ok, v2, then.",
+   "output": "it. plan - again, ok ok. API. test 3 ok, 3 - then? again - it? today plan? can tomorrow. is? then. API? to, so tomorrow, to, ship. test - today we done is, done? v2 - ok, v2, then. the, the -"
+  },
+  {
+   "id": "fuzz-merge-078",
+   "fn": "merge",
+   "args": [
+    "plan we, API - the then - it's done. 3 - done. again - it's, v2 is - it's"
+   ],
+   "input": "ship, it's - then plan, test. today? 3. plan - we, API, the, then, it's done -",
+   "output": "ship, it's - then plan, test. today? 3. plan - we, API, the, then, it's done - 3 - done. again - it's, v2 is - it's"
+  },
+  {
+   "id": "fuzz-merge-079",
+   "fn": "merge",
+   "args": [
+    "again? it. then. can. today tomorrow done - ship can is can API? it? it, v2 the, to. is, v2 ship? ship.\nagain? it. then. can. today tomorrow done - ship can is can API? it? it, v2 the, to. is, v2 ship? ship."
+   ],
+   "input": "3 tomorrow - tomorrow we - done. plan? can - then? again. we? again. it? then can today -",
+   "output": "3 tomorrow - tomorrow we - done. plan? can - then? again. we? again. it? then can today - tomorrow done - ship can is can API? it? it, v2 the, to. is, v2 ship? ship. again? it. then. can. today tomorrow done - ship can is can API? it? it, v2 the, to. is, v2 ship? ship."
+  },
+  {
+   "id": "fuzz-merge-080",
+   "fn": "merge",
+   "args": [
+    "to, the again, ok. ship ok we test so. then? API? today, it the. so?"
+   ],
+   "input": "done, v2? to ship to. the again, ok, ship ok, we? test - so. then API today",
+   "output": "done, v2? to ship to. the again, ok, ship ok, we? test - so. then API today it the. so?"
+  },
+  {
+   "id": "fuzz-merge-081",
+   "fn": "merge",
+   "args": [
+    "we ok? plan we - it's. plan test. so? to. 3? ship test - to? v2 we. the."
+   ],
+   "input": "we to then - so, and. 3 again. is - and, done - API. so 3 - so, we ok - plan? we it's - plan. test",
+   "output": "we to then - so, and. 3 again. is - and, done - API. so 3 - so, we ok - plan? we it's - plan. test so? to. 3? ship test - to? v2 we. the."
+  },
+  {
+   "id": "fuzz-merge-082",
+   "fn": "merge",
+   "args": [
+    "can. test we v2 can, API v2 ok. is plan. it's, test - it's, ok? and. ok - we, v2 3. so ok. we, tomorrow. ok, API? to -"
+   ],
+   "input": "is? API. ship - tomorrow, ship - is? it, API it's - then, again. so. ok - tomorrow. can? test we? v2, can? API v2? ok is plan. it's test? it's ok. and, ok - we. v2. 3, so? ok? we tomorrow ok, API. to,",
+   "output": "is? API. ship - tomorrow, ship - is? it, API it's - then, again. so. ok - tomorrow. can? test we? v2, can? API v2? ok is plan. it's test? it's ok. and, ok - we. v2. 3, so? ok? we tomorrow ok, API. to,"
+  },
+  {
+   "id": "fuzz-merge-083",
+   "fn": "merge",
+   "args": [
+    "done. plan? to - done. so today. so. 3, API? it, test? today so? tomorrow it. ship - it's - can. and - today. and, again API. ship -"
+   ],
+   "input": "today test? then, done? API - 3. done. plan to done. so, today? so. 3",
+   "output": "today test? then, done? API - 3. done. plan to done. so, today? so. 3 API? it, test? today so? tomorrow it. ship - it's - can. and - today. and, again API. ship -"
+  },
+  {
+   "id": "fuzz-merge-084",
+   "fn": "merge",
+   "args": [
+    "done so, today, it - today, and, today - the can"
+   ],
+   "input": "done",
+   "output": "done done so, today, it - today, and, today - the can"
+  },
+  {
+   "id": "fuzz-merge-085",
+   "fn": "merge",
+   "args": [
+    "plan? test then. then?"
+   ],
+   "input": "is? done can, to, tomorrow to, ship and - ok 3 it, tomorrow - then test - to test then - test? done. then to - so test, we - v2, 3 it and done, it's? then test, done. so plan? test then",
+   "output": "is? done can, to, tomorrow to, ship and - ok 3 it, tomorrow - then test - to test then - test? done. then to - so test, we - v2, 3 it and done, it's? then test, done. so plan? test then then?"
+  },
+  {
+   "id": "fuzz-merge-086",
+   "fn": "merge",
+   "args": [
+    "it's ship, we 3? ship. can"
+   ],
+   "input": "then we, v2? can? it - ok - and. it's it - we, today, then? API. it's. ship? we. 3. ship?",
+   "output": "then we, v2? can? it - ok - and. it's it - we, today, then? API. it's. ship? we. 3. ship? can"
+  },
+  {
+   "id": "fuzz-merge-087",
+   "fn": "merge",
+   "args": [
+    "we it. tomorrow again? ok. then? API. test, v2? it? ship again"
+   ],
+   "input": "can API today and. then and. v2? so? plan, v2? and, ok 3 again, and. is? plan again. it's - then it's? and - we it tomorrow. again, ok then -",
+   "output": "can API today and. then and. v2? so? plan, v2? and, ok 3 again, and. is? plan again. it's - then it's? and - we it tomorrow. again, ok then - API. test, v2? it? ship again"
+  },
+  {
+   "id": "fuzz-merge-088",
+   "fn": "merge",
+   "args": [
+    "it - and, ship API? 3? ok, so we again? so - then, test, then. to 3 and, v2. is it"
+   ],
+   "input": "so. can, it - and? ship API, 3. ok so we again, so then. test then, to - 3",
+   "output": "so. can, it - and? ship API, 3. ok so we again, so then. test then, to - 3 and, v2. is it"
+  },
+  {
+   "id": "fuzz-merge-089",
+   "fn": "merge",
+   "args": [
+    "plan. plan done. then so today"
+   ],
+   "input": "to the? API, test API today so, test - plan, done - 3, then? API, is the? 3 - done. again ok again, plan. 3 - is can plan plan done then,",
+   "output": "to the? API, test API today so, test - plan, done - 3, then? API, is the? 3 - done. again ok again, plan. 3 - is can plan plan done then, so today"
+  },
+  {
+   "id": "fuzz-merge-090",
+   "fn": "merge",
+   "args": [
+    "it it's test? plan API. tomorrow? done? today? done, plan, plan"
+   ],
+   "input": "it, it's test? plan API tomorrow - done - today,",
+   "output": "it, it's test? plan API tomorrow - done - today, done, plan, plan"
+  },
+  {
+   "id": "fuzz-merge-091",
+   "fn": "merge",
+   "args": [
+    "and - it, done - the? today, done? it - is - tomorrow, v2? is. ship? and, the. is, v2? can, tomorrow - v2 - it. the. it's done - it? v2. it, and, to - v2 3? then."
+   ],
+   "input": "and it. done, the today - done it - is. tomorrow - v2 is - ship? and. the, is? v2 can tomorrow, v2 it? the. it's - done. it v2, it - and - to? v2? 3, then,",
+   "output": "and it. done, the today - done it - is. tomorrow - v2 is - ship? and. the, is? v2 can tomorrow, v2 it? the. it's - done. it v2, it - and - to? v2? 3, then,"
+  },
+  {
+   "id": "fuzz-merge-092",
+   "fn": "merge",
+   "args": [
+    "AGAIN, AND PLAN SHIP? THEN, SO, V2."
+   ],
+   "input": "it's, today then, can, again,",
+   "output": "it's, today then, can, again, AGAIN, AND PLAN SHIP? THEN, SO, V2."
+  },
+  {
+   "id": "fuzz-merge-093",
+   "fn": "merge",
+   "args": [
+    "API. today? is? is. we. it's can?"
+   ],
+   "input": "we, plan? then then, so API? ship? test? and, and? the. is. can - plan - can tomorrow. tomorrow again. API - today, is is?",
+   "output": "we, plan? then then, so API? ship? test? and, and? the. is. can - plan - can tomorrow. tomorrow again. API - today, is is? we. it's can?"
+  },
+  {
+   "id": "fuzz-merge-094",
+   "fn": "merge",
+   "args": [
+    "SHIP, TEST, THE? SHIP. TODAY, TODAY? DONE? IT'S. OK - CAN."
+   ],
+   "input": "then can. ship? test, the ship,",
+   "output": "then can. ship? test, the ship, TODAY, TODAY? DONE? IT'S. OK - CAN."
+  },
+  {
+   "id": "fuzz-merge-095",
+   "fn": "merge",
+   "args": [
+    "is. to? again. again? can, 3. can? it tomorrow? plan. test can, ship the? again, v2? to? ship test tomorrow, ship to? ship again, today done is. then? can it it and then"
+   ],
+   "input": "is - to - again again. can, 3 can. it tomorrow? plan test, can? ship the again. v2, to",
+   "output": "is - to - again again. can, 3 can. it tomorrow? plan test, can? ship the again. v2, to ship test tomorrow, ship to? ship again, today done is. then? can it it and then"
+  },
+  {
+   "id": "fuzz-merge-096",
+   "fn": "merge",
+   "args": [
+    "so - 3? then, and it's. the v2 - to, ok. to?"
+   ],
+   "input": "the? to can. to plan, done. today, we, to. done? today then, then can, is, it? and. tomorrow. we, it so, 3 - then, and - it's, the v2 to",
+   "output": "the? to can. to plan, done. today, we, to. done? today then, then can, is, it? and. tomorrow. we, it so, 3 - then, and - it's, the v2 to ok. to?"
+  },
+  {
+   "id": "fuzz-merge-097",
+   "fn": "merge",
+   "args": [
+    "the, ok test? ok. then ship. plan - done tomorrow can the - tomorrow 3, plan API 3 - today? the,"
+   ],
+   "input": "the - ok - test. ok - then, ship plan done tomorrow. can, the? tomorrow.",
+   "output": "the - ok - test. ok - then, ship plan done tomorrow. can, the? tomorrow. 3, plan API 3 - today? the,"
+  },
+  {
+   "id": "fuzz-merge-098",
+   "fn": "merge",
+   "args": [
+    " "
+   ],
+   "input": "it's. again, so - and - to, so it - ship and? again. done - so, can again v2. we? done? then v2. test? is. ship,",
+   "output": "it's. again, so - and - to, so it - ship and? again. done - so, can again v2. we? done? then v2. test? is. ship,"
+  },
+  {
+   "id": "fuzz-merge-099",
+   "fn": "merge",
+   "args": [
+    "API, the, test - so - it's can - tomorrow is it."
+   ],
+   "input": "API. the, test, so -",
+   "output": "API. the, test, so - it's can - tomorrow is it."
+  },
+  {
+   "id": "fuzz-merge-100",
+   "fn": "merge",
+   "args": [
+    "ship ok. and can - ok? again - is so. it? 3 v2 - test, tomorrow"
+   ],
+   "input": "ship - ok? and can",
+   "output": "ship - ok? and can ok? again - is so. it? 3 v2 - test, tomorrow"
+  },
+  {
+   "id": "fuzz-merge-101",
+   "fn": "merge",
+   "args": [
+    "we v2. and - the. so - is. tomorrow, ship. and"
+   ],
+   "input": "then to - plan tomorrow API. then, 3? can and. so. test today, done. can, we it's. it. test? to. we? v2. and the, so - is tomorrow,",
+   "output": "then to - plan tomorrow API. then, 3? can and. so. test today, done. can, we it's. it. test? to. we? v2. and the, so - is tomorrow, ship. and"
+  },
+  {
+   "id": "fuzz-merge-102",
+   "fn": "merge",
+   "args": [
+    "SHIP THE AND - 3 V2. IT'S - DONE SO? TOMORROW TODAY. API? IT'S? PLAN? CAN"
+   ],
+   "input": "ship, is test - 3? can again and - to. then? v2? we, the, we can - the? v2 - and plan tomorrow. again. test test - ship - the? and, 3? v2, it's, done",
+   "output": "ship, is test - 3? can again and - to. then? v2? we, the, we can - the? v2 - and plan tomorrow. again. test test - ship - the? and, 3? v2, it's, done SO? TOMORROW TODAY. API? IT'S? PLAN? CAN"
+  },
+  {
+   "id": "fuzz-merge-103",
+   "fn": "merge",
+   "args": [
+    "and? the? plan, can then can, ok done - again we - test, then ok? done, it plan. ship. the can -"
+   ],
+   "input": "and, the plan can, then can ok done - again? we, test then, ok? done. it. plan? ship.",
+   "output": "and, the plan can, then can ok done - again? we, test then, ok? done. it. plan? ship. the can -"
+  },
+  {
+   "id": "fuzz-merge-104",
+   "fn": "merge",
+   "args": [
+    "and - and? the. the API - 3, today? and - tomorrow the can can. can - and - we - so API. v2, to, the? it so - to ok. so is tomorrow."
+   ],
+   "input": "today - v2 API? so? done, API? we to? 3 we - and today. and? and, the. the? API 3. today and, tomorrow - the? can. can, can. and we. so API? v2, to? the, it - so to ok? so is",
+   "output": "today - v2 API? so? done, API? we to? 3 we - and today. and? and, the. the? API 3. today and, tomorrow - the? can. can, can. and we. so API? v2, to? the, it - so to ok? so is tomorrow."
+  },
+  {
+   "id": "fuzz-merge-105",
+   "fn": "merge",
+   "args": [
+    "the"
+   ],
+   "input": "API tomorrow today? tomorrow then. it's today - the tomorrow. is? ship. 3 it - plan then to the, API then the",
+   "output": "API tomorrow today? tomorrow then. it's today - the tomorrow. is? ship. 3 it - plan then to the, API then the the"
+  },
+  {
+   "id": "fuzz-merge-106",
+   "fn": "merge",
+   "args": [
+    "TOMORROW AND CAN? TOMORROW - SHIP. DONE, THEN THE? 3, THEN API THE. API DONE - SO? TODAY, TODAY? TO. TOMORROW AGAIN - PLAN. AGAIN."
+   ],
+   "input": "tomorrow ok? again. today, API ship. tomorrow? and can - tomorrow ship. done. then the - 3 - then? API the, API - done so",
+   "output": "tomorrow ok? again. today, API ship. tomorrow? and can - tomorrow ship. done. then the - 3 - then? API the, API - done so TODAY, TODAY? TO. TOMORROW AGAIN - PLAN. AGAIN."
+  },
+  {
+   "id": "fuzz-merge-107",
+   "fn": "merge",
+   "args": [
+    "3. again plan ship, again - API -"
+   ],
+   "input": "v2 it's, 3 and? API API? it's. 3. today - today, ship today? 3 v2. ship. v2 test - ok - test it's - API test the, and done, is? ok - ship, plan. 3. and - it, 3 - again, plan ship? again - API",
+   "output": "v2 it's, 3 and? API API? it's. 3. today - today, ship today? 3 v2. ship. v2 test - ok - test it's - API test the, and done, is? ok - ship, plan. 3. and - it, 3 - again, plan ship? again - API"
+  },
+  {
+   "id": "fuzz-merge-108",
+   "fn": "merge",
+   "args": [
+    "it test? done? v2. so?"
+   ],
+   "input": "to - to so it. test, done -",
+   "output": "to - to so it. test, done - v2. so?"
+  },
+  {
+   "id": "fuzz-merge-109",
+   "fn": "merge",
+   "args": [
+    "IS? TODAY TOMORROW? TO - THE? TODAY SHIP API? SO? IS."
+   ],
+   "input": "we, API? plan done - test. to, plan, we - tomorrow plan, and? it's test - done the - is is. again - ship. it's, test and. ship - it - we is and - is. today - tomorrow to - the? today. ship.",
+   "output": "we, API? plan done - test. to, plan, we - tomorrow plan, and? it's test - done the - is is. again - ship. it's, test and. ship - it - we is and - is. today - tomorrow to - the? today. ship. API? SO? IS."
+  },
+  {
+   "id": "fuzz-merge-110",
+   "fn": "merge",
+   "args": [
+    "then - done. is? ok? ok. it's? ship plan. v2? can. ok. tomorrow plan? is, done? tomorrow. to ship? the - done ship can. tomorrow, today - can? ok it's then."
+   ],
+   "input": "then. done,",
+   "output": "then. done, is? ok? ok. it's? ship plan. v2? can. ok. tomorrow plan? is, done? tomorrow. to ship? the - done ship can. tomorrow, today - can? ok it's then."
+  },
+  {
+   "id": "fuzz-merge-111",
+   "fn": "merge",
+   "args": [
+    "CAN, CAN, IT'S AND IS - OK SHIP WE IT TO AND API TEST? IT'S, TEST? 3. PLAN. WE. V2. 3, IT. WE - TOMORROW CAN. IS - TEST. AND PLAN"
+   ],
+   "input": "API v2? the, ship test then, tomorrow. then - again, to 3 can? it? can - can, it's and. is, ok? ship we it. to, and. API. test, it's, test -",
+   "output": "API v2? the, ship test then, tomorrow. then - again, to 3 can? it? can - can, it's and. is, ok? ship we it. to, and. API. test, it's, test - 3. PLAN. WE. V2. 3, IT. WE - TOMORROW CAN. IS - TEST. AND PLAN"
+  },
+  {
+   "id": "fuzz-merge-112",
+   "fn": "merge",
+   "args": [
+    "done. it - ok. ok, ok tomorrow. v2 v2. ok. test, 3 and - v2? API again today. can. again - is again plan,"
+   ],
+   "input": "so - so done. it ok?",
+   "output": "so - so done. it ok? ok, ok tomorrow. v2 v2. ok. test, 3 and - v2? API again today. can. again - is again plan,"
+  },
+  {
+   "id": "fuzz-merge-113",
+   "fn": "merge",
+   "args": [
+    " "
+   ],
+   "input": "we, ship, today. ship today. API plan, the, done? to? tomorrow -",
+   "output": "we, ship, today. ship today. API plan, the, done? to? tomorrow -"
+  },
+  {
+   "id": "fuzz-merge-114",
+   "fn": "merge",
+   "args": [
+    "again test. it again? it, test - today? done? the? test? then again. again. tomorrow ship - we again. 3, 3? ship. it's today - and, v2, we, 3? plan? and it - API the. tomorrow"
+   ],
+   "input": "to - test. can is - again - test it again it? test. today? done. the test - then - again? again,",
+   "output": "to - test. can is - again - test it again it? test. today? done. the test - then - again? again, tomorrow ship - we again. 3, 3? ship. it's today - and, v2, we, 3? plan? and it - API the. tomorrow"
+  },
+  {
+   "id": "fuzz-merge-115",
+   "fn": "merge",
+   "args": [
+    ""
+   ],
+   "input": "it ok, is. and. so - to v2? tomorrow - ok? tomorrow. the and - the - it's, can the, and, ok then then API - it's? we. tomorrow, we, then, tomorrow, it's, then we test tomorrow,",
+   "output": "it ok, is. and. so - to v2? tomorrow - ok? tomorrow. the and - the - it's, can the, and, ok then then API - it's? we. tomorrow, we, then, tomorrow, it's, then we test tomorrow,"
+  },
+  {
+   "id": "fuzz-merge-116",
+   "fn": "merge",
+   "args": [
+    "plan - again? API. v2? again, 3. we the. ship - it's,"
+   ],
+   "input": "v2 to, it it's done. test, the plan again? API? v2 again, 3? we",
+   "output": "v2 to, it it's done. test, the plan again? API? v2 again, 3? we the. ship - it's,"
+  },
+  {
+   "id": "fuzz-merge-117",
+   "fn": "merge",
+   "args": [
+    "so today. API. we? ok? again we -"
+   ],
+   "input": "can ok tomorrow. ok is, so? today API? we ok again? we,",
+   "output": "can ok tomorrow. ok is, so? today API? we ok again? we,"
+  },
+  {
+   "id": "fuzz-merge-118",
+   "fn": "merge",
+   "args": [
+    "  "
+   ],
+   "input": "to. it's, then then? ok. test. today. today. plan. and - tomorrow. tomorrow, then. 3 test",
+   "output": "to. it's, then then? ok. test. today. today. plan. and - tomorrow. tomorrow, then. 3 test"
+  },
+  {
+   "id": "fuzz-merge-119",
+   "fn": "merge",
+   "args": [
+    "is done, so tomorrow tomorrow - so, ok - and then to? API? we,"
+   ],
+   "input": "today? and - and, today. is? done so - tomorrow. tomorrow - so? ok and then, to?",
+   "output": "today? and - and, today. is? done so - tomorrow. tomorrow - so? ok and then, to? API? we,"
+  },
+  {
+   "id": "fuzz-merge-120",
+   "fn": "merge",
+   "args": [
+    "today. tomorrow, ship to, the. then. is. 3 is - so - then? again, done - v2"
+   ],
+   "input": "today tomorrow ship - to the then -",
+   "output": "today tomorrow ship - to the then - is. 3 is - so - then? again, done - v2"
+  },
+  {
+   "id": "fuzz-merge-121",
+   "fn": "merge",
+   "args": [
+    "ship. then - it v2, today. we done? 3 - it's? we,"
+   ],
+   "input": "plan? it's, v2 plan? is. and, test - can. it's, v2? v2, then. ship, then. it - v2 today we - done - 3 it's, we.",
+   "output": "plan? it's, v2 plan? is. and, test - can. it's, v2? v2, then. ship, then. it - v2 today we - done - 3 it's, we."
+  },
+  {
+   "id": "fuzz-merge-122",
+   "fn": "merge",
+   "args": [
+    "ship, 3. to? can then, it's done so. ship. done? ok - it. ok. test plan - API ship - today. to v2, 3 - v2, tomorrow? then - 3 so - so, it. tomorrow, it's API then. it's, tomorrow? done ok,"
+   ],
+   "input": "ship, 3 to - can - then - it's. done, so? ship. done. ok, it, ok test plan? API ship. today? to? v2? 3 - v2,",
+   "output": "ship, 3 to - can - then - it's. done, so? ship. done. ok, it, ok test plan? API ship. today? to? v2? 3 - v2, tomorrow? then - 3 so - so, it. tomorrow, it's API then. it's, tomorrow? done ok,"
+  },
+  {
+   "id": "fuzz-merge-123",
+   "fn": "merge",
+   "args": [
+    "done the. the - we. is, the - and - to. 3, v2 today to 3. to it's - plan"
+   ],
+   "input": "v2, it, API - can so, it's test. so. done. done the the - we is? the and to - 3",
+   "output": "v2, it, API - can so, it's test. so. done. done the the - we is? the and to - 3 v2 today to 3. to it's - plan"
+  },
+  {
+   "id": "fuzz-merge-124",
+   "fn": "merge",
+   "args": [
+    "the? 3 plan plan? to -"
+   ],
+   "input": "test, the - 3 - API and. it, ship. ship today. done. plan. tomorrow. test. can done, 3? ship, API - the 3, plan - plan to?",
+   "output": "test, the - 3 - API and. it, ship. ship today. done. plan. tomorrow. test. can done, 3? ship, API - the 3, plan - plan to?"
+  },
+  {
+   "id": "fuzz-merge-125",
+   "fn": "merge",
+   "args": [
+    "it - to again."
+   ],
+   "input": "ok - then? tomorrow today? ok it's. is - the - tomorrow? then it. it? it's, then 3? it the is. it's - it's? 3 so ship - it's so API, to 3 3? can, it to again,",
+   "output": "ok - then? tomorrow today? ok it's. is - the - tomorrow? then it. it? it's, then 3? it the is. it's - it's? 3 so ship - it's so API, to 3 3? can, it to again,"
+  },
+  {
+   "id": "fuzz-merge-126",
+   "fn": "merge",
+   "args": [
+    "to - 3 then the. plan - tomorrow? it's. it's 3, ship tomorrow today? and - done - then ship - again. then then? we again."
+   ],
+   "input": "today. done tomorrow? can? v2? to 3, then? the? plan tomorrow it's - it's, 3, ship, tomorrow - today and",
+   "output": "today. done tomorrow? can? v2? to 3, then? the? plan tomorrow it's - it's, 3, ship, tomorrow - today and done - then ship - again. then then? we again."
+  },
+  {
+   "id": "fuzz-merge-127",
+   "fn": "merge",
+   "args": [
+    "is is ok. is - done. is today, API it's it's. done? v2 ok it, tomorrow. done it's? API it,"
+   ],
+   "input": "ship. test? tomorrow. v2? API again? ok then. API? the it's it's tomorrow ok is - is - is? ok? is. done - is, today API - it's - it's. done? v2 - ok it tomorrow. done. it's? API it?",
+   "output": "ship. test? tomorrow. v2? API again? ok then. API? the it's it's tomorrow ok is - is - is? ok? is. done - is, today API - it's - it's. done? v2 - ok it tomorrow. done. it's? API it?"
+  },
+  {
+   "id": "fuzz-merge-128",
+   "fn": "merge",
+   "args": [
+    "API, the it's? tomorrow - can? done can it's - again. can. v2 - test. tomorrow test. to. ship - API -"
+   ],
+   "input": "again it 3. plan API, then? 3? the - 3 v2. done tomorrow API the it's - tomorrow can, done. can - it's - again",
+   "output": "again it 3. plan API, then? 3? the - 3 v2. done tomorrow API the it's - tomorrow can, done. can - it's - again can. v2 - test. tomorrow test. to. ship - API -"
+  },
+  {
+   "id": "fuzz-merge-129",
+   "fn": "merge",
+   "args": [
+    "we ok? 3. plan, plan, ok, so? API. it's? 3 is is - ship, today - it's? today - API. can - it's - test and."
+   ],
+   "input": "we ok. 3. plan? plan, ok? so? API. it's, 3 is - is ship today it's? today -",
+   "output": "we ok. 3. plan? plan, ok? so? API. it's, 3 is - is ship today it's? today - API. can - it's - test and."
+  },
+  {
+   "id": "fuzz-merge-130",
+   "fn": "merge",
+   "args": [
+    "3? test? the is? v2. again. it's - and it's is, we, plan - today. ok. API."
+   ],
+   "input": "v2? test?",
+   "output": "v2? test? 3? test? the is? v2. again. it's - and it's is, we, plan - today. ok. API."
+  },
+  {
+   "id": "fuzz-merge-131",
+   "fn": "merge",
+   "args": [
+    "done so again then - it's again we. so? done to? 3 v2, it's"
+   ],
+   "input": "done - so. again. then? it's - again we so done",
+   "output": "done - so. again. then? it's - again we so done to? 3 v2, it's"
+  },
+  {
+   "id": "fuzz-merge-132",
+   "fn": "merge",
+   "args": [
+    "today API - ship? done again, API, test? today,"
+   ],
+   "input": "today API? ship done",
+   "output": "today API? ship done again, API, test? today,"
+  },
+  {
+   "id": "fuzz-merge-133",
+   "fn": "merge",
+   "args": [
+    "API THEN TEST CAN? API, TEST"
+   ],
+   "input": "it's v2 - 3? then done tomorrow - the. today to, so API",
+   "output": "it's v2 - 3? then done tomorrow - the. today to, so API API THEN TEST CAN? API, TEST"
+  },
+  {
+   "id": "fuzz-merge-134",
+   "fn": "merge",
+   "args": [
+    "V2 - OK TEST SO WE OK TEST, CAN 3 - AGAIN. API CAN IT'S? AGAIN, TO THEN AND THE IS - IT'S TOMORROW"
+   ],
+   "input": "test, and is. to - test. ok then v2 3 test. 3. again, API it - v2? ok test so we ok test can. 3. again API, can, it's again to then and,",
+   "output": "test, and is. to - test. ok then v2 3 test. 3. again, API it - v2? ok test so we ok test can. 3. again API, can, it's again to then and, THE IS - IT'S TOMORROW"
+  },
+  {
+   "id": "fuzz-merge-135",
+   "fn": "merge",
+   "args": [
+    "today - can, so? today - API ok so - to, is. v2. ok, again we - to? is the, so?"
+   ],
+   "input": "we. tomorrow? is? done, is - is test? is ship - v2 - ship? ok - today, can? so? today API, ok so, to, is. v2? ok again? we to - is - the? so?",
+   "output": "we. tomorrow? is? done, is - is test? is ship - v2 - ship? ok - today, can? so? today API, ok so, to, is. v2? ok again? we to - is - the? so?"
+  },
+  {
+   "id": "fuzz-merge-136",
+   "fn": "merge",
+   "args": [
+    "API, it's. today - plan today. today. then."
+   ],
+   "input": "is. again and - we - is to. to - the? the it test today, done plan, so? done. it's, today again. test 3? to? API it's today? plan. today today",
+   "output": "is. again and - we - is to. to - the? the it test today, done plan, so? done. it's, today again. test 3? to? API it's today? plan. today today then."
+  },
+  {
+   "id": "fuzz-merge-137",
+   "fn": "merge",
+   "args": [
+    "tomorrow then. to. today - it."
+   ],
+   "input": "and - so ok - tomorrow - again? so - ok - done then it, then - done 3 ok? it ship, it's tomorrow. then to today it.",
+   "output": "and - so ok - tomorrow - again? so - ok - done then it, then - done 3 ok? it ship, it's tomorrow. then to today it."
+  },
+  {
+   "id": "fuzz-merge-138",
+   "fn": "merge",
+   "args": [
+    "is tomorrow. again? it's, so - ok, is? then. it the ok, so is the - it it's - then, 3 -"
+   ],
+   "input": "is tomorrow again? it's,",
+   "output": "is tomorrow again? it's, so - ok, is? then. it the ok, so is the - it it's - then, 3 -"
+  },
+  {
+   "id": "fuzz-merge-139",
+   "fn": "merge",
+   "args": [
+    "THEN. DONE? DONE. CAN. AGAIN TOMORROW - PLAN? TODAY. API. OK TODAY - DONE? SHIP. CAN. DONE - TEST SHIP,"
+   ],
+   "input": "then. done? done. can, again. tomorrow - plan today, API. ok - today.",
+   "output": "then. done? done. can, again. tomorrow - plan today, API. ok - today. DONE? SHIP. CAN. DONE - TEST SHIP,"
+  },
+  {
+   "id": "fuzz-merge-140",
+   "fn": "merge",
+   "args": [
+    "it. is. API - to? test. ok? test done - it it? plan - v2 - to"
+   ],
+   "input": "v2. today - plan - it. can? done can. ship, we is - again so? plan. to - ok. then? ship - it - today to tomorrow - to - to.",
+   "output": "v2. today - plan - it. can? done can. ship, we is - again so? plan. to - ok. then? ship - it - today to tomorrow - to - to. it. is. API - to? test. ok? test done - it it? plan - v2 - to"
+  },
+  {
+   "id": "fuzz-merge-141",
+   "fn": "merge",
+   "args": [
+    "ship ship, today v2 ok test. it's, it's ship? plan?"
+   ],
+   "input": "ship ship. today? v2 - ok, test, it's? it's.",
+   "output": "ship ship. today? v2 - ok, test, it's? it's. ship? plan?"
+  },
+  {
+   "id": "fuzz-merge-142",
+   "fn": "merge",
+   "args": [
+    "can - today, done API - it ok, is? and, test we - 3 - today plan. is done? tomorrow, test v2 it. is ok ship. and? tomorrow test"
+   ],
+   "input": "can? today done API - it ok, is. and",
+   "output": "can? today done API - it ok, is. and test we - 3 - today plan. is done? tomorrow, test v2 it. is ok ship. and? tomorrow test"
+  },
+  {
+   "id": "fuzz-merge-143",
+   "fn": "merge",
+   "args": [
+    "and to? plan API? to - tomorrow, 3 then again v2? API? ship. is is - v2 again today. 3? we so done. done. API? ok today, to, 3 -"
+   ],
+   "input": "API, done. then. done. API? it's, it. ok? today? test and, to",
+   "output": "API, done. then. done. API? it's, it. ok? today? test and, to plan API? to - tomorrow, 3 then again v2? API? ship. is is - v2 again today. 3? we so done. done. API? ok today, to, 3 -"
+  },
+  {
+   "id": "fuzz-merge-144",
+   "fn": "merge",
+   "args": [
+    "then API - 3, again - it - can done,"
+   ],
+   "input": "so, is the, to v2. then, API, 3 - again - it - can, done?",
+   "output": "so, is the, to v2. then, API, 3 - again - it - can, done?"
+  },
+  {
+   "id": "fuzz-merge-145",
+   "fn": "merge",
+   "args": [
+    "ok is test. it's it. ok? test - test - and? to"
+   ],
+   "input": "ok is, test? it's it - ok - test.",
+   "output": "ok is, test? it's it - ok - test. test - and? to"
+  },
+  {
+   "id": "fuzz-merge-146",
+   "fn": "merge",
+   "args": [
+    "so? to it. it's? it's it's, v2. is, it's, today - ok again. plan, is? API"
+   ],
+   "input": "so to it, it's - it's? it's,",
+   "output": "so to it, it's - it's? it's, v2. is, it's, today - ok again. plan, is? API"
+  },
+  {
+   "id": "fuzz-merge-147",
+   "fn": "merge",
+   "args": [
+    "we. it's. it. is? v2? test - done test we the so it v2 can tomorrow, tomorrow. is, test. test. to - can, can, tomorrow so so it's ok? ship the."
+   ],
+   "input": "API the v2, it's. then. and plan. then - 3? we - it's it is v2? test. done - test - we the - so. it v2? can, tomorrow? tomorrow - is, test test to. can? can tomorrow so so",
+   "output": "API the v2, it's. then. and plan. then - 3? we - it's it is v2? test. done - test - we the - so. it v2? can, tomorrow? tomorrow - is, test test to. can? can tomorrow so so it's ok? ship the."
+  },
+  {
+   "id": "fuzz-merge-148",
+   "fn": "merge",
+   "args": [
+    "DONE IT'S? TOMORROW - 3 API OK SO 3 WE - OK, SO DONE. AGAIN"
+   ],
+   "input": "v2? ship - so. 3? to - then. and ok - again. done, is - so. done? it's? tomorrow -",
+   "output": "v2? ship - so. 3? to - then. and ok - again. done, is - so. done? it's? tomorrow - 3 API OK SO 3 WE - OK, SO DONE. AGAIN"
+  },
+  {
+   "id": "fuzz-merge-149",
+   "fn": "merge",
+   "args": [
+    "tomorrow API ship, v2. then plan. API it's tomorrow. again, 3, can v2 -"
+   ],
+   "input": "we tomorrow API ship v2, then. plan.",
+   "output": "we tomorrow API ship v2, then. plan. API it's tomorrow. again, 3, can v2 -"
+  },
+  {
+   "id": "fuzz-merge-150",
+   "fn": "merge",
+   "args": [
+    "ok - to. so? plan? done. is. again, we"
+   ],
+   "input": "ok to",
+   "output": "ok to so? plan? done. is. again, we"
   }
  ],
  "pipeline": [
@@ -11917,15 +13465,17 @@
   {
    "id": "fuzz-pipeline-001",
    "config": "cascade",
-   "app": "Other",
-   "env": {},
-   "input": "actuallyish ( blank_audio ) realized The another realized favorite to be honest uh, {BLANK - AUDIO}! basically, word anyways... go to go to actuallyish I mean, color! color [ text ) anyways Colors um it's er...",
+   "app": "Ghostty",
+   "env": {
+    "DICTATE_BRITISH_SPELLING": "0"
+   },
+   "input": "here it's actuallyish ) [blank] Behavior...  like actuallyish don't don't realized ( blank_audio ) favorite uh, ) well-known THE realized hmm?  like, um [blank audio] go to.  the the uh, here actuallyish centering don't don't ) word um another here...  THE {BLANK - AUDIO} so yeah it's {BLANK - AUDIO} don't don't?  ( blank_audio ) text [blank].  so yeah I mean, basically, Behavior [ the anyways.  to be honest [blank] here The don't don't ( the cOlOr analyze!  another like,.  word the Behavior cOlOr to be honest Umm. basically, so yeah uh,.  [ don't don't well-known ] Behavior The ( blank_audio ).  so yeah [blank audio] go to go to?  analyze anyways don't don't the [blank audio].",
    "settings": {
     "config_dir": "@config",
     "clean": "0",
     "repeats_level": "2",
     "vocab_clean": "1",
-    "british_spelling": "1",
+    "british_spelling": "0",
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
@@ -11934,70 +13484,19 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "actuallyish realized The another realized favorite to be honest uh,! basically, word anyways... go to go to actuallyish I mean, color! color [text) anyways Colors um it's er...",
-   "text": "actuallyish realised The another realised favourite to be honest uh,! basically, word anyways... go to go to actuallyish I mean, colour! colour [text) anyways Colours um it's er...",
+   "raw_text": "here it's actuallyish) [blank] Behavior... like actuallyish don't don't realized favorite uh,) well-known THE realized hmm? like, um go to. the the uh, here actuallyish centering don't don't) word um another here... THE so yeah it's don't don't? text [blank]. so yeah I mean, basically, Behavior [the anyways. to be honest [blank] here The don't don't (the cOlOr analyze! another like,. word the Behavior cOlOr to be honest Umm. basically, so yeah uh,. [don't don't well-known] Behavior The. so yeah go to go to? analyze anyways don't don't the.",
+   "text": "here it's actuallyish) [blank] Behavior... like actuallyish don't don't realized favorite uh,) well-known THE realized hmm? like, um go to. the uh, here actuallyish centering don't don't) word um another here... THE so yeah it's don't don't? text [blank]. so yeah I mean, basically, Behavior [the anyways. to be honest [blank] here The don't don't (the cOlOr analyze! another like,. word the Behavior cOlOr to be honest Umm. basically, so yeah uh,. [don't don't well-known] Behavior The. so yeah go to go to? analyze anyways don't don't the.",
    "mode": "base"
   },
   {
    "id": "fuzz-pipeline-002",
    "config": "repo",
-   "app": "Other",
+   "app": "Notes",
    "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
+    "DICTATE_CLEAN": "1",
+    "DICTATE_REPEATS_LEVEL": "2"
    },
-   "input": "..  , hmm   COLOR er, COLOR anyways. ...I mean,, ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "..  , hmm COLOR er, COLOR anyways....I mean,,",
-   "text": "..  , hmm COLOUR er, COLOUR anyways....I mean,,",
-   "mode": "base"
-  },
-  {
-   "id": "fuzz-pipeline-003",
-   "config": "repo",
-   "app": "Slack",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "like, um Umm. so yeah basically, COLOR actually. \tto be honest [blank] the the it's [blank audio] Colors realized er [. \thmm the go to... \tBehavior go to word [ [ ( blank_audio ) you know the the?",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "like, um Umm. so yeah basically, COLOR actually. to be honest [blank] the the it's Colors realized er [. hmm the go to... Behavior go to word [[you know the the?",
-   "text": "like, um Umm. so yeah basically, COLOUR actually. to be honest [blank] the the it's Colours realised er [. hmm the go to... Behaviour go to word [[you know the the?",
-   "mode": "chat"
-  },
-  {
-   "id": "fuzz-pipeline-004",
-   "config": "cascade",
-   "app": "Ghostty",
-   "env": {
-    "DICTATE_CLEAN": "1"
-   },
-   "input": "color actually. you know THE The actuallyish? go to go to basically, color Umm. The hmm ]. ] uh, cOlOr go to go to cOlOr well-known The it's color another color text? actuallyish go to go to cOlOr THE here ) THE Umm. color don't don't here [.",
+   "input": "ergpt-4 color, ",
    "settings": {
     "config_dir": "@config",
     "clean": "1",
@@ -12012,22 +13511,49 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "color. THE ish? go to color The ].] cOlOr go to cOlOr well-known The it's color another color text? ish go to cOlOr THE here) THE color don't here [.",
-   "text": "colour. THE ish? go to colour The ].] colour go to colour well-known The it's colour another colour text? ish go to colour THE here) THE colour don't here [.",
+   "raw_text": "ergpt-4 color,",
+   "text": "ergpt-4 colour,",
    "mode": "base"
   },
   {
-   "id": "fuzz-pipeline-005",
+   "id": "fuzz-pipeline-003",
    "config": "cascade",
-   "app": "Other",
+   "app": "Mail",
+   "env": {
+    "DICTATE_CLEAN": "1",
+    "DICTATE_REPEATS_LEVEL": "2"
+   },
+   "input": "gpt-4 \t ], ! A.P.I x x x a p i ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "1",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "gpt-4],! A.P.I x a p i",
+   "text": "gpt-4],! APIxapi",
+   "mode": "email"
+  },
+  {
+   "id": "fuzz-pipeline-004",
+   "config": "repo",
+   "app": "Messages",
    "env": {
     "DICTATE_BRITISH_SPELLING": "0"
    },
-   "input": "like,, gpt-4. : at saw slash, npmopen\taiI mean,, to be honest Colors, Umm., wez term Jason's gpt-4 The日本語 日本語 kind regards, \u000b ",
+   "input": "Umm. actually ",
    "settings": {
     "config_dir": "@config",
     "clean": "0",
-    "repeats_level": "2",
+    "repeats_level": "1",
     "vocab_clean": "1",
     "british_spelling": "0",
     "code_paragraph_min_words": "70",
@@ -12038,21 +13564,49 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "like,, gpt-4.: at saw slash, npmopen\taiI mean,, to be honest Colors, Umm., wez term Jason's gpt-4 The日本語 日本語 kind regards, \u000b",
-   "text": "like,, gpt-4.: at saw slash, npmopen\taiI mean,, to be honest Colors, Umm., WezTerm JSON's gpt-4 The日本語 日本語 kind regards, \u000b",
+   "raw_text": "Umm. actually",
+   "text": "Umm. actually",
+   "mode": "chat"
+  },
+  {
+   "id": "fuzz-pipeline-005",
+   "config": "repo",
+   "app": "TextEdit",
+   "env": {
+    "DICTATE_BRITISH_SPELLING": "0"
+   },
+   "input": "it'sK8s. to be honest STRASSE. um, source slashc++ it's to be honest. anyways \ropen\tai, A.P.I [blank]tehK8s [blank audio] ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "0",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "it'sK8s. to be honest STRASSE. um, source slashc++ it's to be honest. anyways \ropen\tai, A.P.I [blank]tehK8s",
+   "text": "it'sK8s. to be honest STRASSE. um, source slashc++ it's to be honest. anyways \rOpenAI, API [blank]tehK8s",
    "mode": "base"
   },
   {
    "id": "fuzz-pipeline-006",
    "config": "cascade",
-   "app": "Slack",
-   "env": {},
-   "input": "., ",
+   "app": "Messages",
+   "env": {
+    "DICTATE_VOCAB_CLEAN": "0"
+   },
+   "input": "Jason's c++\u000b. open ai THE 😀,    analyze. ( blank_audio ), like realized COLOR, wez term. é Dr. Smith  , to be honest  , hmma b c d e f g h i OPEN  AIg-p-t[ é",
    "settings": {
     "config_dir": "@config",
     "clean": "0",
     "repeats_level": "2",
-    "vocab_clean": "1",
+    "vocab_clean": "0",
     "british_spelling": "1",
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
@@ -12062,22 +13616,20 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": ".,",
-   "text": ".,",
-   "mode": "base"
+   "raw_text": "Jason's c++. open ai THE 😀, analyze., like realized COLOR, wez term. é Dr. Smith  , to be honest  , hmma b c d e f g h i OPEN AIg-p-t[é",
+   "text": "Jason's c++. open ai THE 😀, analyse., like realised COLOUR, wez term. é Dr. Smith  , to be honest  , hmma b c d e f g h i OPEN AIg-p-t[é",
+   "mode": "chat"
   },
   {
    "id": "fuzz-pipeline-007",
-   "config": "cascade",
-   "app": "Notes",
-   "env": {
-    "DICTATE_CLEAN": "1"
-   },
-   "input": "open\taijason {BLANK - AUDIO} Dr. Smith source slash( Colors. ( blank_audio ), node.js. Dr. Smith A.P.I The. likewez term  go to go to don't don't. npm, STRASSEactually",
+   "config": "repo",
+   "app": "Other",
+   "env": {},
+   "input": "A.P.I. like, Dr. Smith, Behavior. at saw slash, ſo yeah ], A.P.I to be honest(Umm. zzz cOlOr. I mean, realized anywaysiTerm2 teh you know ",
    "settings": {
     "config_dir": "@config",
-    "clean": "1",
-    "repeats_level": "2",
+    "clean": "0",
+    "repeats_level": "1",
     "vocab_clean": "1",
     "british_spelling": "1",
     "code_paragraph_min_words": "70",
@@ -12088,24 +13640,24 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "open aijason Dr. Smith source slash(Colors., node.js. Dr. Smith A.P.I The. likewez term go to don't. npm, STRASSEactually",
-   "text": "open aijason Dr. Smith source slash(Colours., node.js. Dr. Smith API The. likewez term go to don't. npm, STRASSEactually",
+   "raw_text": "A.P.I. like, Dr. Smith, Behavior. at saw slash, ſo yeah], A.P.I to be honest(Umm. zzz cOlOr. I mean, realized anywaysiTerm2 teh you know",
+   "text": "API. like, Dr. Smith, Behaviour. @src/, ſo yeah], API to be honest(Umm. zzz colour. I mean, realised anywaysiTerm2 teh you know",
    "mode": "base"
   },
   {
    "id": "fuzz-pipeline-008",
-   "config": "cascade",
-   "app": "Messages",
+   "config": "repo",
+   "app": "Other",
    "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
+    "DICTATE_BRITISH_SPELLING": "0"
    },
-   "input": "hmm analyze uh, to be honest Colors! centering basically, uh, like, the the centering er ) THE. cOlOr [blank] actuallyish ( blank_audio ) go to go to I mean, like, word color word anyways. actuallyish to be honest? another THE go to the realized. you know it's favorite actually to be honest another centering anyways COLOR favorite word.",
+   "input": "日本語like k8s the the node.js Behavior! \u000b ). \t ſo yeah1.5. realized ... iTerm2 COLOR, THE. \t to be honest foo_bar ",
    "settings": {
     "config_dir": "@config",
     "clean": "0",
-    "repeats_level": "2",
-    "vocab_clean": "0",
-    "british_spelling": "1",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "0",
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
@@ -12114,249 +13666,19 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "hmm analyze uh, to be honest Colors! centering basically, uh, like, the the centering er) THE. cOlOr [blank] actuallyish go to go to I mean, like, word color word anyways. actuallyish to be honest? another THE go to the realized. you know it's favorite actually to be honest another centering anyways COLOR favorite word.",
-   "text": "hmm analyse uh, to be honest Colours! centring basically, uh, like, the the centring er) THE. colour [blank] actuallyish go to go to I mean, like, word colour word anyways. actuallyish to be honest? another THE go to the realised. you know it's favourite actually to be honest another centring anyways COLOUR favourite word.",
-   "mode": "chat"
+   "raw_text": "日本語like k8s the the node.js Behavior!). ſo yeah1.5. realized... iTerm2 COLOR, THE. to be honest foo_bar",
+   "text": "日本語like k8s the the node.js Behavior!). ſo yeah1.5. realized... iTerm2 COLOR, THE. to be honest foo_bar",
+   "mode": "base"
   },
   {
    "id": "fuzz-pipeline-009",
-   "config": "cascade",
-   "app": "Messages",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "cOlOr go to go to, teamux. The, the the .] ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "2",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "cOlOr go to go to, teamux. The, the the.]",
-   "text": "colour go to go to, teamux. The, the the.]",
-   "mode": "chat"
-  },
-  {
-   "id": "fuzz-pipeline-010",
-   "config": "repo",
-   "app": "Slack",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "api, the, 日本語 go to : tmux whisper {BLANK - AUDIO}go to.  . basically,um Behavior Jason's ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "api, the, 日本語 go to: tmux whisper go to.  . basically,um Behavior Jason's",
-   "text": "api, the, 日本語 go to: tmux whisper go to.  . basically,um Behaviour Jason's",
-   "mode": "chat"
-  },
-  {
-   "id": "fuzz-pipeline-011",
-   "config": "cascade",
-   "app": "Slack",
-   "env": {},
-   "input": "A.P.I , basically, x x x. source slashnpmk8s wez term I mean, basically,uh,. teamux, like, regards. api? Jason's to be honest ...   ſo yeah gpt-4, ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "2",
-    "vocab_clean": "1",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "A.P.I , basically, x x x. source slashnpmk8s wez term I mean, basically,uh,. teamux, like, regards. api? Jason's to be honest...   ſo yeah gpt-4,",
-   "text": "API , basically, x x x. source slashnpmk8s WezTerm I mean, basically,uh,. teamux, like, regards. API? JSON's to be honest...   ſo yeah gpt-4,",
-   "mode": "base"
-  },
-  {
-   "id": "fuzz-pipeline-012",
-   "config": "cascade",
-   "app": "WezTerm",
-   "env": {
-    "DICTATE_BRITISH_SPELLING": "0"
-   },
-   "input": "I mean, tmux whisper actually  . source slash it's favorite 😀 the the. [blank]color( a p iCOLOR \t c++ . a p i ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "2",
-    "vocab_clean": "1",
-    "british_spelling": "0",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "I mean, tmux whisper actually  . source slash it's favorite 😀 the the. [blank]color(a p iCOLOR c++. a p i",
-   "text": "I mean, tmux whisper actually  . source slash it's favorite 😀 the the. [blank]color(b::c p iCOLOR C++. API",
-   "mode": "base"
-  },
-  {
-   "id": "fuzz-pipeline-013",
-   "config": "cascade",
-   "app": "Ghostty",
-   "env": {
-    "DICTATE_BRITISH_SPELLING": "0"
-   },
-   "input": "um centering go to go to centering go to go to go to here... \tit's The ) the the. \tCOLOR favorite color the the go to like the basically, text. \tactually [blank audio] uh, actually like? \t) basically,... \tlike cOlOr [blank audio] the the centering hmm here ] um. \tColors realized um you know [ another go to go to it's favorite basically, Behavior it's. \tthe {BLANK - AUDIO} THE hmm [blank] word um THE! \tto be honest here the realized Behavior actually The text COLOR? \tit's actually cOlOr here {BLANK - AUDIO} actually THE realized. \tcOlOr The basically, ( analyze favorite the another word like, another favorite. \tdon't don't actually um here The hmm hmm realized basically, anyways THE Umm..",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "2",
-    "vocab_clean": "1",
-    "british_spelling": "0",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "um centering go to go to centering go to go to go to here... it's The) the the. COLOR favorite color the the go to like the basically, text. actually uh, actually like?) basically,... like cOlOr the the centering hmm here] um. Colors realized um you know [another go to go to it's favorite basically, Behavior it's. the THE hmm [blank] word um THE! to be honest here the realized Behavior actually The text COLOR? it's actually cOlOr here actually THE realized. cOlOr The basically, (analyze favorite the another word like, another favorite. don't don't actually um here The hmm hmm realized basically, anyways THE Umm..",
-   "text": "um centering go to go to centering go to go to go to here... it's The) the the. COLOR favorite color the go to like the basically, text. actually uh, actually like?) basically,... like cOlOr the centering hmm here] um. Colors realized um you know [another go to go to it's favorite basically, Behavior it's. the hmm [blank] word um THE! to be honest here the realized Behavior actually The text COLOR? it's actually cOlOr here actually THE realized. cOlOr The basically, (analyze favorite the another word like, another favorite. don't don't actually um here The hmm hmm realized basically, anyways THE Umm..",
-   "mode": "base"
-  },
-  {
-   "id": "fuzz-pipeline-014",
-   "config": "cascade",
-   "app": "Notes",
-   "env": {
-    "DICTATE_CLEAN": "1"
-   },
-   "input": "ſo yeah. ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "1",
-    "repeats_level": "2",
-    "vocab_clean": "1",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "ſo yeah.",
-   "text": "ſo yeah.",
-   "mode": "base"
-  },
-  {
-   "id": "fuzz-pipeline-015",
-   "config": "repo",
-   "app": "Notes",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "Umm. go to go to Colors uh,. the actually [blank audio] go to go to like, well-known Umm.? word Umm. er don't don't um well-known basically, it's the the it's anyways (! the the you know the I mean, well-known ( blank_audio ) hmm it's you know [blank audio].",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "Umm. go to go to Colors uh,. the actually go to go to like, well-known Umm.? word Umm. er don't don't um well-known basically, it's the the it's anyways (! the the you know the I mean, well-known hmm it's you know.",
-   "text": "Umm. go to go to Colours uh,. the actually go to go to like, well-known Umm.? word Umm. er don't don't um well-known basically, it's the the it's anyways (! the the you know the I mean, well-known hmm it's you know.",
-   "mode": "base"
-  },
-  {
-   "id": "fuzz-pipeline-016",
-   "config": "cascade",
-   "app": "TextEdit",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "wez term node.js.   npm.  , go to Umm.. ] actually. basically,. tmux whisper, naïve. kind regards THE( blank_audio ), open ai, hmm ( to be honest Colors The, ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "2",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "wez term node.js.   npm.  , go to Umm..] actually. basically,. tmux whisper, naïve. kind regards THE, open ai, hmm (to be honest Colors The,",
-   "text": "wez term node.js.   npm.  , go to Umm..] actually. basically,. tmux whisper, naïve. kind regards THE, open ai, hmm (to be honest Colours The,",
-   "mode": "long"
-  },
-  {
-   "id": "fuzz-pipeline-017",
-   "config": "repo",
-   "app": "WezTerm",
-   "env": {},
-   "input": "foo_bar ...c++ the the THE favorite",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "1",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "foo_bar...c++ the the THE favorite",
-   "text": "foo_bar...c++ the the THE favourite",
-   "mode": "code"
-  },
-  {
-   "id": "fuzz-pipeline-018",
    "config": "repo",
    "app": "Messages",
    "env": {
     "DICTATE_CLEAN": "1",
     "DICTATE_REPEATS_LEVEL": "2"
    },
-   "input": "tmux whisper    don't don't ; source slash it'sOPEN  AI ",
+   "input": "x x x realized realized, .net K8s. \r\ng-p-t g-p-t ",
    "settings": {
     "config_dir": "@config",
     "clean": "1",
@@ -12371,174 +13693,18 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "tmux whisper don't; source slash it'sOPEN AI",
-   "text": "tmux whisper don't; source slash it'sOPEN AI",
+   "raw_text": "x realized,.net K8s.g-p-t g-p-t",
+   "text": "x realised,.net K8s.gptgpt",
    "mode": "chat"
   },
   {
-   "id": "fuzz-pipeline-019",
-   "config": "repo",
-   "app": "Slack",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "zzz you know , cOlOr naïve STRASSE, ( blank_audio ) OPEN  AIwez term ,   node.js, analyze, 日本語the the. a p i cOlOr\u000b, COLOR ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "zzz you know, cOlOr naïve STRASSE, OPEN AIwez term,   node.js, analyze, 日本語the the. a p i cOlOr, COLOR",
-   "text": "zzz you know, colour naïve STRASSE, OPEN AIwez term,   node.js, analyse, 日本語the the. a p i colour, COLOUR",
-   "mode": "chat"
-  },
-  {
-   "id": "fuzz-pipeline-020",
-   "config": "repo",
-   "app": "Notes",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "( [ actually to be honest go to go to the the the [blank]?  er actuallyish ) here uh, [blank] actually actuallyish here realized [blank audio] um.  ( blank_audio ) like it's go to go to basically, you know hmm {BLANK - AUDIO} centering another favorite color.  favorite you know it's hmm...  analyze ] ( to be honest actually COLOR to be honest...",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "([actually to be honest go to go to the the the [blank]? er actuallyish) here uh, [blank] actually actuallyish here realized um. like it's go to go to basically, you know hmm centering another favorite color. favorite you know it's hmm... analyze] (to be honest actually COLOR to be honest...",
-   "text": "([actually to be honest go to go to the the the [blank]? er actuallyish) here uh, [blank] actually actuallyish here realised um. like it's go to go to basically, you know hmm centring another favourite colour. favourite you know it's hmm... analyse] (to be honest actually COLOUR to be honest...",
-   "mode": "base"
-  },
-  {
-   "id": "fuzz-pipeline-021",
-   "config": "cascade",
-   "app": "Messages",
-   "env": {
-    "DICTATE_CLEAN": "1"
-   },
-   "input": "text actuallyish analyze. Behavior Colors the hmm ( blank_audio ) analyze The it's anyways. here don't don't actually hmm well-known another THE like, it's. Umm. ( blank_audio ). don't don't here um text ) anyways er [blank audio] the the. The actually cOlOr...",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "1",
-    "repeats_level": "2",
-    "vocab_clean": "1",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "text ish analyze. Behavior Colors the analyze The it's. here don't well-known another THE like, it's.. don't here text) s the. The cOlOr...",
-   "text": "text ish analyse. Behaviour Colours the analyse The it's. here don't well-known another THE like, it's.. don't here text) s the. The colour...",
-   "mode": "chat"
-  },
-  {
-   "id": "fuzz-pipeline-022",
-   "config": "repo",
-   "app": "WezTerm",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "[blank] ) ) [blank audio] Colors like,.  er the the er [blank] analyze ) centering ) the the Colors [blank].  [ basically, The analyze COLOR well-known anyways?  Umm. Behavior [blank] cOlOr...  text go to like, hmm it's!  another like to be honest Colors to be honest I mean, basically,.  anyways [blank audio] you know here [blank audio].  {BLANK - AUDIO} it's {BLANK - AUDIO} hmm word basically,.  centering hmm [blank audio] er Behavior centering anyways go to.  THE favorite so yeah like, so yeah?  THE THE text text [blank audio] cOlOr Umm. you know!  to be honest basically, [blank audio] go to go to I mean, {BLANK - AUDIO} another.  COLOR it's anyways [blank]...  I mean, realized um.",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "[blank])) Colors like,. er the the er [blank] analyze) centering) the the Colors [blank]. [basically, The analyze COLOR well-known anyways? Umm. Behavior [blank] cOlOr... text go to like, hmm it's! another like to be honest Colors to be honest I mean, basically,. anyways you know here. it's hmm word basically,. centering hmm er Behavior centering anyways go to. THE favorite so yeah like, so yeah? THE THE text text cOlOr Umm. you know! to be honest basically, go to go to I mean, another. COLOR it's anyways [blank]... I mean, realized um.",
-   "text": "[blank])) Colours like,. er the the er [blank] analyse) centring) the the Colours [blank]. [basically, The analyse COLOUR well-known anyways? Umm. Behaviour [blank] colour... text go to like, hmm it's! another like to be honest Colours to be honest I mean, basically,. anyways you know here.\n\nit's hmm word basically,. centring hmm er Behaviour centring anyways go to. THE favourite so yeah like, so yeah? THE THE text text colour Umm. you know! to be honest basically, go to go to I mean, another. COLOUR it's anyways [blank]... I mean, realised um.",
-   "mode": "code"
-  },
-  {
-   "id": "fuzz-pipeline-023",
-   "config": "repo",
-   "app": "TextEdit",
-   "env": {
-    "DICTATE_VOCAB_CLEAN": "0"
-   },
-   "input": "... ..., café OPEN  AI realized anyways  , \u000b. favorite. K8s. 😀,   , \r\n é !,   open ai  . source slash .net, color OPEN  AI. THE",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "0",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "......, café OPEN AI realized anyways  ,. favorite. K8s. 😀,, \r\né!,   open ai  . source slash.net, color OPEN AI. THE",
-   "text": "......, café OPEN AI realised anyways  ,. favourite. K8s. 😀,, \r\né!,   open ai  . source slash.net, colour OPEN AI. THE",
-   "mode": "base"
-  },
-  {
-   "id": "fuzz-pipeline-024",
-   "config": "repo",
-   "app": "Slack",
-   "env": {
-    "DICTATE_CLEAN": "1"
-   },
-   "input": "THEfoo_bar, (.   Dr. Smith. I mean, , ... Dr. Smith. kind regardsDr. Smith favorite ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "1",
-    "repeats_level": "1",
-    "vocab_clean": "1",
-    "british_spelling": "1",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "THEfoo_bar, (.   Dr. Smith.,... Dr. Smith. kind regardsDr. Smith favorite",
-   "text": "THEfoo_bar, (.   Dr. Smith.,... Dr. Smith. kind regardsDr. Smith favourite",
-   "mode": "chat"
-  },
-  {
-   "id": "fuzz-pipeline-025",
+   "id": "fuzz-pipeline-010",
    "config": "cascade",
    "app": "Mail",
    "env": {
     "DICTATE_CLEAN": "1"
    },
-   "input": "\n the. ] \n [blank]. Behavior, Dr. Smithwez term\t. like. [blank audio] Dr. Smith, \t ",
+   "input": "centering (. realized {BLANK - AUDIO}. the the you know... the cOlOr... The {BLANK - AUDIO} ( blank_audio ) hmm centering centering text [ um cOlOr! ] The another basically, well-known like, the the don't don't the the actually. don't don't actually. cOlOr {BLANK - AUDIO} it's Behavior the the er the the er here COLOR. Umm. here like, [blank audio] centering COLOR... hmm Behavior well-known it's another um ) I mean, word...",
    "settings": {
     "config_dir": "@config",
     "clean": "1",
@@ -12553,16 +13719,222 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "the.][blank]. Behavior, Dr. Smithwez term. like. Dr. Smith,",
-   "text": "the.][blank]. Behaviour, Dr. Smithwez term. like. Dr. Smith,",
+   "raw_text": "centering (. realized. the... the cOlOr... The centering text [cOlOr!] The another well-known like, the don't the. don't. cOlOr it's Behavior the here COLOR. here like, centering COLOR... Behavior well-known it's another ) word...",
+   "text": "centring (. realised. the... the colour... The centring text [colour!] The another well-known like, the don't the. don't. colour it's Behaviour the here COLOUR. here like, centring COLOUR... Behaviour well-known it's another ) word...",
    "mode": "email"
   },
   {
-   "id": "fuzz-pipeline-026",
+   "id": "fuzz-pipeline-011",
+   "config": "cascade",
+   "app": "Messages",
+   "env": {
+    "DICTATE_BRITISH_SPELLING": "0"
+   },
+   "input": "tmux whisper ( blank_audio )uh, naïve. 　\n favorite, The. so yeah. colorlikekind regardsK8s    \r\n g-p-t\ta p i at saw slash K8s. 1.5[blank audio], ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "0",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "tmux whisper uh, naïve. 　\nfavorite, The. so yeah. colorlikekind regardsK8s \r\ng-p-t\ta p i at saw slash K8s. 1.5,",
+   "text": "tmux whisper uh, naïve. 　\nfavorite, The. so yeah. colorlikekind regardsK8s \r\ngptapi at saw slash K8s. 1.5,",
+   "mode": "chat"
+  },
+  {
+   "id": "fuzz-pipeline-012",
+   "config": "cascade",
+   "app": "Ghostty",
+   "env": {
+    "DICTATE_CLEAN": "1",
+    "DICTATE_REPEATS_LEVEL": "2"
+   },
+   "input": "centering :. 1.5, um I mean, go to go tonpm [blank] node.jsA.P.I a p i er ſo yeah\r .net. 　.    　 ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "1",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "centering:. 1.5, go to go tonpm [blank] node.jsA.P.I a p i ſo yeah.net. 　. 　",
+   "text": "centring:. 1.5, go to go tonpm [blank] node.jsA.PIapi ſo yeah.net. 　. 　",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-013",
+   "config": "cascade",
+   "app": "Notes",
+   "env": {
+    "DICTATE_CLEAN": "1",
+    "DICTATE_REPEATS_LEVEL": "2"
+   },
+   "input": "[blank] THE\ra b c d e f g h i. :. uh, A.P.I 😀. wez term Jason's so yeah. \r \n café  , the ., like, ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "1",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "[blank] THE a b c d e f g h i.:. A.P.I 😀. wez term Jason's.café  , the., like,",
+   "text": "[blank] THE abcdefgh i.:. API 😀. WezTerm JSON's.café  , the., like,",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-014",
+   "config": "repo",
+   "app": "TextEdit",
+   "env": {},
+   "input": ": teamux. , at saw slash open\tai, go to go to \r\n😀 go to go to, K8s, ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": ": teamux., at saw slash open\tai, go to go to \r\n😀 go to go to, K8s,",
+   "text": ": teamux., @src/ OpenAI, go to go to \r\n😀 go to go to, K8s,",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-015",
+   "config": "repo",
+   "app": "Slack",
+   "env": {
+    "DICTATE_BRITISH_SPELLING": "0"
+   },
+   "input": "api uh, \r node.js it's. ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "0",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "api uh, \r node.js it's.",
+   "text": "api uh, \r node.js it's.",
+   "mode": "chat"
+  },
+  {
+   "id": "fuzz-pipeline-016",
+   "config": "repo",
+   "app": "Notes",
+   "env": {
+    "DICTATE_VOCAB_CLEAN": "0"
+   },
+   "input": "actually ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "0",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "actually",
+   "text": "actually",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-017",
    "config": "cascade",
    "app": "Slack",
+   "env": {
+    "DICTATE_CLEAN": "1"
+   },
+   "input": "regards, ſo yeah, open ai a p i Jason's, I mean, K8s ?. x x x, umfoo_bar, ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "1",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "regards, ſo yeah, open ai a p i Jason's, K8s?. x, umfoo_bar,",
+   "text": "regards, ſo yeah, OpenAI Inc API JSON's, Kubernetes?. x, umfoo_bar,",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-018",
+   "config": "repo",
+   "app": "Notes",
    "env": {},
-   "input": "A.P.I Umm.STRASSE. Umm. [blank audio], ",
+   "input": "realized. at saw slash,  , teamux color COLOR OPEN  AI. STRASSE  . 😀 a p i. Thea p iactually ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "realized. at saw slash,  , teamux color COLOR OPEN AI. STRASSE  . 😀 a p i. Thea p iactually",
+   "text": "realised. @src/,  , teamux colour COLOUR OPEN AI. STRASSE  . 😀 api. Thea p iactually",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-019",
+   "config": "cascade",
+   "app": "TextEdit",
+   "env": {},
+   "input": "( The THE ( anyways [ ] here text another.  {BLANK - AUDIO} here analyze cOlOr COLOR...  you know here I mean, it's text to be honest Umm. actuallyish like, Colors cOlOr COLOR!  ] to be honest the ) centering I mean, you know.  Behavior Umm. {BLANK - AUDIO} [blank audio]...  realized [ cOlOr go to go to it's go to Colors [blank] [blank audio] Colors uh,.  ( COLOR [blank audio] COLOR cOlOr [blank audio] don't don't favorite so yeah like,!  here color anyways!  favorite like, [blank audio] word ( you know uh, er er actually so yeah it's...  anyways Colors anyways don't don't here The...  er like, it's don't don't centering...  er analyze Colors well-known.",
    "settings": {
     "config_dir": "@config",
     "clean": "0",
@@ -12577,18 +13949,142 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "A.P.I Umm.STRASSE. Umm.,",
-   "text": "API Umm.STRASSE. Umm.,",
-   "mode": "base"
+   "raw_text": "(The THE (anyways [] here text another. here analyze cOlOr COLOR... you know here I mean, it's text to be honest Umm. actuallyish like, Colors cOlOr COLOR!] to be honest the) centering I mean, you know. Behavior Umm.... realized [cOlOr go to go to it's go to Colors [blank] Colors uh,. (COLOR COLOR cOlOr don't don't favorite so yeah like,! here color anyways! favorite like, word (you know uh, er er actually so yeah it's... anyways Colors anyways don't don't here The... er like, it's don't don't centering... er analyze Colors well-known.",
+   "text": "(the (anyways [] here text another. here analyse colour COLOUR... you know here I mean, it's text to be honest Umm. actuallyish like, Colours colour COLOUR!] to be honest the) centring I mean, you know. Behaviour Umm.... realised [colour go to go to it's go to Colours [blank] Colours uh,.\n\n(COLOUR COLOUR colour don't don't favourite so yeah like,! here colour anyways! favourite like, word (you know uh, er er actually so yeah it's... anyways Colours anyways don't don't here The... er like, it's don't don't centring... er analyse Colours well-known.",
+   "mode": "long"
   },
   {
-   "id": "fuzz-pipeline-027",
-   "config": "cascade",
-   "app": "Notes",
+   "id": "fuzz-pipeline-020",
+   "config": "repo",
+   "app": "WezTerm",
    "env": {
     "DICTATE_VOCAB_CLEAN": "0"
    },
-   "input": "The um go to ( blank_audio ) like, actuallyish here um you know.  go to THE go to go to.  ] favorite Behavior anyways like centering Umm. [blank] color?  ( um?  um The go to go to THE ] it's you know Behavior to be honest text.  ( THE you know Colors so yeah actually anyways ( blank_audio )?  The Behavior to be honest like hmm [blank audio] Umm. favorite ( blank_audio )?  [ I mean, analyze go to go to it's the!  Umm. hmm analyze color word er [blank audio] anyways [blank] word favorite I mean,.  go to to be honest ( blank_audio ) ( {BLANK - AUDIO} like, actually...  Colors hmm er realized word Behavior )?  centering color actually um the ) {BLANK - AUDIO} here.",
+   "input": "{BLANK - AUDIO} the the it's you know like, basically, realized [blank] like, The to be honest centering? \t[blank] the the Colors er. \t( blank_audio ) basically, um [. \tactually Behavior um {BLANK - AUDIO}. \tI mean, the COLOR here {BLANK - AUDIO} ( anyways. \tanother so yeah like, actuallyish {BLANK - AUDIO} color [ like color! \tto be honest analyze? \tso yeah [blank audio] Umm. {BLANK - AUDIO} realized realized [blank audio]. \tthe word Umm. THE go to uh,. \tCOLOR you know ] well-known well-known Colors COLOR cOlOr! \tbasically, like, COLOR analyze the another it's so yeah ( another? \thmm the the go to actuallyish analyze text? \t( um analyze like {BLANK - AUDIO} well-known. \tword go to go to The ) anyways.",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "0",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "the the it's you know like, basically, realized [blank] like, The to be honest centering? [blank] the the Colors er. basically, um [. actually Behavior um. I mean, the COLOR here (anyways. another so yeah like, actuallyish color [like color! to be honest analyze? so yeah Umm. realized realized. the word Umm. THE go to uh,. COLOR you know] well-known well-known Colors COLOR cOlOr! basically, like, COLOR analyze the another it's so yeah (another? hmm the the go to actuallyish analyze text? (um analyze like well-known. word go to go to The) anyways.",
+   "text": "the the it's you know like, basically, realised [blank] like, The to be honest centring? [blank] the the Colours er. basically, um [. actually Behaviour um. I mean, the COLOUR here (anyways. another so yeah like, actuallyish colour [like colour! to be honest analyse? so yeah Umm.\n\nrealised realised. the word Umm. THE go to uh,. COLOUR you know] well-known well-known Colours COLOUR colour! basically, like, COLOUR analyse the another it's so yeah (another? hmm the the go to actuallyish analyse text? (um analyse like well-known. word go to go to The) anyways.",
+   "mode": "code"
+  },
+  {
+   "id": "fuzz-pipeline-021",
+   "config": "cascade",
+   "app": "Slack",
+   "env": {},
+   "input": "éſo yeah . {BLANK - AUDIO}.   Dr. Smith c++ ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "éſo yeah ..   Dr. Smith c++",
+   "text": "éſo yeah ..   Dr. Smith C++",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-022",
+   "config": "cascade",
+   "app": "Other",
+   "env": {},
+   "input": "( hmm like, so yeah Umm. centering THE actuallyish ]... realized color favorite the uh, [blank] um {BLANK - AUDIO} Umm. to be honest analyze uh,! actually Umm. so yeah... don't don't you know THE. {BLANK - AUDIO} hmm the the ) The Behavior anyways analyze analyze? um uh, color go to go to basically, [ um I mean,. don't don't Umm. uh, COLOR it's Colors uh, like actuallyish er...",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "(hmm like, so yeah Umm. centering THE actuallyish]... realized color favorite the uh, [blank] um Umm. to be honest analyze uh,! actually Umm. so yeah... don't don't you know THE. hmm the the) The Behavior anyways analyze analyze? um uh, color go to go to basically, [um I mean,. don't don't Umm. uh, COLOR it's Colors uh, like actuallyish er...",
+   "text": "(hmm like, so yeah Umm. centring THE actuallyish]... realised colour favourite the uh, [blank] um Umm. to be honest analyse uh,! actually Umm. so yeah... don't don't you know THE. hmm the) The Behaviour anyways analyse analyse? um uh, colour go to go to basically, [um I mean,. don't don't Umm. uh, COLOUR it's Colours uh, like actuallyish er...",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-023",
+   "config": "cascade",
+   "app": "WezTerm",
+   "env": {},
+   "input": "it's word? \tanother cOlOr um. \tyou know The go to go to? \t[blank] actually the the ( blank_audio ) COLOR [blank audio] you know go to hmm go to text... \tso yeah anyways. \tBehavior ) the Colors [blank] the ( blank_audio ) another you know!",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "it's word? another cOlOr um. you know The go to go to? [blank] actually the the COLOR you know go to hmm go to text... so yeah anyways. Behavior) the Colors [blank] the another you know!",
+   "text": "it's word? another colour um. you know The go to go to? [blank] actually the COLOUR you know go to hmm go to text... so yeah anyways. Behaviour) the Colours [blank] the another you know!",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-024",
+   "config": "repo",
+   "app": "Ghostty",
+   "env": {
+    "DICTATE_CLEAN": "1"
+   },
+   "input": "um COLOR,   \n,   zzz apibasically, , actually, K8s. COLOR, Umm., ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "1",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "COLOR,  ,   zzz apibasically, , K8s. COLOR,",
+   "text": "COLOUR,  ,   zzz apibasically, , K8s. COLOUR,",
+   "mode": "code"
+  },
+  {
+   "id": "fuzz-pipeline-025",
+   "config": "cascade",
+   "app": "TextEdit",
+   "env": {
+    "DICTATE_VOCAB_CLEAN": "0"
+   },
+   "input": "1.5 \n, favorite. jasonit's. zzz ",
    "settings": {
     "config_dir": "@config",
     "clean": "0",
@@ -12603,44 +14099,18 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "The um go to like, actuallyish here um you know. go to THE go to go to.] favorite Behavior anyways like centering Umm. [blank] color? (um? um The go to go to THE] it's you know Behavior to be honest text. (THE you know Colors so yeah actually anyways? The Behavior to be honest like hmm Umm. favorite? [I mean, analyze go to go to it's the! Umm. hmm analyze color word er anyways [blank] word favorite I mean,. go to to be honest (like, actually... Colors hmm er realized word Behavior)? centering color actually um the) here.",
-   "text": "The um go to like, actuallyish here um you know. go to THE go to go to.] favourite Behaviour anyways like centring Umm. [blank] colour? (um? um The go to go to THE] it's you know Behaviour to be honest text. (THE you know Colours so yeah actually anyways? The Behaviour to be honest like hmm Umm. favourite? [I mean, analyse go to go to it's the! Umm. hmm analyse colour word er anyways [blank] word favourite I mean,. go to to be honest (like, actually... Colours hmm er realised word Behaviour)? centring colour actually um the) here.",
-   "mode": "base"
+   "raw_text": "1.5\n, favorite. jasonit's. zzz",
+   "text": "1.5\n, favourite. jasonit's. zzz",
+   "mode": "long"
   },
   {
-   "id": "fuzz-pipeline-028",
+   "id": "fuzz-pipeline-026",
    "config": "repo",
-   "app": "WezTerm",
-   "env": {
-    "DICTATE_BRITISH_SPELLING": "0"
-   },
-   "input": "favoritewez term, {BLANK - AUDIO}. centering COLOR　! color, COLOR  a p i ( blank_audio ). (, é.    ",
-   "settings": {
-    "config_dir": "@config",
-    "clean": "0",
-    "repeats_level": "1",
-    "vocab_clean": "1",
-    "british_spelling": "0",
-    "code_paragraph_min_words": "70",
-    "long_paragraph_min_words": "55",
-    "force_mode": null,
-    "postprocess": false,
-    "locale_ctype": "C",
-    "locale_collate": "C"
-   },
-   "status": "ok",
-   "raw_text": "favoritewez term,. centering COLOR　! color, COLOR  a p i. (, é.",
-   "text": "favoritewez term,. centering COLOR　! color, COLOR  api. (, é.",
-   "mode": "code"
-  },
-  {
-   "id": "fuzz-pipeline-029",
-   "config": "repo",
-   "app": "WezTerm",
+   "app": "Mail",
    "env": {
     "DICTATE_CLEAN": "1"
    },
-   "input": "{BLANK - AUDIO} centering er go to THE go to go to The text cOlOr the to be honest ( blank_audio )... centering like cOlOr Behavior ) text. [ hmm {BLANK - AUDIO}. Behavior the the cOlOr? so yeah go to color it's. don't don't ( blank_audio ) uh, Umm. [ it's. [blank audio] centering [blank audio] text? it's ( cOlOr ]! THE it's hmm analyze anyways Colors another another...",
+   "input": "( blank_audio ) OPEN  AI. .net {BLANK - AUDIO}!, jason api   {BLANK - AUDIO}, go to actuallyish ...\r ",
    "settings": {
     "config_dir": "@config",
     "clean": "1",
@@ -12655,24 +14125,24 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "centering go to THE go to go to The text cOlOr the... centering like cOlOr Behavior) text. [Behavior the cOlOr? go to color it's. don't [it's. centering text? it's (cOlOr]! THE it's analyze s Colors another...",
-   "text": "centring go to THE go to go to The text colour the... centring like colour Behaviour) text. [Behaviour the colour? go to colour it's. don't [it's. centring text? it's (colour]! THE it's analyse s Colours another...",
-   "mode": "code"
+   "raw_text": "OPEN AI..net!, jason api, go to ish...",
+   "text": "OPEN AI..net!, jason api, go to ish...",
+   "mode": "email"
   },
   {
-   "id": "fuzz-pipeline-030",
+   "id": "fuzz-pipeline-027",
    "config": "repo",
-   "app": "Ghostty",
+   "app": "Other",
    "env": {
-    "DICTATE_BRITISH_SPELLING": "0"
+    "DICTATE_VOCAB_CLEAN": "0"
    },
-   "input": "gpt-4. anyways  , gpt-4.  , er   like, \r ? \t ",
+   "input": "api( centering, the the. I mean, 日本語 color ",
    "settings": {
     "config_dir": "@config",
     "clean": "0",
     "repeats_level": "1",
-    "vocab_clean": "1",
-    "british_spelling": "0",
+    "vocab_clean": "0",
+    "british_spelling": "1",
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
@@ -12681,9 +14151,87 @@
     "locale_collate": "C"
    },
    "status": "ok",
-   "raw_text": "gpt-4. anyways  , gpt-4., er   like,?",
-   "text": "gpt-4. anyways  , gpt-4., er   like,?",
+   "raw_text": "api(centering, the the. I mean, 日本語 color",
+   "text": "api(centring, the the. I mean, 日本語 colour",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-028",
+   "config": "repo",
+   "app": "Ghostty",
+   "env": {
+    "DICTATE_VOCAB_CLEAN": "0"
+   },
+   "input": "er er ] er! \tanyways hmm um like realized well-known cOlOr go to go to text COLOR THE Colors? \tto be honest The ) word. \tcolor THE favorite [blank] er ) don't don't Colors basically, anyways. \tcentering [blank]! \t( blank_audio ) analyze word word like, you know word uh, anyways color Behavior er. \twell-known ) actually the the word [. \tcOlOr actuallyish...",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "0",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "er er] er! anyways hmm um like realized well-known cOlOr go to go to text COLOR THE Colors? to be honest The) word. color THE favorite [blank] er) don't don't Colors basically, anyways. centering [blank]! analyze word word like, you know word uh, anyways color Behavior er. well-known) actually the the word [. cOlOr actuallyish...",
+   "text": "er er] er! anyways hmm um like realised well-known colour go to go to text COLOUR THE Colours? to be honest The) word. colour THE favourite [blank] er) don't don't Colours basically, anyways. centring [blank]! analyse word word like, you know word uh, anyways colour Behaviour er. well-known) actually the the word [. colour actuallyish...",
    "mode": "code"
+  },
+  {
+   "id": "fuzz-pipeline-029",
+   "config": "cascade",
+   "app": "Other",
+   "env": {
+    "DICTATE_CLEAN": "1"
+   },
+   "input": "so yeah OPEN  AI  , 1.5 go to go to [ naïve, x x x to be honest, I mean,OPEN  AI centering, café, k8s Jason's Behavior api[blank audio] k8s go to go to, 😀. c++ ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "1",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "OPEN AI, 1.5 go to [naïve, x OPEN AI centering, café, k8s Jason's Behavior api k8s go to, 😀. c++",
+   "text": "OpenAI Inc, 1.5 go to [naive, x OpenAI Inc centring, Café Bar, Kubernetes JSON's Behaviour API Kubernetes go to, 😀. C++",
+   "mode": "base"
+  },
+  {
+   "id": "fuzz-pipeline-030",
+   "config": "repo",
+   "app": "Slack",
+   "env": {
+    "DICTATE_VOCAB_CLEAN": "0"
+   },
+   "input": "don't don'tlike, ",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "0",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "don't don'tlike,",
+   "text": "don't don'tlike,",
+   "mode": "chat"
   }
  ]
 }

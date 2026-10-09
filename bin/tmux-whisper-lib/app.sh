@@ -33,6 +33,10 @@ app_cleanup_settings_json() {
   APPCLEAN_POSTPROCESS="$(resolve_inline_postprocess_effective)" \
   APPCLEAN_LOCALE_CTYPE="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" \
   APPCLEAN_LOCALE_COLLATE="${LC_ALL:-${LC_COLLATE:-${LANG:-}}}" \
+  APPCLEAN_CHILD_LC_ALL="$(printenv LC_ALL || true)" \
+  APPCLEAN_CHILD_LC_CTYPE="$(printenv LC_CTYPE || true)" \
+  APPCLEAN_CHILD_LC_COLLATE="$(printenv LC_COLLATE || true)" \
+  APPCLEAN_CHILD_LANG="$(printenv LANG || true)" \
   python3 - <<'PYEOF'
 import json, os
 e = os.environ
@@ -40,11 +44,14 @@ e = os.environ
 C_LOCALES = ("", "C", "POSIX")
 
 def effective_locale(category):
-    # The shell's own view (APPCLEAN_*, which includes unexported variables
-    # from ~/.zshenv) and the exported environment that grep/sed/sort inherit
-    # can disagree; report a non-C value if either side has one.
+    # The shell's own view (APPCLEAN_LOCALE_*, which includes unexported
+    # variables from ~/.zshenv) and the exported environment that grep/sed/sort
+    # inherit (APPCLEAN_CHILD_*, read with printenv) can disagree; report a
+    # non-C value if either side has one. Not os.environ: Python coerces a C
+    # locale to LC_CTYPE=C.UTF-8 in its own environment (PEP 538).
     shell = e["APPCLEAN_LOCALE_" + category]
-    child = e.get("LC_ALL") or e.get("LC_" + category) or e.get("LANG") or ""
+    child = (e["APPCLEAN_CHILD_LC_ALL"] or e["APPCLEAN_CHILD_LC_" + category]
+             or e["APPCLEAN_CHILD_LANG"] or "")
     return shell if shell not in C_LOCALES else child
 
 print(json.dumps({
@@ -61,6 +68,58 @@ print(json.dumps({
     # these; the native pipeline only reproduces the C locale.
     "locale_ctype": effective_locale("CTYPE"),
     "locale_collate": effective_locale("COLLATE"),
+}))
+PYEOF
+}
+
+# Transcription settings for Lowkey's native path, resolved as the CLI's
+# inline transcription would use them. Numeric env overrides stay raw strings
+# so the app can apply the CLI's exact parsing (and fall back when unsure).
+app_transcription_settings_json() {
+  local model_path model_version="" ffmpeg_ok="0" silence_trim="0" keep_logs="0" tail_rescue="0" chunking="0"
+  model_path="$(resolve_swift_parakeet_model_path 2>/dev/null || true)"
+  [[ -n "$model_path" ]] && model_version="$(resolve_swift_parakeet_model_version "$model_path")"
+  command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1 && ffmpeg_ok="1"
+  bool_is_on "${DICTATE_SILENCE_TRIM:-${CFG_AUDIO_SILENCE_TRIM:-0}}" && silence_trim="1"
+  keep_logs_enabled && keep_logs="1"
+  bool_is_on "${DICTATE_SWIFT_PARAKEET_TAIL_RESCUE:-1}" && tail_rescue="1"
+  bool_is_on "${DICTATE_SWIFT_PARAKEET_CHUNKING:-0}" && chunking="1"
+
+  APPTR_SOCKET="$(resolve_swift_parakeet_socket_path)" \
+  APPTR_MODEL_PATH="$model_path" \
+  APPTR_MODEL_VERSION="$model_version" \
+  APPTR_MODEL_LABEL="$(current_transcribe_model_label)" \
+  APPTR_LANGUAGE="${DICTATE_LANGUAGE:-en}" \
+  APPTR_TAIL_PAD_MS="${DICTATE_TRANSCRIBE_TAIL_PAD_MS:-500}" \
+  APPTR_TAIL_RESCUE="$tail_rescue" \
+  APPTR_TAIL_RESCUE_MS="${DICTATE_SWIFT_PARAKEET_TAIL_RESCUE_MS:-}" \
+  APPTR_TAIL_RESCUE_MIN_MS="${DICTATE_SWIFT_PARAKEET_TAIL_RESCUE_MIN_MS:-}" \
+  APPTR_CHUNKING="$chunking" \
+  APPTR_SILENCE_TRIM="$silence_trim" \
+  APPTR_KEEP_LOGS="$keep_logs" \
+  APPTR_FFMPEG="$ffmpeg_ok" \
+  APPTR_TIMEOUT="${DICTATE_SWIFT_PARAKEET_TIMEOUT_SECONDS:-600}" \
+  APPTR_PROCESSING_DIR="$PROCESSING_DIR" \
+  python3 - <<'PYEOF'
+import json, os
+e = os.environ
+flag = lambda name: e[name] == "1"
+print(json.dumps({
+    "socket_path": e["APPTR_SOCKET"],
+    "model_path": e["APPTR_MODEL_PATH"] or None,
+    "model_version": e["APPTR_MODEL_VERSION"] or None,
+    "model_label": e["APPTR_MODEL_LABEL"],
+    "language": e["APPTR_LANGUAGE"],
+    "tail_pad_ms": e["APPTR_TAIL_PAD_MS"],
+    "tail_rescue": flag("APPTR_TAIL_RESCUE"),
+    "tail_rescue_ms": e["APPTR_TAIL_RESCUE_MS"],
+    "tail_rescue_min_ms": e["APPTR_TAIL_RESCUE_MIN_MS"],
+    "chunking": flag("APPTR_CHUNKING"),
+    "silence_trim": flag("APPTR_SILENCE_TRIM"),
+    "keep_logs": flag("APPTR_KEEP_LOGS"),
+    "ffmpeg": flag("APPTR_FFMPEG"),
+    "timeout_seconds": e["APPTR_TIMEOUT"],
+    "processing_dir": e["APPTR_PROCESSING_DIR"],
 }))
 PYEOF
 }
@@ -91,6 +150,9 @@ app_config_json() {
     APPCFG_SEND_DELAY_MS="$APP_SEND_DELAY_MS" \
     APPCFG_PROCESS_SOUND="${CFG_INLINE_PROCESS_SOUND:-1}" \
     APPCFG_CLEANUP_JSON="$(app_cleanup_settings_json)" \
+    APPCFG_TRANSCRIPTION_JSON="$(app_transcription_settings_json)" \
+    APPCFG_NATIVE_PIPELINE="${DICTATE_APP_NATIVE_PIPELINE:-${CFG_APP_NATIVE_PIPELINE:-1}}" \
+    APPCFG_VERIFY_PIPELINE="${DICTATE_APP_VERIFY_PIPELINE:-${CFG_APP_VERIFY_PIPELINE:-1}}" \
     python3 - <<'PYEOF'
 import json, os
 e = os.environ
@@ -114,6 +176,11 @@ print(json.dumps({
         "send_delay_ms": int(e["APPCFG_SEND_DELAY_MS"]),
     },
     "cleanup": json.loads(e["APPCFG_CLEANUP_JSON"]),
+    "transcription": json.loads(e["APPCFG_TRANSCRIPTION_JSON"]),
+    "pipeline": {
+        "native": e["APPCFG_NATIVE_PIPELINE"].lower() in ("1", "true", "yes", "on"),
+        "verify": e["APPCFG_VERIFY_PIPELINE"].lower() in ("1", "true", "yes", "on"),
+    },
 }))
 PYEOF
 }
@@ -263,4 +330,121 @@ print(json.dumps({
     "cleanup": json.loads(e["APPCLEANUP_SETTINGS"]),
 }))
 PYEOF
+}
+
+# tmux-whisper inline record --json   (one take as JSON on stdin)
+# Persistence for Lowkey's native path, run after delivery: the same bench
+# row, usage ledger entry and history file `inline process` writes, from the
+# CLI's own writers so formats and locking stay single-sourced. Usage is only
+# counted for a delivered take. Payload: take_id, status, delivered,
+# raw_text, text, mode, app, record_ms, transcribe_ms, clean_ms, paste_ms,
+# total_ms, startup_ms, started_at_ms, delivered_at_ms, capture_wav_ms,
+# capture_wav_bytes, startup_source, and wav_path (the padded WAV, only with
+# [debug] keep_logs; this command takes ownership and removes it).
+inline_record_json() {
+  [[ "${1:-}" == "--json" && $# -eq 1 ]] || die "usage: tmux-whisper inline record --json < take.json"
+  need python3
+  local payload shell_vars
+  payload="$(cat)"
+  shell_vars="$(APPREC_PAYLOAD="$payload" python3 - <<'PYEOF'
+import json, os, re, shlex, sys
+try:
+    p = json.loads(os.environ["APPREC_PAYLOAD"])
+    if not isinstance(p, dict):
+        raise ValueError("payload must be an object")
+except Exception as exc:
+    sys.exit(f"inline record: invalid payload: {exc}")
+
+def text(key):
+    value = p.get(key)
+    return "" if value is None else str(value)
+
+def ms(key):
+    value = p.get(key)
+    return str(value) if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else ""
+
+status = text("status")
+if not re.fullmatch(r"[a-z_]+", status):
+    sys.exit("inline record: status must be a lowercase word")
+out = {
+    "REC_TAKE_ID": text("take_id"),
+    "REC_STATUS": status,
+    "REC_DELIVERED": "1" if p.get("delivered") is True else "0",
+    "REC_RAW": text("raw_text"),
+    "REC_TEXT": text("text"),
+    "REC_MODE": text("mode"),
+    "REC_APP": text("app"),
+    "REC_STARTUP_SOURCE": text("startup_source") or "app:native",
+    "REC_WAV_PATH": text("wav_path"),
+}
+for key in ("record_ms", "transcribe_ms", "clean_ms", "paste_ms", "total_ms", "startup_ms",
+            "started_at_ms", "delivered_at_ms", "capture_wav_ms", "capture_wav_bytes"):
+    out["REC_" + key.upper()] = ms(key)
+for key, value in out.items():
+    print(f"{key}={shlex.quote(value)}")
+PYEOF
+)" || die "inline record: invalid payload"
+  eval "$shell_vars"
+
+  local model_id mode record_ms transcribe_ms clean_ms paste_ms total_ms usage_recorded="0" history_saved="0"
+  model_id="$(current_transcribe_model_label)"
+  mode="${REC_MODE:-none}"
+  record_ms="${REC_RECORD_MS:-0}"
+  transcribe_ms="${REC_TRANSCRIBE_MS:-0}"
+  clean_ms="${REC_CLEAN_MS:-0}"
+  paste_ms="${REC_PASTE_MS:-0}"
+  total_ms="${REC_TOTAL_MS:-0}"
+
+  if [[ "$REC_STATUS" == "ok" && "$REC_DELIVERED" == "1" ]]; then
+    local usage_full_elapsed_ms="$total_ms"
+    if [[ "$REC_STARTED_AT_MS" =~ ^[0-9]+$ && "$REC_DELIVERED_AT_MS" =~ ^[0-9]+$ ]]; then
+      usage_full_elapsed_ms=$(( REC_DELIVERED_AT_MS - REC_STARTED_AT_MS ))
+      (( usage_full_elapsed_ms < 0 )) && usage_full_elapsed_ms=0
+    fi
+    if usage_record_delivery "inline" "$REC_TEXT" "$record_ms" "$usage_full_elapsed_ms"; then
+      usage_recorded="1"
+    else
+      echo "[usage] unable to record delivered dictation summary" >&2
+    fi
+  fi
+
+  append_bench_entry "inline" "$REC_STATUS" "$model_id" "$mode" "0" "${#REC_RAW}" "${#REC_TEXT}" \
+    "$record_ms" "$transcribe_ms" "$clean_ms" "0" "$paste_ms" "$total_ms" \
+    "${REC_STARTUP_MS:-0}" "0" "0" "0" "$REC_STARTUP_SOURCE"
+
+  case "$REC_STATUS" in
+    ok|no_speech) signal_just_processed ;;
+    *)
+      touch "$ERROR_FLAG" 2>/dev/null || true
+      swiftbar_refresh
+      ;;
+  esac
+
+  # Debug archive ([debug] keep_logs), as inline process writes it: the padded
+  # WAV the app transcribed plus a .meta file. The app hands the WAV over;
+  # archiving removes it.
+  INLINE_CAPTURE_WAV_MS="$REC_CAPTURE_WAV_MS"
+  INLINE_CAPTURE_WAV_BYTES="$REC_CAPTURE_WAV_BYTES"
+  INLINE_CAPTURE_GAP_TO_RECORD_MS=""
+  if [[ "$REC_CAPTURE_WAV_MS" =~ ^[0-9]+$ && "$record_ms" =~ ^[0-9]+$ ]]; then
+    INLINE_CAPTURE_GAP_TO_RECORD_MS=$(( REC_CAPTURE_WAV_MS - record_ms ))
+  fi
+  if [[ -n "$REC_WAV_PATH" ]]; then
+    local archive_prefix=""
+    archive_prefix="$(inline_archive_prefix "${REC_TAKE_ID:-lowkey}" 2>/dev/null || true)"
+    archive_inline_debug_artifacts "$archive_prefix" "$REC_WAV_PATH" "" "" "$REC_STATUS" \
+      "$record_ms" "$transcribe_ms" "$clean_ms" "0" "$paste_ms" "$total_ms" "$REC_TAKE_ID"
+  fi
+
+  if [[ "$REC_STATUS" == "ok" && "$REC_DELIVERED" == "1" ]]; then
+    local history_app="${REC_APP:-current}"
+    save_history "$REC_RAW" "$REC_TEXT" "$mode" "$history_app" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "$paste_ms" "$total_ms" \
+      && history_saved="1"
+  fi
+
+  APPREC_TAKE_ID="$REC_TAKE_ID" APPREC_USAGE="$usage_recorded" APPREC_HISTORY="$history_saved" python3 -c '
+import json, os
+e = os.environ
+print(json.dumps({"ok": True, "take_id": e["APPREC_TAKE_ID"], "usage_recorded": e["APPREC_USAGE"] == "1",
+                  "history_saved": e["APPREC_HISTORY"] == "1"}))'
 }

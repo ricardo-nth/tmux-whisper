@@ -1707,6 +1707,100 @@ assert r["raw_text"] == "stage failure transcript", r
   pass "cleanup_stage_failure_inline_process_continues"
 }
 
+# Lowkey's native path persists each take with `inline record` after
+# delivery: the same bench/usage/history writers as `inline process`, usage
+# only for delivered takes, and the [debug] keep_logs archive.
+run_inline_record_round() {
+  setup_case "inline-record"
+  export DICTATE_ERROR_FLAG="$CASE_DIR/error.flag"
+  local out bench
+
+  out="$("$DICTATE_BIN" app-config --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+c = json.load(sys.stdin)
+t = c["transcription"]
+assert t["socket_path"].endswith(".sock") and t["model_path"], t
+assert t["tail_pad_ms"] == "500" and t["tail_rescue"] is True and t["language"] == "en", t
+assert t["chunking"] is False and t["silence_trim"] is False, t
+assert t["processing_dir"].endswith("/processing"), t
+assert c["pipeline"] == {"native": True, "verify": True}, c["pipeline"]
+' || { echo "$out" >&2; fail "app_config_transcription_section"; }
+  pass "app_config_transcription_section"
+  out="$(DICTATE_APP_NATIVE_PIPELINE=0 "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_native_pipeline_off" "$out" '"pipeline": {"native": false'
+
+  # No locale at all is the C locale, even though Python itself coerces it to
+  # C.UTF-8 in its own environment.
+  out="$(env -u LC_ALL -u LC_CTYPE -u LC_COLLATE -u LANG "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_locale_unset_is_c" "$out" '"locale_ctype": "", "locale_collate": ""'
+
+  printf '%s' '{"take_id":"t-ok","status":"ok","delivered":true,"raw_text":"open ai","text":"OpenAI","mode":"code",
+    "app":"Ghostty","record_ms":3000,"transcribe_ms":400,"clean_ms":3,"paste_ms":50,"total_ms":3500,"startup_ms":12,
+    "started_at_ms":1000,"delivered_at_ms":4600,"capture_wav_ms":3010,"capture_wav_bytes":96364}' \
+    | "$DICTATE_BIN" inline record --json >"$CASE_DIR/record-ok.json"
+  assert_file_contains "inline_record_ok_usage" "$CASE_DIR/record-ok.json" '"usage_recorded": true'
+  assert_file_contains "inline_record_usage_ledger" "$DICTATE_CONFIG_DIR/usage.json" '"inline": 1'
+  assert_file_contains "inline_record_usage_elapsed" "$DICTATE_CONFIG_DIR/usage.json" '"full_elapsed_duration_ms": 3600'
+  bench="$(tail -n 1 "$DICTATE_CONFIG_DIR/history/bench.tsv")"
+  assert_contains "inline_record_bench_row" "$bench" $'\tinline\tok\t'
+  assert_contains "inline_record_bench_source" "$bench" $'\t3000\t400\t3\t0\t50\t3500\t12\t0\t0\t0\tapp:native'
+  [[ -f "$DICTATE_PROCESSED_FLAG" ]] || fail "inline_record_signals_processed"
+  pass "inline_record_signals_processed"
+  python3 - "$DICTATE_CONFIG_DIR/history" <<'PYEOF' || fail "inline_record_history"
+import glob, json, os, sys
+files = sorted(glob.glob(os.path.join(sys.argv[1], "*.json")))
+assert len(files) == 1, files
+h = json.load(open(files[0]))
+assert h["raw"] == "open ai" and h["processed"] == "OpenAI" and h["mode"] == "code" and h["app"] == "Ghostty", h
+assert h["metrics"]["total_ms"] == 3500 and h["audio"]["capture_gap_to_record_ms"] == 10, h
+PYEOF
+  pass "inline_record_history"
+
+  # A second take in the same second gets its own history file.
+  printf '%s' '{"take_id":"t-ok2","status":"ok","delivered":true,"raw_text":"b","text":"b","mode":"code"}' \
+    | "$DICTATE_BIN" inline record --json >/dev/null
+  printf '%s' '{"take_id":"t-ok3","status":"ok","delivered":true,"raw_text":"c","text":"c","mode":"code"}' \
+    | "$DICTATE_BIN" inline record --json >/dev/null
+  python3 - "$DICTATE_CONFIG_DIR/history" <<'PYEOF' || fail "inline_record_history_unique_names"
+import glob, json, os, sys
+files = glob.glob(os.path.join(sys.argv[1], "*.json"))
+assert len(files) == 3, files
+assert sorted(json.load(open(f))["processed"] for f in files) == ["OpenAI", "b", "c"]
+PYEOF
+  pass "inline_record_history_unique_names"
+
+  # Failed delivery: bench row and error flag, but no usage and no history.
+  printf '%s' '{"take_id":"t-fail","status":"paste_failed","delivered":false,"raw_text":"x","text":"x","mode":"code"}' \
+    | "$DICTATE_BIN" inline record --json >"$CASE_DIR/record-fail.json"
+  assert_file_contains "inline_record_failed_no_usage" "$CASE_DIR/record-fail.json" '"usage_recorded": false'
+  assert_file_contains "inline_record_failed_usage_unchanged" "$DICTATE_CONFIG_DIR/usage.json" '"inline": 3'
+  [[ "$(ls "$DICTATE_CONFIG_DIR/history"/*.json | wc -l | tr -d ' ')" == "3" ]] || fail "inline_record_failed_no_history"
+  pass "inline_record_failed_no_history"
+  assert_contains "inline_record_failed_bench" "$(tail -n 1 "$DICTATE_CONFIG_DIR/history/bench.tsv")" $'\tpaste_failed\t'
+  [[ -f "$DICTATE_ERROR_FLAG" ]] || fail "inline_record_failed_error_flag"
+  pass "inline_record_failed_error_flag"
+
+  printf '%s' '{"take_id":"t-none","status":"no_speech","delivered":false}' | "$DICTATE_BIN" inline record --json >/dev/null
+  assert_contains "inline_record_no_speech_bench" "$(tail -n 1 "$DICTATE_CONFIG_DIR/history/bench.tsv")" $'\tno_speech\t'
+
+  # [debug] keep_logs: the handed-over WAV is archived and removed.
+  printf 'RIFF fake wav' >"$CASE_DIR/take-padded.wav"
+  printf '{"take_id":"t-keep","status":"ok","delivered":true,"raw_text":"k","text":"k","mode":"code","wav_path":"%s"}' \
+    "$CASE_DIR/take-padded.wav" | DICTATE_KEEP_LOGS=1 "$DICTATE_BIN" inline record --json >/dev/null
+  assert_path_absent "inline_record_keep_logs_wav_moved" "$CASE_DIR/take-padded.wav"
+  ls "$DICTATE_CONFIG_DIR/history/inline-debug/"*t-keep.wav >/dev/null 2>&1 || fail "inline_record_keep_logs_archive_wav"
+  pass "inline_record_keep_logs_archive_wav"
+  ls "$DICTATE_CONFIG_DIR/history/inline-debug/"*t-keep.meta >/dev/null 2>&1 || fail "inline_record_keep_logs_archive_meta"
+  pass "inline_record_keep_logs_archive_meta"
+
+  local rc=0
+  printf 'not json' | "$DICTATE_BIN" inline record --json >/dev/null 2>&1 || rc=$?
+  [[ "$rc" != "0" ]] || fail "inline_record_rejects_bad_payload"
+  pass "inline_record_rejects_bad_payload"
+  unset DICTATE_ERROR_FLAG
+}
+
 run_app_backend_failure_round() {
   setup_case "app-backend-failure"
   export DICTATE_TEST_SWIFT_DAEMON_FAIL=1
@@ -1763,6 +1857,7 @@ run_transcribe_file_write_race_round
 run_daemon_build_and_refresh_round
 run_app_backend_round
 run_app_backend_failure_round
+run_inline_record_round
 run_cleanup_stage_failure_round
 run_finder_quick_action_round
 run_finder_handler_round

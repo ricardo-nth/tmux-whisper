@@ -113,6 +113,13 @@ These must stay byte-compatible with the CLI's files and locking:
   - Compare against the same settings snapshot the native run used; fall back when `cleanup` is absent (older CLI) or `requiresCLI`.
 - Fallback to the phase 2 `inline process` path for LLM post-processing, silence trim, or any native error.
 
+**3b status (2026-10-09): implemented, in rollout.**
+- `LowkeyCore/Transcription/`: `DaemonClient` (blocking Unix-socket client, deadline-based timeouts, one reconnect on an unreachable socket), `AudioPrep` (tail pad, 1 s minimum, ffprobe-style duration, tail window), `TranscriptMerge` (port of `merge_transcript_chunks`, Python's universal newlines and Unicode `strip()`), `NativeTranscriber`, `TranscriptionSettings`, `TakeRecord`, `ProcessingMarker`.
+- Request timeout: 30 s + 2 × audio length, capped by `DICTATE_SWIFT_PARAKEET_TIMEOUT_SECONDS`. A timeout fails the take (the CLI would wait on the same daemon again); an unreachable daemon or daemon error falls back to `inline process`, which also starts the daemon.
+- `[debug] keep_logs` is supported natively: the padded WAV is handed to `inline record`, which writes the same `inline-debug` archive (without record/transcribe logs, which the native path has none of).
+- Proof: unit/differential tests plus the opt-in live test (`LOWKEY_LIVE_PARITY_DIR`, see `Tests/LowkeyCoreTests/LiveParityTests.swift`), 12/12 byte-identical against the real daemon and the user's config.
+- Still to measure in real use before v0.10.0: stop → delivered overhead beyond ASR and configured delays (< 100 ms median over 20 dictations) and ≥ 2 days of zero `verify:` mismatches.
+
 **3c — Model in the app and socket ownership (only after 3b is stable)**
 - In-process ASREngine shared with a UnixSocketServer the app hosts.
 - Takeover:

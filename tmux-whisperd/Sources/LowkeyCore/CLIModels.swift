@@ -33,6 +33,15 @@ public struct AppConfig: Decodable, Equatable, Sendable {
   /// Text cleanup settings for the native TextPipeline. Absent from CLIs
   /// older than 0.10.
   public let cleanup: CleanupSettings?
+  /// Transcription settings for the native path (0.10+).
+  public let transcription: TranscriptionSettings?
+  /// `[app] native_pipeline` / `verify_pipeline` (0.10+).
+  public let pipeline: Pipeline?
+
+  public struct Pipeline: Decodable, Equatable, Sendable {
+    public let native: Bool
+    public let verify: Bool
+  }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -41,6 +50,25 @@ public struct AppConfig: Decodable, Equatable, Sendable {
     case sounds
     case inline
     case cleanup
+    case transcription
+    case pipeline
+  }
+
+  /// The delivery settings as `inline process` reports them.
+  public var delivery: Delivery {
+    Delivery(autosend: inline.autosend, sendMode: inline.sendMode, pasteTarget: inline.pasteTarget,
+             activateDelayMs: inline.activateDelayMs, sendDelayMs: inline.sendDelayMs)
+  }
+
+  /// Why a take must go through `inline process` instead of the native
+  /// pipeline, or nil if the native path reproduces the CLI.
+  public var nativePipelineBlocker: String? {
+    guard pipeline?.native ?? false else { return pipeline == nil ? "CLI too old for the native path" : "[app] native_pipeline = false" }
+    guard let cleanup else { return "no cleanup settings" }
+    if cleanup.postprocess { return "LLM post-processing is on" }
+    if cleanup.requiresCLI { return "CLI locale is not C (\(cleanup.localeCtype ?? "")/\(cleanup.localeCollate ?? ""))" }
+    guard let transcription else { return "no transcription settings" }
+    return transcription.cliReason
   }
 }
 

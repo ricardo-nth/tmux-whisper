@@ -3307,11 +3307,26 @@ append_bench_entry() {
   max_rows="${DICTATE_BENCH_MAX_ROWS:-800}"
   if [[ "$max_rows" =~ ^[0-9]+$ ]] && (( max_rows > 0 )) && [[ -f "$BENCH_FILE" ]]; then
     rows="$(wc -l < "$BENCH_FILE" | tr -d ' ' || echo 0)"
-    if [[ "$rows" =~ ^[0-9]+$ ]] && (( rows > max_rows )); then
-      tail -n "$max_rows" "$BENCH_FILE" > "${BENCH_FILE}.tmp" 2>/dev/null || true
-      mv -f "${BENCH_FILE}.tmp" "$BENCH_FILE" 2>/dev/null || true
+    # Trim under a lock: Lowkey's background `inline record` and CLI flows can
+    # append concurrently, and two trims racing would drop rows. If another
+    # writer holds the lock, skip; the next write trims.
+    if [[ "$rows" =~ ^[0-9]+$ ]] && (( rows > max_rows )) && bench_trim_lock_acquire; then
+      tail -n "$max_rows" "$BENCH_FILE" > "${BENCH_FILE}.tmp.$$" 2>/dev/null || true
+      mv -f "${BENCH_FILE}.tmp.$$" "$BENCH_FILE" 2>/dev/null || true
+      rmdir "${BENCH_FILE}.lock.d" 2>/dev/null || true
     fi
   fi
+}
+
+bench_trim_lock_acquire() {
+  local lock_dir="${BENCH_FILE}.lock.d"
+  mkdir "$lock_dir" 2>/dev/null && return 0
+  # A lock left by a killed writer is stale after a minute.
+  if [[ -n "$(find "$lock_dir" -maxdepth 0 -mmin +1 2>/dev/null)" ]]; then
+    rmdir "$lock_dir" 2>/dev/null || true
+    mkdir "$lock_dir" 2>/dev/null && return 0
+  fi
+  return 1
 }
 
 bench() {
@@ -7853,6 +7868,7 @@ case "$cmd" in
       toggle) inline_toggle ;;
       process) inline_process_json "${@:3}" ;;
       cleanup) inline_cleanup_json "${@:3}" ;;
+      record) inline_record_json "${@:3}" ;;
       process-sound|process_sound|processsound) set_inline_process_sound "${3:-}" ;;
       *) die "usage: tmux-whisper inline [start|stop|toggle|process <wav> --json|process-sound]" ;;
     esac
