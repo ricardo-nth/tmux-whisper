@@ -229,6 +229,17 @@ private actor FakeDaemon: DaemonRequestHandling {
   }
 }
 
+/// Runs blocking client code on a GCD thread, as the app does. Blocking a
+/// Swift concurrency thread instead can starve the in-process server's
+/// handler on small CI runners.
+private func offPool<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
+  try await withCheckedThrowingContinuation { continuation in
+    DispatchQueue.global().async {
+      continuation.resume(with: Result { try body() })
+    }
+  }
+}
+
 struct DaemonClientTests {
   private func socketPath() -> String {
     NSTemporaryDirectory() + "lk-\(UUID().uuidString.prefix(8)).sock"
@@ -242,10 +253,12 @@ struct DaemonClientTests {
     defer { server.stop() }
 
     let client = DaemonClient(socketPath: path)
-    #expect(client.ping() == DaemonInfo.daemonVersion)
-    let text = try client.transcribe(
-      wav: URL(fileURLWithPath: "/tmp/take.wav"), language: "en", flow: "inline",
-      modelPath: "/models/parakeet", modelVersion: "v3", timeout: 5)
+    #expect(try await offPool { client.ping(timeout: 5) } == DaemonInfo.daemonVersion)
+    let text = try await offPool {
+      try client.transcribe(
+        wav: URL(fileURLWithPath: "/tmp/take.wav"), language: "en", flow: "inline",
+        modelPath: "/models/parakeet", modelVersion: "v3", timeout: 5)
+    }
     #expect(Array(text.utf8) == Array("café \u{1F600} transcript".utf8))
 
     let request = try #require(await daemon.requests.last)
@@ -256,9 +269,11 @@ struct DaemonClientTests {
     #expect(request.modelPath == "/models/parakeet")
     #expect(request.modelVersion == "v3")
 
-    #expect(throws: DaemonClient.ClientError.daemon(code: "model_path_invalid", message: "bad model")) {
-      _ = try client.transcribe(wav: URL(fileURLWithPath: "/tmp/x.wav"), language: "en", flow: "fail",
-                                modelPath: "/m", modelVersion: nil, timeout: 5)
+    await #expect(throws: DaemonClient.ClientError.daemon(code: "model_path_invalid", message: "bad model")) {
+      _ = try await offPool {
+        try client.transcribe(wav: URL(fileURLWithPath: "/tmp/x.wav"), language: "en", flow: "fail",
+                              modelPath: "/m", modelVersion: nil, timeout: 5)
+      }
     }
   }
 
@@ -275,16 +290,18 @@ struct DaemonClientTests {
     }
   }
 
-  @Test func timesOutOnASlowDaemon() throws {
+  @Test func timesOutOnASlowDaemon() async throws {
     let path = socketPath()
     let server = UnixSocketServer(socketPath: path, handler: FakeDaemon(delay: .seconds(3)))
     try server.start()
     defer { server.stop() }
     let started = Date()
-    #expect(throws: DaemonClient.ClientError.timedOut(0.3)) {
-      _ = try DaemonClient(socketPath: path).transcribe(
-        wav: URL(fileURLWithPath: "/tmp/x.wav"), language: "en", flow: "inline", modelPath: "/m",
-        modelVersion: nil, timeout: 0.3)
+    await #expect(throws: DaemonClient.ClientError.timedOut(0.3)) {
+      _ = try await offPool {
+        try DaemonClient(socketPath: path).transcribe(
+          wav: URL(fileURLWithPath: "/tmp/x.wav"), language: "en", flow: "inline", modelPath: "/m",
+          modelVersion: nil, timeout: 0.3)
+      }
     }
     #expect(Date().timeIntervalSince(started) < 2)
   }
