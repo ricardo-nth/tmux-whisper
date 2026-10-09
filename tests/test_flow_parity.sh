@@ -1633,6 +1633,16 @@ assert cl["force_mode"] is None and cl["postprocess"] is False, cl
   out="$(DICTATE_CLEAN=1 DICTATE_REPEATS_LEVEL=2 "$DICTATE_BIN" app-config --json)"
   assert_contains "app_config_cleanup_env" "$out" '"clean": "1", "repeats_level": "2"'
 
+  # An unexported LC_ALL=C from ~/.zshenv must not hide the exported UTF-8
+  # LANG that grep/sed inherit: the native pipeline has to fall back.
+  printf '%s\n' 'LC_ALL=C' >"$HOME/.zshenv"
+  out="$(env -u LC_ALL -u LC_CTYPE -u LC_COLLATE LANG=en_US.UTF-8 "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_locale_exported_lang" "$out" '"locale_ctype": "en_US.UTF-8", "locale_collate": "en_US.UTF-8"'
+  printf '%s\n' 'export LC_ALL=C' >"$HOME/.zshenv"
+  out="$(env -u LC_ALL -u LC_CTYPE -u LC_COLLATE LANG=en_US.UTF-8 "$DICTATE_BIN" app-config --json)"
+  assert_contains "app_config_locale_exported_c" "$out" '"locale_ctype": "C", "locale_collate": "C"'
+  rm -f "$HOME/.zshenv"
+
   out="$(printf 'um the the codex [blank audio] color\n\n' | DICTATE_CLEAN=1 "$DICTATE_BIN" inline cleanup --app Safari --json)"
   printf '%s' "$out" | python3 -c '
 import json, sys

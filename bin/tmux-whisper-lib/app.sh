@@ -36,6 +36,17 @@ app_cleanup_settings_json() {
   python3 - <<'PYEOF'
 import json, os
 e = os.environ
+
+C_LOCALES = ("", "C", "POSIX")
+
+def effective_locale(category):
+    # The shell's own view (APPCLEAN_*, which includes unexported variables
+    # from ~/.zshenv) and the exported environment that grep/sed/sort inherit
+    # can disagree; report a non-C value if either side has one.
+    shell = e["APPCLEAN_LOCALE_" + category]
+    child = e.get("LC_ALL") or e.get("LC_" + category) or e.get("LANG") or ""
+    return shell if shell not in C_LOCALES else child
+
 print(json.dumps({
     "config_dir": e["APPCLEAN_CONFIG_DIR"],
     "clean": e["APPCLEAN_CLEAN"],
@@ -48,8 +59,8 @@ print(json.dumps({
     "postprocess": e["APPCLEAN_POSTPROCESS"] == "1",
     # Mode detection (grep -i, sed, glob order) and the blank check depend on
     # these; the native pipeline only reproduces the C locale.
-    "locale_ctype": e["APPCLEAN_LOCALE_CTYPE"],
-    "locale_collate": e["APPCLEAN_LOCALE_COLLATE"],
+    "locale_ctype": effective_locale("CTYPE"),
+    "locale_collate": effective_locale("COLLATE"),
 }))
 PYEOF
 }
