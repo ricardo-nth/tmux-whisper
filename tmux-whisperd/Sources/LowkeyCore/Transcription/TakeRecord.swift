@@ -12,6 +12,8 @@ public struct TakeRecord: Codable, Equatable, Sendable {
   public var text: String = ""
   public var mode: String?
   public var app: String?
+  /// Model label at the time of the take (bench `model`).
+  public var model: String?
   public var recordMs: Int = 0
   public var transcribeMs: Int = 0
   public var cleanMs: Int = 0
@@ -35,7 +37,7 @@ public struct TakeRecord: Codable, Equatable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case takeId = "take_id"
-    case status, delivered, text, mode, app
+    case status, delivered, text, mode, app, model
     case rawText = "raw_text"
     case recordMs = "record_ms"
     case transcribeMs = "transcribe_ms"
@@ -49,6 +51,21 @@ public struct TakeRecord: Codable, Equatable, Sendable {
     case captureWavBytes = "capture_wav_bytes"
     case startupSource = "startup_source"
     case wavPath = "wav_path"
+  }
+}
+
+/// `inline record --json`'s answer.
+public struct RecordResult: Decodable, Equatable, Sendable {
+  public let ok: Bool
+  public let takeId: String
+  public let usageRecorded: Bool
+  public let historySaved: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case ok
+    case takeId = "take_id"
+    case usageRecorded = "usage_recorded"
+    case historySaved = "history_saved"
   }
 }
 

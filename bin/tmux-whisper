@@ -3282,6 +3282,12 @@ append_bench_entry() {
   local startup_audio_source="${18:-}"
 
   mkdir -p "$HISTORY_DIR" 2>/dev/null || return 0
+  # Appends and trims share one lock: Lowkey's background `inline record` and
+  # CLI flows can write at once, and a row appended while another writer
+  # trims would be lost when the trimmed copy replaces the file. Wait briefly;
+  # without the lock, still append (best effort) but leave trimming to others.
+  local have_lock="0"
+  bench_lock_acquire && have_lock="1"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
     "$(bench_field "$flow")" \
@@ -3305,27 +3311,29 @@ append_bench_entry() {
 
   local max_rows rows
   max_rows="${DICTATE_BENCH_MAX_ROWS:-800}"
-  if [[ "$max_rows" =~ ^[0-9]+$ ]] && (( max_rows > 0 )) && [[ -f "$BENCH_FILE" ]]; then
+  if [[ "$have_lock" == "1" && "$max_rows" =~ ^[0-9]+$ ]] && (( max_rows > 0 )) && [[ -f "$BENCH_FILE" ]]; then
     rows="$(wc -l < "$BENCH_FILE" | tr -d ' ' || echo 0)"
-    # Trim under a lock: Lowkey's background `inline record` and CLI flows can
-    # append concurrently, and two trims racing would drop rows. If another
-    # writer holds the lock, skip; the next write trims.
-    if [[ "$rows" =~ ^[0-9]+$ ]] && (( rows > max_rows )) && bench_trim_lock_acquire; then
+    if [[ "$rows" =~ ^[0-9]+$ ]] && (( rows > max_rows )); then
       tail -n "$max_rows" "$BENCH_FILE" > "${BENCH_FILE}.tmp.$$" 2>/dev/null || true
       mv -f "${BENCH_FILE}.tmp.$$" "$BENCH_FILE" 2>/dev/null || true
-      rmdir "${BENCH_FILE}.lock.d" 2>/dev/null || true
     fi
   fi
+  [[ "$have_lock" == "1" ]] && rmdir "${BENCH_FILE}.lock.d" 2>/dev/null
+  return 0
 }
 
-bench_trim_lock_acquire() {
-  local lock_dir="${BENCH_FILE}.lock.d"
-  mkdir "$lock_dir" 2>/dev/null && return 0
-  # A lock left by a killed writer is stale after a minute.
-  if [[ -n "$(find "$lock_dir" -maxdepth 0 -mmin +1 2>/dev/null)" ]]; then
-    rmdir "$lock_dir" 2>/dev/null || true
+# mkdir lock for bench.tsv, waiting up to ~1 s. A lock left by a killed
+# writer is stale after a minute.
+bench_lock_acquire() {
+  local lock_dir="${BENCH_FILE}.lock.d" attempt
+  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     mkdir "$lock_dir" 2>/dev/null && return 0
-  fi
+    if [[ "$attempt" == "1" && -n "$(find "$lock_dir" -maxdepth 0 -mmin +1 2>/dev/null)" ]]; then
+      rmdir "$lock_dir" 2>/dev/null || true
+      continue
+    fi
+    sleep 0.05
+  done
   return 1
 }
 

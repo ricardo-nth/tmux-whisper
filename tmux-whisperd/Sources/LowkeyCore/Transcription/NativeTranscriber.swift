@@ -22,6 +22,13 @@ public struct NativeTranscriber: Sendable {
     public var keptWAV: URL? = nil
   }
 
+  /// A failed transcription, with the padded WAV when `keepWAV` is set (for
+  /// the debug archive of the failed take; the caller owns it).
+  public struct Failure: Error {
+    public let underlying: Error
+    public let keptWAV: URL?
+  }
+
   public let settings: TranscriptionSettings
   public let directory: URL
   /// Keep the padded WAV for `[debug] keep_logs` instead of deleting it.
@@ -41,14 +48,17 @@ public struct NativeTranscriber: Sendable {
     let stem = "lowkey-\(UUID().uuidString)"
     let fullURL = directory.appendingPathComponent("\(stem).wav")
     try writeWAV(padded, to: fullURL)
-    var succeeded = false
-    defer {
-      if !(keepWAV && succeeded) { try? FileManager.default.removeItem(at: fullURL) }
-    }
     let kept = keepWAV ? fullURL : nil
+    defer {
+      if !keepWAV { try? FileManager.default.removeItem(at: fullURL) }
+    }
 
-    let full = PerlText.bashCapture(try transcribe(fullURL, "inline"))
-    succeeded = true
+    let full: String
+    do {
+      full = PerlText.bashCapture(try transcribe(fullURL, "inline"))
+    } catch {
+      throw Failure(underlying: error, keptWAV: kept)
+    }
     guard let window = AudioPrep.tailRescueWindowMs(paddedSampleCount: padded.count, settings: settings) else {
       return Result(transcript: full, captureSamples: pcm.count, paddedSamples: padded.count,
                     tailRescueMs: nil, tailRescueFailed: false, keptWAV: kept)

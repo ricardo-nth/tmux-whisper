@@ -1794,6 +1794,26 @@ PYEOF
   ls "$DICTATE_CONFIG_DIR/history/inline-debug/"*t-keep.meta >/dev/null 2>&1 || fail "inline_record_keep_logs_archive_meta"
   pass "inline_record_keep_logs_archive_meta"
 
+  # Concurrent writers on a bench at its row limit: every new row survives
+  # the trims (appends and trims share one lock).
+  local i
+  : >"$DICTATE_CONFIG_DIR/history/bench.tsv"
+  for i in $(seq 1 30); do
+    printf 'old\tinline\tok\tm\tpad%s\n' "$i" >>"$DICTATE_CONFIG_DIR/history/bench.tsv"
+  done
+  for i in $(seq 1 10); do
+    printf '{"take_id":"c%s","status":"ok","delivered":false,"mode":"conc%s"}' "$i" "$i" \
+      | DICTATE_BENCH_MAX_ROWS=30 "$DICTATE_BIN" inline record --json >/dev/null &
+  done
+  wait
+  [[ "$(wc -l <"$DICTATE_CONFIG_DIR/history/bench.tsv" | tr -d ' ')" == "30" ]] || fail "inline_record_bench_trimmed"
+  pass "inline_record_bench_trimmed"
+  for i in $(seq 1 10); do
+    grep -q $'\tconc'"$i"$'\t' "$DICTATE_CONFIG_DIR/history/bench.tsv" || fail "inline_record_concurrent_bench_row_$i"
+  done
+  pass "inline_record_concurrent_bench_rows"
+  assert_path_absent "inline_record_bench_lock_released" "$DICTATE_CONFIG_DIR/history/bench.tsv.lock.d"
+
   local rc=0
   printf 'not json' | "$DICTATE_BIN" inline record --json >/dev/null 2>&1 || rc=$?
   [[ "$rc" != "0" ]] || fail "inline_record_rejects_bad_payload"

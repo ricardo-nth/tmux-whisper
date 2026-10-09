@@ -182,11 +182,25 @@ struct NativeTranscriberTests {
     #expect(dropped.keptWAV == nil)
   }
 
-  @Test func fullTranscriptionErrorsPropagate() {
-    #expect(throws: DaemonClient.ClientError.unreachable("x")) {
+  @Test func fullTranscriptionErrorsPropagateWithTheKeptWAV() throws {
+    do {
       _ = try NativeTranscriber(settings: settings).transcribe(samples: [0]) { _, _ in
         throw DaemonClient.ClientError.unreachable("x")
       }
+      Issue.record("expected a failure")
+    } catch let failure as NativeTranscriber.Failure {
+      #expect(failure.underlying as? DaemonClient.ClientError == .unreachable("x"))
+      #expect(failure.keptWAV == nil)
+    }
+    do {
+      _ = try NativeTranscriber(settings: settings, keepWAV: true).transcribe(samples: [0]) { _, _ in
+        throw DaemonClient.ClientError.timedOut(1)
+      }
+      Issue.record("expected a failure")
+    } catch let failure as NativeTranscriber.Failure {
+      let url = try #require(failure.keptWAV)
+      #expect(FileManager.default.fileExists(atPath: url.path))
+      try FileManager.default.removeItem(at: url)
     }
   }
 }

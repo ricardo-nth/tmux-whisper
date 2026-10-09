@@ -376,6 +376,7 @@ out = {
     "REC_APP": text("app"),
     "REC_STARTUP_SOURCE": text("startup_source") or "app:native",
     "REC_WAV_PATH": text("wav_path"),
+    "REC_MODEL": text("model"),
 }
 for key in ("record_ms", "transcribe_ms", "clean_ms", "paste_ms", "total_ms", "startup_ms",
             "started_at_ms", "delivered_at_ms", "capture_wav_ms", "capture_wav_bytes"):
@@ -387,7 +388,8 @@ PYEOF
   eval "$shell_vars"
 
   local model_id mode record_ms transcribe_ms clean_ms paste_ms total_ms usage_recorded="0" history_saved="0"
-  model_id="$(current_transcribe_model_label)"
+  # The app's snapshot of the model label; resolve it now only for older apps.
+  model_id="${REC_MODEL:-$(current_transcribe_model_label)}"
   mode="${REC_MODE:-none}"
   record_ms="${REC_RECORD_MS:-0}"
   transcribe_ms="${REC_TRANSCRIBE_MS:-0}"

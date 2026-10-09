@@ -63,8 +63,13 @@ struct CLIBridge {
   }
 
   /// Persists a native take (history, bench, usage) with the CLI's writers.
-  func record(_ take: TakeRecord) throws {
-    _ = try run(["inline", "record", "--json"], timeout: 30, input: try JSONEncoder().encode(take))
+  func record(_ take: TakeRecord) throws -> RecordResult {
+    let data = try run(["inline", "record", "--json"], timeout: 30, input: try JSONEncoder().encode(take))
+    do {
+      return try JSONDecoder().decode(RecordResult.self, from: data)
+    } catch {
+      throw BridgeError.badOutput(String(decoding: data.prefix(200), as: UTF8.self))
+    }
   }
 
   /// Text-only cleanup of a raw transcript, for the shadow compare.
