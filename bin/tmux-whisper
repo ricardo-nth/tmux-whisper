@@ -368,40 +368,43 @@ apply_vocab_corrections() {
 # First cleanup pass on a fresh transcript: artefacts, then fillers/repeats
 # when DICTATE_CLEAN=1. Each stage goes through $(...), so trailing newlines
 # are dropped between stages; Lowkey's TextPipeline mirrors this exactly.
-# Usage: cleanup_raw_transcript <text> <do_postprocess:0|1>
+# Sets CLEANUP_TEXT rather than printing, so callers run the stages in their
+# own shell: a failing stage aborts under set -e with its own status, and
+# keeps going (as the code did before extraction) where errexit is off.
+# Usage: cleanup_raw_transcript <text> <do_postprocess:0|1>; txt="$CLEANUP_TEXT"
 cleanup_raw_transcript() {
   local txt="$1"
   local do_postprocess="${2:-0}"
-  txt="$(printf "%s" "$txt" | sanitize_transcript_artifacts)" || return 1
+  txt="$(printf "%s" "$txt" | sanitize_transcript_artifacts)"
   if [[ "${DICTATE_CLEAN:-0}" == "1" ]]; then
     local run_repeats="1"
     if [[ "$do_postprocess" == "1" ]] && ! bool_is_on "${DICTATE_REPEATS_WITH_POSTPROCESS:-0}"; then
       run_repeats="0"
     fi
-    txt="$(printf "%s" "$txt" | clean_fillers)" || return 1
+    txt="$(printf "%s" "$txt" | clean_fillers)"
     if [[ "$run_repeats" == "1" ]]; then
       local repeats_level="${DICTATE_REPEATS_LEVEL:-${CFG_CLEAN_REPEATS_LEVEL:-1}}"
       if [[ "$repeats_level" != "0" ]]; then
-        txt="$(printf "%s" "$txt" | clean_repeats "$repeats_level")" || return 1
+        txt="$(printf "%s" "$txt" | clean_repeats "$repeats_level")"
       fi
     fi
   fi
-  printf "%s" "$txt"
+  CLEANUP_TEXT="$txt"
 }
 
 # Final deterministic pass: vocab corrections (only when no LLM ran), mode
-# paragraphs, British spelling.
-# Usage: finish_transcript_text <text> <mode> <postprocessed:0|1>
+# paragraphs, British spelling. Sets CLEANUP_TEXT (see cleanup_raw_transcript).
+# Usage: finish_transcript_text <text> <mode> <postprocessed:0|1>; txt="$CLEANUP_TEXT"
 finish_transcript_text() {
   local txt="$1"
   local mode="$2"
   local postprocessed="${3:-0}"
   if [[ "$postprocessed" != "1" ]] && bool_is_on "${DICTATE_VOCAB_CLEAN:-1}"; then
-    txt="$(printf "%s" "$txt" | apply_vocab_corrections "$mode")" || return 1
+    txt="$(printf "%s" "$txt" | apply_vocab_corrections "$mode")"
   fi
-  txt="$(printf "%s" "$txt" | apply_mode_cleanup "$mode")" || return 1
-  txt="$(printf "%s" "$txt" | normalize_british_spelling)" || return 1
-  printf "%s" "$txt"
+  txt="$(printf "%s" "$txt" | apply_mode_cleanup "$mode")"
+  txt="$(printf "%s" "$txt" | normalize_british_spelling)"
+  CLEANUP_TEXT="$txt"
 }
 
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -5451,7 +5454,8 @@ stop() {
       exit 1
     fi
     stage_started_ms="$(now_ms)"
-    txt="$(cleanup_raw_transcript "$txt" "$do_postprocess")"
+    cleanup_raw_transcript "$txt" "$do_postprocess"
+    txt="$CLEANUP_TEXT"
     clean_ms=$(( $(now_ms) - stage_started_ms ))
     if [[ -z "${txt//[[:space:]]/}" ]]; then
       rm -f "$wav"
@@ -5491,7 +5495,8 @@ stop() {
       postprocess_ms=$(( $(now_ms) - stage_started_ms ))
     fi
 
-    txt="$(finish_transcript_text "$txt" "$tmux_mode" "$do_postprocess")"
+    finish_transcript_text "$txt" "$tmux_mode" "$do_postprocess"
+    txt="$CLEANUP_TEXT"
 
     stage_started_ms="$(now_ms)"
     if [[ "$do_copy" != "0" ]]; then
@@ -5764,7 +5769,8 @@ process_inline_recording() {
   fi
   
   stage_started_ms="$(now_ms)"
-  txt="$(cleanup_raw_transcript "$txt" "$do_postprocess")"
+  cleanup_raw_transcript "$txt" "$do_postprocess"
+  txt="$CLEANUP_TEXT"
   clean_ms=$(( $(now_ms) - stage_started_ms ))
 
   if [[ -z "${txt//[[:space:]]/}" ]]; then
@@ -5780,7 +5786,8 @@ process_inline_recording() {
 
   # Save raw transcript for history
   local raw_txt="$txt"
-  detected_mode="$(resolve_inline_mode "$target_app")"
+  resolve_inline_mode "$target_app"
+  detected_mode="$RESOLVED_MODE"
 
   if ! inline_session_is_current "$inline_session_id"; then
     echo "Skipping stale inline result because a newer recording started."
@@ -5811,7 +5818,8 @@ process_inline_recording() {
     postprocess_ms=$(( $(now_ms) - stage_started_ms ))
   fi
 
-  txt="$(finish_transcript_text "$txt" "$detected_mode" "$do_postprocess")"
+  finish_transcript_text "$txt" "$detected_mode" "$do_postprocess"
+  txt="$CLEANUP_TEXT"
 
   if ! inline_session_is_current "$inline_session_id"; then
     echo "Skipping stale inline result because a newer recording started."

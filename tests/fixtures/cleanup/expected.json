@@ -5211,6 +5211,26 @@
    "output": ""
   },
   {
+   "id": "vocab-canonical-1",
+   "fn": "vocab",
+   "args": [
+    "code",
+    "cascade"
+   ],
+   "input": "q̣́ and q̣́ and Q̣́",
+   "output": "end and end and end"
+  },
+  {
+   "id": "vocab-canonical-2",
+   "fn": "vocab",
+   "args": [
+    "",
+    "cascade"
+   ],
+   "input": "q̣́ and q̣́ and Q̣́",
+   "output": "end and end and end"
+  },
+  {
    "id": "fuzz-sanitize-001",
    "fn": "sanitize",
    "args": [],
@@ -9207,7 +9227,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9229,7 +9251,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9251,7 +9275,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9273,7 +9299,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9295,7 +9323,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9317,7 +9347,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9339,7 +9371,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9361,7 +9395,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9385,7 +9421,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "so the color of the api is open ai and get hub ok",
@@ -9409,7 +9447,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9434,7 +9474,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "so the color of the the api is open ai and get hub ok",
@@ -9459,7 +9501,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "go to the store the end",
@@ -9483,7 +9527,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "go to the store the end",
@@ -9507,7 +9553,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9531,7 +9579,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9555,7 +9605,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9579,7 +9631,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": "email",
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9603,7 +9657,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": "nope",
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9628,7 +9684,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": true
+    "postprocess": true,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9652,7 +9710,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um so the color of the the api is open ai and get hub ok",
@@ -9674,7 +9734,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "no_speech",
    "raw_text": "",
@@ -9698,7 +9760,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "no_speech",
    "raw_text": "",
@@ -9720,7 +9784,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "no_speech",
    "raw_text": "",
@@ -9742,7 +9808,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "text with trailing newlines",
@@ -9764,7 +9832,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "two\nlines here",
@@ -9788,7 +9858,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "twolines here",
@@ -9810,7 +9882,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "Sentence number 1 has a few words in it. Sentence number 2 has a few words in it. Sentence number 3 has a few words in it. Sentence number 4 has a few words in it. Sentence number 5 has a few words in it. Sentence number 6 has a few words in it. Sentence number 7 has a few words in it. Sentence number 8 has a few words in it. Sentence number 9 has a few words in it. Sentence number 10 has a few words in it. Sentence number 11 has a few words in it. Sentence number 12 has a few words in it. Sentence number 13 has a few words in it. Sentence number 14 has a few words in it. Sentence number 15 has a few words in it.",
@@ -9834,7 +9908,9 @@
     "code_paragraph_min_words": "500",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "Sentence number 1 has a few words in it. Sentence number 2 has a few words in it. Sentence number 3 has a few words in it. Sentence number 4 has a few words in it. Sentence number 5 has a few words in it. Sentence number 6 has a few words in it. Sentence number 7 has a few words in it. Sentence number 8 has a few words in it. Sentence number 9 has a few words in it. Sentence number 10 has a few words in it. Sentence number 11 has a few words in it. Sentence number 12 has a few words in it. Sentence number 13 has a few words in it. Sentence number 14 has a few words in it. Sentence number 15 has a few words in it.",
@@ -9856,7 +9932,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "Sentence number 1 has a few words in it. Sentence number 2 has a few words in it. Sentence number 3 has a few words in it. Sentence number 4 has a few words in it. Sentence number 5 has a few words in it. Sentence number 6 has a few words in it. Sentence number 7 has a few words in it. Sentence number 8 has a few words in it. Sentence number 9 has a few words in it. Sentence number 10 has a few words in it. Sentence number 11 has a few words in it. Sentence number 12 has a few words in it. Sentence number 13 has a few words in it. Sentence number 14 has a few words in it. Sentence number 15 has a few words in it.",
@@ -9878,7 +9956,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "Sentence number 1 has a few words in it. Sentence number 2 has a few words in it. Sentence number 3 has a few words in it. Sentence number 4 has a few words in it. Sentence number 5 has a few words in it. Sentence number 6 has a few words in it. Sentence number 7 has a few words in it. Sentence number 8 has a few words in it. Sentence number 9 has a few words in it. Sentence number 10 has a few words in it. Sentence number 11 has a few words in it. Sentence number 12 has a few words in it. Sentence number 13 has a few words in it. Sentence number 14 has a few words in it. Sentence number 15 has a few words in it.",
@@ -9902,7 +9982,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "x",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "Sentence number 1 has a few words in it. Sentence number 2 has a few words in it. Sentence number 3 has a few words in it. Sentence number 4 has a few words in it. Sentence number 5 has a few words in it. Sentence number 6 has a few words in it. Sentence number 7 has a few words in it. Sentence number 8 has a few words in it. Sentence number 9 has a few words in it. Sentence number 10 has a few words in it. Sentence number 11 has a few words in it. Sentence number 12 has a few words in it. Sentence number 13 has a few words in it. Sentence number 14 has a few words in it. Sentence number 15 has a few words in it.",
@@ -9924,7 +10006,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -9946,7 +10030,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -9968,7 +10054,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -9990,7 +10078,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10012,7 +10102,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10034,7 +10126,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10056,7 +10150,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10078,7 +10174,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10100,7 +10198,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10122,7 +10222,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10144,7 +10246,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10166,7 +10270,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10188,7 +10294,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10210,7 +10318,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10232,7 +10342,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10254,7 +10366,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10276,7 +10390,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10298,7 +10414,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10320,7 +10438,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10342,7 +10462,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10364,7 +10486,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10386,7 +10510,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10408,7 +10534,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10430,7 +10558,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10452,7 +10582,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10474,7 +10606,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai with api and kind regards",
@@ -10496,7 +10630,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10519,7 +10655,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10542,7 +10680,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10565,7 +10705,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10588,7 +10730,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10611,7 +10755,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10634,7 +10780,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10657,7 +10805,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10680,7 +10830,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10703,7 +10855,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open ai teh color",
@@ -10725,7 +10879,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10747,7 +10903,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10769,7 +10927,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10791,7 +10951,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10814,7 +10976,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10837,7 +11001,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10860,7 +11026,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10883,7 +11051,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10906,7 +11076,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10929,7 +11101,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10952,7 +11126,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10975,7 +11151,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -10998,7 +11176,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11021,7 +11201,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11044,7 +11226,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11067,7 +11251,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11090,7 +11276,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11113,7 +11301,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11136,7 +11326,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11159,7 +11351,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11182,7 +11376,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11205,7 +11401,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11228,7 +11426,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11251,7 +11451,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11274,7 +11476,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11297,7 +11501,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11320,7 +11526,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11343,7 +11551,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11366,7 +11576,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11389,7 +11601,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11412,7 +11626,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11435,7 +11651,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11458,7 +11676,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11481,7 +11701,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11504,7 +11726,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11527,7 +11751,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "alpha color text",
@@ -11549,7 +11775,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "anything open ai",
@@ -11573,12 +11801,118 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": "code",
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "anything open ai",
    "text": "anything open ai",
    "mode": "code"
+  },
+  {
+   "id": "pipeline-locale-utf8",
+   "config": "repo",
+   "app": "Ghostty",
+   "env": {
+    "LC_ALL": "",
+    "LANG": "en_US.UTF-8"
+   },
+   "input": "open ai color",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "en_US.UTF-8",
+    "locale_collate": "en_US.UTF-8"
+   },
+   "status": "ok",
+   "raw_text": "open ai color",
+   "text": "OpenAI colour",
+   "mode": "code"
+  },
+  {
+   "id": "pipeline-locale-ctype",
+   "config": "repo",
+   "app": "Ghostty",
+   "env": {
+    "LC_ALL": "",
+    "LC_CTYPE": "en_US.UTF-8"
+   },
+   "input": "open ai color",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "en_US.UTF-8",
+    "locale_collate": ""
+   },
+   "status": "ok",
+   "raw_text": "open ai color",
+   "text": "OpenAI colour",
+   "mode": "code"
+  },
+  {
+   "id": "pipeline-locale-posix",
+   "config": "repo",
+   "app": "Ghostty",
+   "env": {
+    "LC_ALL": "POSIX"
+   },
+   "input": "open ai color",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "1",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "POSIX",
+    "locale_collate": "POSIX"
+   },
+   "status": "ok",
+   "raw_text": "open ai color",
+   "text": "OpenAI colour",
+   "mode": "code"
+  },
+  {
+   "id": "pipeline-canonical-vocab",
+   "config": "cascade",
+   "app": "Ghostty",
+   "env": {},
+   "input": "q̣́ text",
+   "settings": {
+    "config_dir": "@config",
+    "clean": "0",
+    "repeats_level": "2",
+    "vocab_clean": "1",
+    "british_spelling": "1",
+    "code_paragraph_min_words": "70",
+    "long_paragraph_min_words": "55",
+    "force_mode": null,
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
+   },
+   "status": "ok",
+   "raw_text": "q̣́ text",
+   "text": "end text",
+   "mode": "base"
   },
   {
    "id": "fuzz-pipeline-001",
@@ -11595,7 +11929,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "actuallyish realized The another realized favorite to be honest uh,! basically, word anyways... go to go to actuallyish I mean, color! color [text) anyways Colors um it's er...",
@@ -11619,7 +11955,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "..  , hmm COLOR er, COLOR anyways....I mean,,",
@@ -11643,7 +11981,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "like, um Umm. so yeah basically, COLOR actually. to be honest [blank] the the it's Colors realized er [. hmm the go to... Behavior go to word [[you know the the?",
@@ -11667,7 +12007,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "color. THE ish? go to color The ].] cOlOr go to cOlOr well-known The it's color another color text? ish go to cOlOr THE here) THE color don't here [.",
@@ -11691,7 +12033,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "like,, gpt-4.: at saw slash, npmopen\taiI mean,, to be honest Colors, Umm., wez term Jason's gpt-4 The日本語 日本語 kind regards, \u000b",
@@ -11713,7 +12057,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": ".,",
@@ -11737,7 +12083,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "open aijason Dr. Smith source slash(Colors., node.js. Dr. Smith A.P.I The. likewez term go to don't. npm, STRASSEactually",
@@ -11761,7 +12109,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "hmm analyze uh, to be honest Colors! centering basically, uh, like, the the centering er) THE. cOlOr [blank] actuallyish go to go to I mean, like, word color word anyways. actuallyish to be honest? another THE go to the realized. you know it's favorite actually to be honest another centering anyways COLOR favorite word.",
@@ -11785,7 +12135,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "cOlOr go to go to, teamux. The, the the.]",
@@ -11809,7 +12161,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "api, the, 日本語 go to: tmux whisper go to.  . basically,um Behavior Jason's",
@@ -11831,7 +12185,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "A.P.I , basically, x x x. source slashnpmk8s wez term I mean, basically,uh,. teamux, like, regards. api? Jason's to be honest...   ſo yeah gpt-4,",
@@ -11855,7 +12211,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "I mean, tmux whisper actually  . source slash it's favorite 😀 the the. [blank]color(a p iCOLOR c++. a p i",
@@ -11879,7 +12237,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "um centering go to go to centering go to go to go to here... it's The) the the. COLOR favorite color the the go to like the basically, text. actually uh, actually like?) basically,... like cOlOr the the centering hmm here] um. Colors realized um you know [another go to go to it's favorite basically, Behavior it's. the THE hmm [blank] word um THE! to be honest here the realized Behavior actually The text COLOR? it's actually cOlOr here actually THE realized. cOlOr The basically, (analyze favorite the another word like, another favorite. don't don't actually um here The hmm hmm realized basically, anyways THE Umm..",
@@ -11903,7 +12263,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "ſo yeah.",
@@ -11927,7 +12289,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "Umm. go to go to Colors uh,. the actually go to go to like, well-known Umm.? word Umm. er don't don't um well-known basically, it's the the it's anyways (! the the you know the I mean, well-known hmm it's you know.",
@@ -11951,7 +12315,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "wez term node.js.   npm.  , go to Umm..] actually. basically,. tmux whisper, naïve. kind regards THE, open ai, hmm (to be honest Colors The,",
@@ -11973,7 +12339,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "foo_bar...c++ the the THE favorite",
@@ -11998,7 +12366,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "tmux whisper don't; source slash it'sOPEN AI",
@@ -12022,7 +12392,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "zzz you know, cOlOr naïve STRASSE, OPEN AIwez term,   node.js, analyze, 日本語the the. a p i cOlOr, COLOR",
@@ -12046,7 +12418,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "([actually to be honest go to go to the the the [blank]? er actuallyish) here uh, [blank] actually actuallyish here realized um. like it's go to go to basically, you know hmm centering another favorite color. favorite you know it's hmm... analyze] (to be honest actually COLOR to be honest...",
@@ -12070,7 +12444,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "text ish analyze. Behavior Colors the analyze The it's. here don't well-known another THE like, it's.. don't here text) s the. The cOlOr...",
@@ -12094,7 +12470,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "[blank])) Colors like,. er the the er [blank] analyze) centering) the the Colors [blank]. [basically, The analyze COLOR well-known anyways? Umm. Behavior [blank] cOlOr... text go to like, hmm it's! another like to be honest Colors to be honest I mean, basically,. anyways you know here. it's hmm word basically,. centering hmm er Behavior centering anyways go to. THE favorite so yeah like, so yeah? THE THE text text cOlOr Umm. you know! to be honest basically, go to go to I mean, another. COLOR it's anyways [blank]... I mean, realized um.",
@@ -12118,7 +12496,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "......, café OPEN AI realized anyways  ,. favorite. K8s. 😀,, \r\né!,   open ai  . source slash.net, color OPEN AI. THE",
@@ -12142,7 +12522,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "THEfoo_bar, (.   Dr. Smith.,... Dr. Smith. kind regardsDr. Smith favorite",
@@ -12166,7 +12548,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "the.][blank]. Behavior, Dr. Smithwez term. like. Dr. Smith,",
@@ -12188,7 +12572,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "A.P.I Umm.STRASSE. Umm.,",
@@ -12212,7 +12598,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "The um go to like, actuallyish here um you know. go to THE go to go to.] favorite Behavior anyways like centering Umm. [blank] color? (um? um The go to go to THE] it's you know Behavior to be honest text. (THE you know Colors so yeah actually anyways? The Behavior to be honest like hmm Umm. favorite? [I mean, analyze go to go to it's the! Umm. hmm analyze color word er anyways [blank] word favorite I mean,. go to to be honest (like, actually... Colors hmm er realized word Behavior)? centering color actually um the) here.",
@@ -12236,7 +12624,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "favoritewez term,. centering COLOR　! color, COLOR  a p i. (, é.",
@@ -12260,7 +12650,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "centering go to THE go to go to The text cOlOr the... centering like cOlOr Behavior) text. [Behavior the cOlOr? go to color it's. don't [it's. centering text? it's (cOlOr]! THE it's analyze s Colors another...",
@@ -12284,7 +12676,9 @@
     "code_paragraph_min_words": "70",
     "long_paragraph_min_words": "55",
     "force_mode": null,
-    "postprocess": false
+    "postprocess": false,
+    "locale_ctype": "C",
+    "locale_collate": "C"
    },
    "status": "ok",
    "raw_text": "gpt-4. anyways  , gpt-4., er   like,?",

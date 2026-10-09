@@ -31,6 +31,8 @@ app_cleanup_settings_json() {
   APPCLEAN_LONG_PARAGRAPH_MIN_WORDS="${DICTATE_LONG_PARAGRAPH_MIN_WORDS:-55}" \
   APPCLEAN_FORCE_MODE="${DICTATE_FORCE_MODE:-}" \
   APPCLEAN_POSTPROCESS="$(resolve_inline_postprocess_effective)" \
+  APPCLEAN_LOCALE_CTYPE="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" \
+  APPCLEAN_LOCALE_COLLATE="${LC_ALL:-${LC_COLLATE:-${LANG:-}}}" \
   python3 - <<'PYEOF'
 import json, os
 e = os.environ
@@ -44,6 +46,10 @@ print(json.dumps({
     "long_paragraph_min_words": e["APPCLEAN_LONG_PARAGRAPH_MIN_WORDS"],
     "force_mode": e["APPCLEAN_FORCE_MODE"] or None,
     "postprocess": e["APPCLEAN_POSTPROCESS"] == "1",
+    # Mode detection (grep -i, sed, glob order) and the blank check depend on
+    # these; the native pipeline only reproduces the C locale.
+    "locale_ctype": e["APPCLEAN_LOCALE_CTYPE"],
+    "locale_collate": e["APPCLEAN_LOCALE_COLLATE"],
 }))
 PYEOF
 }
@@ -218,11 +224,14 @@ inline_cleanup_json() {
   local raw txt="" final="" mode="" status="no_speech"
   # $(...) drops trailing newlines, like the transcription capture does.
   raw="$(cat)"
-  txt="$(cleanup_raw_transcript "$raw" "0")"
+  cleanup_raw_transcript "$raw" "0"
+  txt="$CLEANUP_TEXT"
   if [[ -n "${txt//[[:space:]]/}" ]]; then
     status="ok"
-    mode="$(resolve_inline_mode "$app")"
-    final="$(finish_transcript_text "$txt" "$mode" "0")"
+    resolve_inline_mode "$app"
+    mode="$RESOLVED_MODE"
+    finish_transcript_text "$txt" "$mode" "0"
+    final="$CLEANUP_TEXT"
   fi
 
   APPCLEANUP_STATUS="$status" \

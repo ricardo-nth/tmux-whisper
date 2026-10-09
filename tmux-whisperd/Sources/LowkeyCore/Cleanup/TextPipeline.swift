@@ -21,11 +21,16 @@ public struct CleanupSettings: Codable, Equatable, Sendable {
   public var forceMode: String?
   /// LLM post-processing is enabled and has a key: the CLI must handle it.
   public var postprocess: Bool
+  /// The CLI's effective LC_CTYPE / LC_COLLATE (LC_ALL, else the category,
+  /// else LANG; "" when unset). grep -i, sed trimming, glob order and the
+  /// blank check depend on them; only the C locale is reproduced natively.
+  public var localeCtype: String?
+  public var localeCollate: String?
 
   public init(
     configDir: String, clean: String = "0", repeatsLevel: String = "1", vocabClean: String = "1",
     britishSpelling: String = "1", codeParagraphMinWords: String = "70", longParagraphMinWords: String = "55",
-    forceMode: String? = nil, postprocess: Bool = false
+    forceMode: String? = nil, postprocess: Bool = false, localeCtype: String? = nil, localeCollate: String? = nil
   ) {
     self.configDir = configDir
     self.clean = clean
@@ -36,6 +41,8 @@ public struct CleanupSettings: Codable, Equatable, Sendable {
     self.longParagraphMinWords = longParagraphMinWords
     self.forceMode = forceMode
     self.postprocess = postprocess
+    self.localeCtype = localeCtype
+    self.localeCollate = localeCollate
   }
 
   enum CodingKeys: String, CodingKey {
@@ -48,6 +55,17 @@ public struct CleanupSettings: Codable, Equatable, Sendable {
     case longParagraphMinWords = "long_paragraph_min_words"
     case forceMode = "force_mode"
     case postprocess
+    case localeCtype = "locale_ctype"
+    case localeCollate = "locale_collate"
+  }
+
+  /// The native pipeline can't reproduce this configuration; use the CLI.
+  public var requiresCLI: Bool {
+    postprocess || !CleanupSettings.isCLocale(localeCtype) || !CleanupSettings.isCLocale(localeCollate)
+  }
+
+  static func isCLocale(_ value: String?) -> Bool {
+    ["", "C", "POSIX"].contains(value ?? "")
   }
 
   var fillersEnabled: Bool { clean == "1" }
@@ -64,7 +82,8 @@ public enum CleanupOutcome: Equatable, Sendable {
   case text(raw: String, text: String, mode: String)
   /// Nothing left after artefact/filler cleanup ("No speech detected").
   case noSpeech
-  /// LLM post-processing is on: only the CLI can produce the result.
+  /// LLM post-processing is on, or the CLI runs in a non-C locale: only the
+  /// CLI can produce the result.
   case needsCLI
 }
 
@@ -81,7 +100,7 @@ public struct TextPipeline: Sendable {
 
   /// `transcript` is the transcriber's output; `app` the target app's name.
   public func process(transcript: String, app: String?) -> CleanupOutcome {
-    if settings.postprocess { return .needsCLI }
+    if settings.requiresCLI { return .needsCLI }
     let raw = cleanRaw(PerlText.bashCapture(transcript))
     if PerlText.isBlank(raw) { return .noSpeech }
     let mode = ModeResolver(configDir: settings.configDir)

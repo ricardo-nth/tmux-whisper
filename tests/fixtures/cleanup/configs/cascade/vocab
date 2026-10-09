@@ -27,3 +27,6 @@ the the::the
 wez term::WezTerm
 wez term::WezTerm
 zzz → Zz
+# Canonically equivalent, different code points: Perl sorts them by code point.
+q̣́ :: end
+q̣́ :: q̣́

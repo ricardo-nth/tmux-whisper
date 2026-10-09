@@ -4653,6 +4653,24 @@
     "fixed"
    ],
    "input": ""
+  },
+  {
+   "id": "vocab-canonical-1",
+   "fn": "vocab",
+   "args": [
+    "code",
+    "cascade"
+   ],
+   "input": "q̣́ and q̣́ and Q̣́"
+  },
+  {
+   "id": "vocab-canonical-2",
+   "fn": "vocab",
+   "args": [
+    "",
+    "cascade"
+   ],
+   "input": "q̣́ and q̣́ and Q̣́"
   }
  ],
  "pipeline": [
@@ -5468,6 +5486,42 @@
     "DICTATE_FORCE_MODE": "code"
    },
    "input": "anything open ai"
+  },
+  {
+   "id": "pipeline-locale-utf8",
+   "config": "repo",
+   "app": "Ghostty",
+   "env": {
+    "LC_ALL": "",
+    "LANG": "en_US.UTF-8"
+   },
+   "input": "open ai color"
+  },
+  {
+   "id": "pipeline-locale-ctype",
+   "config": "repo",
+   "app": "Ghostty",
+   "env": {
+    "LC_ALL": "",
+    "LC_CTYPE": "en_US.UTF-8"
+   },
+   "input": "open ai color"
+  },
+  {
+   "id": "pipeline-locale-posix",
+   "config": "repo",
+   "app": "Ghostty",
+   "env": {
+    "LC_ALL": "POSIX"
+   },
+   "input": "open ai color"
+  },
+  {
+   "id": "pipeline-canonical-vocab",
+   "config": "cascade",
+   "app": "Ghostty",
+   "env": {},
+   "input": "q̣́ text"
   }
  ]
 }

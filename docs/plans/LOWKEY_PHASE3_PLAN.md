@@ -88,6 +88,8 @@ These must stay byte-compatible with the CLI's files and locking:
 - Perl semantics reproduced: per-line processing (`perl -p`); byte-mode filters run on a byte-faithful view (UTF-8 bytes ≥ 0x80 mapped to private-use scalars), so `\s`/`\b`/`/i` stay ASCII-only as in Perl; vocab uses Perl's Unicode `\s` list, code-point lengths/ordering and literal replacements; mode folders in C-locale byte order; app names matched as BSD grep BREs.
 - Corpus: `tests/fixtures/cleanup/` (`cases.json` + seeded random cases → `expected.json`, 1,015 stage and 135 pipeline cases), generated from the real bash by `tests/gen-cleanup-fixtures.sh` (pipeline cases run the new `tmux-whisper inline cleanup --json` with `LC_ALL=C`, scratch HOME and config copies). CI (macOS Swift workflow) runs `--check` before `swift test`.
 - Cost: ~4 ms per 200-word take (debug build), including config reads and vocab compilation.
+- Locale: the native pipeline reproduces only the C locale (what Lowkey's CLI runs in today: no LANG/LC_* in its environment or ~/.zshenv). `app-config` reports the effective `locale_ctype`/`locale_collate`; any other value returns `.needsCLI`, so that dictation uses the CLI path.
+- The extracted bash helpers set `CLEANUP_TEXT`/`RESOLVED_MODE` instead of printing, so a failing stage behaves exactly as before (aborts with its status under `set -e`, continues where errexit is off); covered by a flow-parity failure-injection test.
 - Known, accepted differences (none reachable from Lowkey today):
   - No app name: the CLI asks System Events for the frontmost process; Swift uses the default inline mode. Lowkey always passes the frontmost app's name.
   - App names containing `[` (a grep bracket expression), a newline, or BRE `\{…\}`/`\(…\)`: Swift never matches/treats them literally.
@@ -107,6 +109,8 @@ These must stay byte-compatible with the CLI's files and locking:
   - Add locking and unique filenames to history/bench writes.
   - Processing markers per take.
 - `[app] verify_pipeline` shadow compare on for a few days.
+  - Compare text with `inline cleanup --json` on the same raw transcript (side-effect free). A whole-take `inline process` shadow run would record usage, bench and history a second time; if whole-take verification is wanted, add a no-record option first.
+  - Compare against the same settings snapshot the native run used; fall back when `cleanup` is absent (older CLI) or `requiresCLI`.
 - Fallback to the phase 2 `inline process` path for LLM post-processing, silence trim, or any native error.
 
 **3c — Model in the app and socket ownership (only after 3b is stable)**

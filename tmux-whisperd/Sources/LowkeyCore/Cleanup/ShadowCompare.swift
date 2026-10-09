@@ -15,7 +15,7 @@ public enum ShadowCompare {
       return nil
     case (.text(let raw, let text, let mode), "ok"):
       var diffs: [String] = []
-      if mode != cliMode { diffs.append("mode native=\(mode.debugDescription) cli=\((cliMode ?? "").debugDescription)") }
+      if !sameBytes(mode, cliMode ?? "") || cliMode == nil { diffs.append("mode native=\(mode.debugDescription) cli=\((cliMode ?? "").debugDescription)") }
       if !sameBytes(raw, cliRawText) {
         diffs.append("raw native=\(raw.debugDescription) cli=\(cliRawText.debugDescription)")
       }

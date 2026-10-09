@@ -1670,6 +1670,33 @@ assert r["timings"]["record_ms"] == 3000, r["timings"]
   pass "app_process_keeps_callers_wav"
 }
 
+# A failing cleanup stage keeps its pre-extraction semantics: under set -e it
+# aborts with the stage's own status; where errexit is off (inline process
+# runs the pipeline under `|| rc=$?`) the partial text carries on.
+run_cleanup_stage_failure_round() {
+  setup_case "cleanup-stage-failure"
+  export DICTATE_TEST_SWIFT_TEXT="stage failure transcript"
+  export DICTATE_TEST_FFPROBE_DURATION_MS=3000
+  printf '%s\n' "app take" >"$CASE_DIR/take.wav"
+  local failing_lib="$CASE_DIR/dictate-lib-failing-sanitize.sh"
+  {
+    cat "$ROOT/bin/dictate-lib.sh"
+    printf '%s\n' 'dictate_lib_sanitize_transcript_artifacts() { cat; return 7; }'
+  } >"$failing_lib"
+  local out rc=0
+  out="$(printf 'hello there' | DICTATE_LIB_PATH="$failing_lib" "$DICTATE_BIN" inline cleanup --app Safari --json 2>/dev/null)" || rc=$?
+  assert_equals "cleanup_stage_failure_exit_status" "$rc" "7"
+
+  out="$(DICTATE_LIB_PATH="$failing_lib" "$DICTATE_BIN" inline process "$CASE_DIR/take.wav" --app Safari --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["ok"] and r["status"] == "ok", r
+assert r["raw_text"] == "stage failure transcript", r
+' || { echo "$out" >&2; fail "cleanup_stage_failure_inline_process_continues"; }
+  pass "cleanup_stage_failure_inline_process_continues"
+}
+
 run_app_backend_failure_round() {
   setup_case "app-backend-failure"
   export DICTATE_TEST_SWIFT_DAEMON_FAIL=1
@@ -1726,6 +1753,7 @@ run_transcribe_file_write_race_round
 run_daemon_build_and_refresh_round
 run_app_backend_round
 run_app_backend_failure_round
+run_cleanup_stage_failure_round
 run_finder_quick_action_round
 run_finder_handler_round
 

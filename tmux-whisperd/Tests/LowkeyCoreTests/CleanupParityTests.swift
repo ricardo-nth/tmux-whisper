@@ -125,6 +125,7 @@ struct CleanupParityTests {
     defer { try? fm.removeItem(at: scratch) }
     var failures = 0
     var sawPostprocess = false
+    var sawLocale = false
     for (index, item) in cases.enumerated() {
       let configDir = scratch.appendingPathComponent("\(index)").path
       try fm.copyItem(atPath: Self.configPath(item.config), toPath: configDir)
@@ -140,9 +141,9 @@ struct CleanupParityTests {
       settings.configDir = configDir
       let outcome = TextPipeline(settings: settings).process(transcript: item.input, app: item.app)
 
-      if settings.postprocess {
-        sawPostprocess = true
-        #expect(outcome == .needsCLI, "\(item.id): LLM post-processing must fall back to the CLI")
+      if settings.requiresCLI {
+        if settings.postprocess { sawPostprocess = true } else { sawLocale = true }
+        #expect(outcome == .needsCLI, "\(item.id): must fall back to the CLI")
         continue
       }
       switch (item.status, outcome) {
@@ -158,7 +159,16 @@ struct CleanupParityTests {
       }
     }
     #expect(sawPostprocess, "the corpus should cover the LLM fallback")
+    #expect(sawLocale, "the corpus should cover the non-C locale fallback")
     #expect(failures == 0, "\(failures) pipeline cases differ from bash")
+  }
+
+  @Test func nonCLocaleFallsBackToTheCLI() {
+    #expect(!CleanupSettings(configDir: "/c").requiresCLI)
+    #expect(!CleanupSettings(configDir: "/c", localeCtype: "POSIX", localeCollate: nil).requiresCLI)
+    let utf8 = CleanupSettings(configDir: "/c", localeCtype: "en_US.UTF-8", localeCollate: "en_US.UTF-8")
+    #expect(utf8.requiresCLI)
+    #expect(TextPipeline(settings: utf8).process(transcript: "hello", app: "Ghostty") == .needsCLI)
   }
 
   @Test func appConfigCleanupSectionDecodes() throws {
@@ -187,6 +197,10 @@ struct ShadowCompareTests {
     #expect(report?.contains("raw native=") == true)
     #expect(report?.contains("text native=") == true)
     #expect(report?.contains("mode") == false)
+    let modeReport = ShadowCompare.mismatch(
+      native: .text(raw: "x", text: "x", mode: "cafe\u{301}"), cliStatus: "ok", cliRawText: "x", cliText: "x",
+      cliMode: "caf\u{E9}")
+    #expect(modeReport?.contains("mode native=") == true)
   }
 
   @Test func reportsStatusAndModeDifferences() {

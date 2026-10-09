@@ -8,7 +8,8 @@
 - **Lowkey phase 3a: text cleanup ported to Swift (no behaviour change yet)**: `LowkeyCore`'s `TextPipeline` reproduces the inline cleanup (artefacts, fillers/repeats, mode resolution, global + mode vocab, code/long paragraphs, British spelling) byte for byte, ready for 3b to drop the CLI from the dictation path. Lowkey still uses `inline process` in this release.
   - Parity is proven by a differential corpus (`tests/fixtures/cleanup/`): ~1,000 hand-written and seeded random cases whose expected outputs come from the real bash/Perl functions (`tests/gen-cleanup-fixtures.sh`). The Swift tests compare UTF-8 bytes, and the macOS CI job fails if the fixtures are stale.
   - `app-config --json` gains a `cleanup` section (the raw settings as the CLI resolves them), and the hidden `tmux-whisper inline cleanup [--app NAME] --json` runs only the text cleanup on stdin, for fixtures and 3b's shadow compare.
-  - The CLI's inline and tmux flows now share `cleanup_raw_transcript` / `finish_transcript_text` / `resolve_inline_mode` instead of duplicated code (same behaviour).
+  - The native pipeline only reproduces the CLI in the C locale (Lowkey's default); `app-config` reports the effective locale and any other locale, or LLM post-processing, falls back to the CLI.
+  - The CLI's inline and tmux flows now share `cleanup_raw_transcript` / `finish_transcript_text` / `resolve_inline_mode` instead of duplicated code (same behaviour, including when a stage fails).
 
 ## v0.9.0 — 2026-09-30
 

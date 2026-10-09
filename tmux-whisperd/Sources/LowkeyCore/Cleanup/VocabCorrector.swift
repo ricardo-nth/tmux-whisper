@@ -49,7 +49,10 @@ public struct VocabCorrector: Sendable {
         let la = PerlText.perlLength(a.element.left)
         let lb = PerlText.perlLength(b.element.left)
         if la != lb { return la > lb }
-        if a.element.left != b.element.left { return PerlText.codePointLess(a.element.left, b.element.left) }
+        // Not `!=`: String equality treats canonically equivalent text as equal.
+        if !a.element.left.unicodeScalars.elementsEqual(b.element.left.unicodeScalars) {
+          return PerlText.codePointLess(a.element.left, b.element.left)
+        }
         return a.offset < b.offset
       }
       for entry in sorted {

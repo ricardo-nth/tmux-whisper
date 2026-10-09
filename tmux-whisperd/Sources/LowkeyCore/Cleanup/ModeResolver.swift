@@ -71,11 +71,13 @@ public struct ModeResolver: Sendable {
   }
 
   func listModes(flow: String) -> [String] {
-    var seen = Set<String>()
+    // `sort -u` in the C locale: unique by bytes (a Set<String> would merge
+    // canonically equivalent names).
+    var seen = Set<[UInt8]>()
     return modeDirectoryNames()
       .map(ModeResolver.canonical)
       .filter { modeExists($0) && modeAllowsFlow($0, flow: flow) }
-      .filter { seen.insert($0).inserted }
+      .filter { seen.insert(Array($0.utf8)).inserted }
   }
 
   func firstModeForFlow(_ flow: String) -> String {
