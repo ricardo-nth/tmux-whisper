@@ -387,6 +387,17 @@ PYEOF
 )" || die "inline record: invalid payload"
   eval "$shell_vars"
 
+  # Lowkey spools each take and replays leftovers at launch (after a quit
+  # timeout or crash), so the same take can arrive twice: record it once.
+  local ledger="$AUDIO_CACHE_DIR/recorded-takes"
+  if [[ -n "$REC_TAKE_ID" && -f "$ledger" ]] && grep -qxF -- "$REC_TAKE_ID" "$ledger" 2>/dev/null; then
+    APPREC_TAKE_ID="$REC_TAKE_ID" python3 -c '
+import json, os
+print(json.dumps({"ok": True, "take_id": os.environ["APPREC_TAKE_ID"], "duplicate": True,
+                  "usage_recorded": True, "history_saved": True}))'
+    return 0
+  fi
+
   local model_id mode record_ms transcribe_ms clean_ms paste_ms total_ms usage_recorded="0" history_saved="0"
   # The app's snapshot of the model label; resolve it now only for older apps.
   model_id="${REC_MODEL:-$(current_transcribe_model_label)}"
@@ -444,9 +455,17 @@ PYEOF
       && history_saved="1"
   fi
 
+  if [[ -n "$REC_TAKE_ID" ]]; then
+    mkdir -p "$AUDIO_CACHE_DIR" 2>/dev/null || true
+    printf '%s\n' "$REC_TAKE_ID" >>"$ledger" 2>/dev/null || true
+    if [[ "$(wc -l <"$ledger" 2>/dev/null | tr -d ' ')" -gt 1000 ]]; then
+      tail -n 500 "$ledger" >"${ledger}.tmp.$$" 2>/dev/null && mv -f "${ledger}.tmp.$$" "$ledger" 2>/dev/null || true
+    fi
+  fi
+
   APPREC_TAKE_ID="$REC_TAKE_ID" APPREC_USAGE="$usage_recorded" APPREC_HISTORY="$history_saved" python3 -c '
 import json, os
 e = os.environ
-print(json.dumps({"ok": True, "take_id": e["APPREC_TAKE_ID"], "usage_recorded": e["APPREC_USAGE"] == "1",
+print(json.dumps({"ok": True, "take_id": e["APPREC_TAKE_ID"], "duplicate": False, "usage_recorded": e["APPREC_USAGE"] == "1",
                   "history_saved": e["APPREC_HISTORY"] == "1"}))'
 }

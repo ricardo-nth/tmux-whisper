@@ -3318,15 +3318,19 @@ append_bench_entry() {
       mv -f "${BENCH_FILE}.tmp.$$" "$BENCH_FILE" 2>/dev/null || true
     fi
   fi
-  [[ "$have_lock" == "1" ]] && rmdir "${BENCH_FILE}.lock.d" 2>/dev/null
+  if [[ "$have_lock" == "1" ]]; then
+    rmdir "${BENCH_FILE}.lock.d" 2>/dev/null || true
+  fi
   return 0
 }
 
-# mkdir lock for bench.tsv, waiting up to ~1 s. A lock left by a killed
-# writer is stale after a minute.
+# mkdir lock for bench.tsv, waiting up to ~3 s (a trim holds it for a few
+# milliseconds, so only a stuck writer makes anyone wait that long). A lock
+# left by a killed writer is stale after a minute.
 bench_lock_acquire() {
-  local lock_dir="${BENCH_FILE}.lock.d" attempt
-  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  local lock_dir="${BENCH_FILE}.lock.d" attempt=0
+  while (( attempt < 60 )); do
+    attempt=$((attempt + 1))
     mkdir "$lock_dir" 2>/dev/null && return 0
     if [[ "$attempt" == "1" && -n "$(find "$lock_dir" -maxdepth 0 -mmin +1 2>/dev/null)" ]]; then
       rmdir "$lock_dir" 2>/dev/null || true

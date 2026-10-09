@@ -1757,6 +1757,13 @@ assert h["metrics"]["total_ms"] == 3500 and h["audio"]["capture_gap_to_record_ms
 PYEOF
   pass "inline_record_history"
 
+  # A replayed take (Lowkey's spool after a quit timeout or crash) is
+  # recorded once.
+  printf '%s' '{"take_id":"t-ok","status":"ok","delivered":true,"raw_text":"open ai","text":"OpenAI","mode":"code"}' \
+    | "$DICTATE_BIN" inline record --json >"$CASE_DIR/record-dup.json"
+  assert_file_contains "inline_record_duplicate_detected" "$CASE_DIR/record-dup.json" '"duplicate": true'
+  assert_file_contains "inline_record_duplicate_usage_once" "$DICTATE_CONFIG_DIR/usage.json" '"inline": 1'
+
   # A second take in the same second gets its own history file.
   printf '%s' '{"take_id":"t-ok2","status":"ok","delivered":true,"raw_text":"b","text":"b","mode":"code"}' \
     | "$DICTATE_BIN" inline record --json >/dev/null

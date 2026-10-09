@@ -63,6 +63,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   /// `inline record` runs here, after delivery, one take at a time.
   private let persistQueue = DispatchQueue(label: "lowkey.persist", qos: .utility)
   private let verifyQueue = DispatchQueue(label: "lowkey.verify", qos: .utility)
+  private let pending = PendingRecords.standard
   private let settingsQueue = DispatchQueue(label: "lowkey.settings", qos: .userInitiated, attributes: .concurrent)
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -84,10 +85,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
     self.cli = cli
     reloadSettings()
+    replayPendingRecords(cli: cli)
   }
 
-  /// Quit waits for the take in progress and its queued persistence, so a
-  /// delivered dictation is never left out of history, bench and usage.
+  /// Quit waits for the take in progress and its queued persistence. Records
+  /// still queued after 20 s stay spooled and are replayed at next launch.
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     let replied = DispatchSemaphore(value: 1)
     let reply = {
@@ -98,7 +100,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       persistQueue.async { reply() }
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
-      Log.write("quit: pending work did not finish within 20s; quitting anyway")
+      Log.write("quit: pending work did not finish within 20s; quitting (spooled takes replay at next launch)")
       reply()
     }
     return .terminateLater
@@ -351,17 +353,47 @@ final class AppController: NSObject, NSApplicationDelegate {
 
   /// History, bench and usage, one take at a time, after delivery.
   private func persist(_ record: TakeRecord, cli: CLIBridge) {
-    persistQueue.async {
-      do {
-        let result = try cli.record(record)
-        let wantsUsage = record.status == "ok" && record.delivered
-        if wantsUsage && !(result.usageRecorded && result.historySaved) {
-          // No retry: usage may already be counted, and takes aren't deduplicated.
-          Log.write("persist: take \(record.takeId) partly recorded (usage \(result.usageRecorded), history \(result.historySaved))")
-        }
-      } catch {
-        Log.write("persist: take \(record.takeId) not recorded: \(error.localizedDescription)")
-        if let wav = record.wavPath { try? FileManager.default.removeItem(atPath: wav) }
+    // Spooled first, so a quit that can't wait or a crash replays it later.
+    let spooled: URL?
+    do {
+      spooled = try pending.save(record)
+    } catch {
+      spooled = nil
+      Log.write("persist: take \(record.takeId) not spooled: \(error.localizedDescription)")
+    }
+    persistQueue.async { [pending] in
+      if Self.record(record, cli: cli), let spooled {
+        pending.remove(spooled)
+      }
+    }
+  }
+
+  /// Runs `inline record`; true once the CLI has taken the record (even if
+  /// partly saved: a retry could count usage twice).
+  private static func record(_ record: TakeRecord, cli: CLIBridge) -> Bool {
+    do {
+      let result = try cli.record(record)
+      let wantsUsage = record.status == "ok" && record.delivered
+      if wantsUsage && !(result.usageRecorded && result.historySaved) {
+        Log.write("persist: take \(record.takeId) partly recorded (usage \(result.usageRecorded), history \(result.historySaved))")
+      }
+      return true
+    } catch {
+      Log.write("persist: take \(record.takeId) not recorded yet (kept for the next launch): \(error.localizedDescription)")
+      return false
+    }
+  }
+
+  /// Replays takes a previous run delivered but could not record.
+  private func replayPendingRecords(cli: CLIBridge) {
+    persistQueue.async { [pending] in
+      let (records, dropped) = pending.leftovers()
+      for name in dropped {
+        Log.write("persist: dropped stale or unreadable pending record \(name)")
+      }
+      for (url, record) in records where Self.record(record, cli: cli) {
+        pending.remove(url)
+        Log.write("persist: replayed take \(record.takeId) from a previous run")
       }
     }
   }
