@@ -12,9 +12,6 @@ public actor TranscriptionService: DaemonRequestHandling {
   private var activeRequests = 0
   /// Identifies this daemon process in pings.
   public nonisolated let generation = UUID().uuidString.lowercased()
-  /// Model of the last successful warmup or transcription: the engine keeps
-  /// it loaded until a request names another one.
-  private var loadedModel: DaemonResponse.LoadedModel?
 
   public init(engine: ASREngine = ASREngine()) {
     self.engine = engine
@@ -31,7 +28,7 @@ public actor TranscriptionService: DaemonRequestHandling {
         activeRequests: activeRequests,
         pid: Int(getpid()),
         generation: generation,
-        modelLoaded: loadedModel
+        modelLoaded: loadedModel()
       )
     }
 
@@ -45,16 +42,15 @@ public actor TranscriptionService: DaemonRequestHandling {
 
       case .warmup:
         let (modelURL, modelVersion) = try resolveModelRequest(request)
-        let result = try await engine.warmup(modelURL: modelURL, modelVersion: modelVersion)
-        let loaded = DaemonResponse.LoadedModel(path: request.modelPath ?? modelURL.path, version: modelVersion)
-        loadedModel = loaded
+        let result = try await engine.warmup(
+          modelURL: modelURL, modelVersion: modelVersion, requestedPath: request.modelPath)
         return DaemonResponse(
           id: request.id,
           ok: true,
           model: result.model,
           durationMs: result.durationMs,
           message: "warmed",
-          modelLoaded: loaded
+          modelLoaded: loadedModel()
         )
 
       case .transcribe:
@@ -67,8 +63,8 @@ public actor TranscriptionService: DaemonRequestHandling {
         }
 
         let (modelURL, modelVersion) = try resolveModelRequest(request)
-        let result = try await engine.transcribe(audioURL: wavURL, modelURL: modelURL, modelVersion: modelVersion)
-        loadedModel = DaemonResponse.LoadedModel(path: request.modelPath ?? modelURL.path, version: modelVersion)
+        let result = try await engine.transcribe(
+          audioURL: wavURL, modelURL: modelURL, modelVersion: modelVersion, requestedPath: request.modelPath)
         return DaemonResponse(
           id: request.id,
           ok: true,
@@ -82,6 +78,11 @@ public actor TranscriptionService: DaemonRequestHandling {
     } catch {
       return .failure(id: request.id, code: "runtime_error", message: error.localizedDescription)
     }
+  }
+
+  /// What the engine holds right now (set when a load commits).
+  private func loadedModel() -> DaemonResponse.LoadedModel? {
+    engine.loadedModel.map { DaemonResponse.LoadedModel(path: $0.path, version: $0.version) }
   }
 
   private func resolveModelRequest(_ request: DaemonRequest) throws -> (URL, String) {

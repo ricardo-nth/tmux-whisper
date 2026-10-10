@@ -2334,6 +2334,10 @@ tmux_whisperd_lock_held() {
   [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null
 }
 
+tmux_whisperd_build_failed_stamp() {
+  printf "%s\n" "$(tmux_whisperd_build_root).build-failed"
+}
+
 tmux_whisperd_build_lock() {
   printf "%s\n" "$(tmux_whisperd_build_root).build.lock"
 }
@@ -2379,6 +2383,13 @@ tmux_whisperd_locked_build() {
   fi
   if [[ "$(tmux_whisperd_binary_state "$src")" != "current" ]]; then
     tmux_whisperd_build "$build_root" "$src" || rc=1
+    # Remembered so `warmup --json` reports a failing build instead of
+    # "warming" forever.
+    if (( rc == 0 )); then
+      rm -f "$(tmux_whisperd_build_failed_stamp)"
+    else
+      date +%s >"$(tmux_whisperd_build_failed_stamp)" 2>/dev/null || true
+    fi
   fi
   tmux_whisperd_lock_release "$lock"
   return "$rc"
@@ -2431,7 +2442,7 @@ start_tmux_whisperd_background_refresh() {
   [[ "${DICTATE_DAEMON_BACKGROUND_REFRESH:-1}" == "1" ]] || return 0
   [[ -z "${DICTATE_TMUX_WHISPERD_BIN:-}" ]] || return 0
   nohup "$TMUX_WHISPER_RUNNING_BINARY" warmup --best-effort --restart-stale \
-    >/dev/null 2>&1 </dev/null &
+    >/dev/null 2>&1 </dev/null 8>&- &
 }
 
 tmux_whisperd_meta_path() {
@@ -2541,10 +2552,10 @@ restart_stale_tmux_whisperd() {
     # Older daemons don't report active_requests; they serve one client at a
     # time, so answering a ping at all means they are idle.
     if dictation_pipeline_idle && [[ -z "${RESP_ACTIVE_REQUESTS:-}" || "${RESP_ACTIVE_REQUESTS}" == "0" ]]; then
-      if tmux_whisperd_lock_acquire "$lock" "${DICTATE_DAEMON_LIFECYCLE_WAIT_SECONDS:-20}" fast; then
+      if lifecycle_lock_acquire "$lock" "${DICTATE_DAEMON_LIFECYCLE_WAIT_SECONDS:-30}"; then
         rc=0
         restart_stale_tmux_whisperd_locked "$socket_path" "$binary" "$built" || rc=$?
-        tmux_whisperd_lock_release "$lock"
+        lifecycle_lock_release
         # 2: a take started between the idle check and the lock; keep waiting.
         [[ "$rc" == "2" ]] || return 0
       fi
@@ -2718,6 +2729,52 @@ tmux_whisperd_lifecycle_lock() {
   printf "%s\n" "${1:-}.lifecycle.lock"
 }
 
+# The lifecycle lock is a kernel flock on fd 8 of this (sub)shell: it can't
+# be stolen or go stale, and the kernel releases it when the holder closes
+# fd 8 or dies. Long-lived children started while it's held (the daemon,
+# background refreshes) must not inherit fd 8.
+lifecycle_lock_acquire() {
+  local lockfile="$1" wait_seconds="${2:-20}"
+  [[ "$wait_seconds" =~ ^[0-9]+$ ]] || wait_seconds=20
+  : >>"$lockfile" 2>/dev/null || return 1
+  { exec 8>>"$lockfile"; } 2>/dev/null || return 1
+  if python3 - "$wait_seconds" <<'PYEOF'
+import fcntl, sys, time
+deadline = time.monotonic() + float(sys.argv[1])
+while True:
+    try:
+        fcntl.flock(8, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sys.exit(0)
+    except OSError:
+        if time.monotonic() >= deadline:
+            sys.exit(1)
+        time.sleep(0.05)
+PYEOF
+  then
+    return 0
+  fi
+  exec 8>&-
+  return 1
+}
+
+lifecycle_lock_release() {
+  exec 8>&-
+}
+
+# True while some process holds the lifecycle lock.
+lifecycle_lock_held() {
+  [[ -f "$1" ]] || return 1
+  python3 - "$1" <<'PYEOF'
+import fcntl, sys
+with open(sys.argv[1], "a") as f:
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(0)
+sys.exit(1)
+PYEOF
+}
+
 ensure_swift_parakeet_daemon() {
   local socket_path="${1:-}"
   local binary="" lock rc=0
@@ -2732,14 +2789,14 @@ ensure_swift_parakeet_daemon() {
   [[ -n "$binary" ]] || return 1
 
   lock="$(tmux_whisperd_lifecycle_lock "$socket_path")"
-  if ! tmux_whisperd_lock_acquire "$lock" "${DICTATE_DAEMON_LIFECYCLE_WAIT_SECONDS:-20}" fast; then
+  if ! lifecycle_lock_acquire "$lock" "${DICTATE_DAEMON_LIFECYCLE_WAIT_SECONDS:-30}"; then
     # Another caller is still starting or replacing the daemon.
     log_transcribe_event "swift_parakeet: daemon start/restart in progress elsewhere; not launching another"
     swift_parakeet_ping "$socket_path"
     return $?
   fi
   launch_swift_parakeet_daemon_locked "$socket_path" "$binary" || rc=$?
-  tmux_whisperd_lock_release "$lock"
+  lifecycle_lock_release
   return "$rc"
 }
 
@@ -2747,7 +2804,10 @@ ensure_swift_parakeet_daemon() {
 # lock held.
 launch_swift_parakeet_daemon_locked() {
   local socket_path="$1" binary="$2"
-  local launched_hash="" launched_pid meta tmp_meta attempt
+  local launched_hash="" launched_pid meta tmp_meta waited=0 max_wait
+  max_wait="${DICTATE_DAEMON_START_WAIT_SECONDS:-20}"
+  [[ "$max_wait" =~ ^[0-9]+$ ]] || max_wait=20
+  max_wait=$((max_wait * 10))
 
   # Someone else may have started one while we waited for the lock.
   swift_parakeet_ping "$socket_path" && return 0
@@ -2766,13 +2826,15 @@ launch_swift_parakeet_daemon_locked() {
 
   mkdir -p "$(dirname "$socket_path")" 2>/dev/null || true
   log_transcribe_event "swift_parakeet: starting daemon at $socket_path"
-  nohup "$binary" serve --socket "$socket_path" >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1 </dev/null &
+  nohup "$binary" serve --socket "$socket_path" >>"${TRANSCRIBE_LOG:-/dev/null}" 2>&1 </dev/null 8>&- &
   launched_pid=$!
   if [[ -z "${DICTATE_TMUX_WHISPERD_BIN:-}" && "$(tmux_whisperd_binary_state)" != "current" ]]; then
     start_tmux_whisperd_background_refresh
   fi
 
-  for attempt in {1..40}; do
+  # Wait for as long as the daemon is alive and starting, holding the lock:
+  # releasing it early would let another caller launch a second one.
+  while :; do
     if swift_parakeet_ping "$socket_path"; then
       # Record which build is serving this socket so upgrades can replace
       # it, but only once our daemon is the one answering (daemons without
@@ -2788,9 +2850,20 @@ launch_swift_parakeet_daemon_locked() {
     fi
     # Exited (e.g. it found another daemon serving): stop waiting.
     kill -0 "$launched_pid" 2>/dev/null || { swift_parakeet_ping "$socket_path"; return $?; }
+    (( waited >= max_wait )) && break
     sleep 0.1
+    waited=$((waited + 1))
   done
 
+  # Never answered: stop it before the lock is released, so it can't come
+  # up later beside a daemon someone else starts (SIGTERM releases its
+  # socket, if it got that far).
+  log_transcribe_event "swift_parakeet: daemon $launched_pid did not answer within $((max_wait / 10))s; stopping it"
+  kill -TERM "$launched_pid" 2>/dev/null || true
+  for _ in {1..20}; do
+    kill -0 "$launched_pid" 2>/dev/null || break
+    sleep 0.1
+  done
   return 1
 }
 
@@ -3294,7 +3367,7 @@ PYEOF
 #   unavailable  it can't be used (no model, no binary, start or load failed)
 # Never builds inline: a missing daemon is built in the background.
 warmup_json() {
-  local model_path model_version socket_path response shell_vars src lock
+  local model_path model_version socket_path response shell_vars src lock failed_at
   RESP_GENERATION="" RESP_PID="" RESP_VERSION="" RESP_MODEL_LOADED_PATH="" RESP_MODEL_LOADED_VERSION=""
   WARMUP_JSON_MODEL_PATH="" WARMUP_JSON_MODEL_VERSION="" WARMUP_JSON_DURATION_MS=""
   socket_path="$(resolve_swift_parakeet_socket_path)"
@@ -3326,14 +3399,23 @@ warmup_json() {
           warmup_json_emit unavailable daemon_not_built "tmux-whisperd is not built yet (run: tmux-whisper warmup)"
           return 0
         fi
-        tmux_whisperd_lock_held "$(tmux_whisperd_build_lock)" || start_tmux_whisperd_background_refresh
+        if ! tmux_whisperd_lock_held "$(tmux_whisperd_build_lock)"; then
+          # A build that failed in the last 10 minutes is reported, not
+          # retried on every call.
+          failed_at="$(cat "$(tmux_whisperd_build_failed_stamp)" 2>/dev/null || true)"
+          if [[ "$failed_at" =~ ^[0-9]+$ ]] && (( $(date +%s) - failed_at < 600 )); then
+            warmup_json_emit unavailable build_failed "building tmux-whisperd failed; retrying in a few minutes (see ${TRANSCRIBE_LOG:-the transcribe log})"
+            return 0
+          fi
+          start_tmux_whisperd_background_refresh
+        fi
         warmup_json_emit warming building "building tmux-whisperd (first run takes a few minutes)"
         return 0
       fi
     fi
     if ! ensure_swift_parakeet_daemon "$socket_path"; then
       lock="$(tmux_whisperd_lifecycle_lock "$socket_path")"
-      if tmux_whisperd_lock_held "$lock"; then
+      if lifecycle_lock_held "$lock"; then
         warmup_json_emit warming starting "the daemon is being started or replaced"
       else
         warmup_json_emit unavailable daemon_unavailable "could not start tmux-whisperd (see ${TRANSCRIBE_LOG:-the transcribe log})"
@@ -3358,10 +3440,19 @@ warmup_json() {
     warmup_json_emit unavailable daemon_unavailable "the daemon stopped answering after warmup"
     return 0
   fi
-  if [[ -n "${RESP_MODEL_LOADED_PATH:-}" && "$RESP_MODEL_LOADED_PATH" != "$model_path" ]]; then
-    # Another client loaded a different model since; ours isn't warm now.
-    warmup_json_emit warming model_changed "the daemon now has $RESP_MODEL_LOADED_PATH loaded"
-    return 0
+  # Daemons that report a generation say what they hold: it must be this
+  # model and version (older daemons don't say; the warmup reply stands).
+  if [[ -n "${RESP_GENERATION:-}" || -n "${RESP_MODEL_LOADED_PATH:-}" ]]; then
+    if [[ -z "${RESP_MODEL_LOADED_PATH:-}" ]]; then
+      # Replaced between the warmup and now: the new daemon is cold.
+      warmup_json_emit warming cold "the daemon was replaced and has no model loaded yet"
+      return 0
+    fi
+    if [[ "$RESP_MODEL_LOADED_PATH" != "$model_path" || "${RESP_MODEL_LOADED_VERSION:-}" != "$model_version" ]]; then
+      # Another client loaded a different model since; ours isn't warm now.
+      warmup_json_emit warming model_changed "the daemon now has $RESP_MODEL_LOADED_PATH (${RESP_MODEL_LOADED_VERSION:-?}) loaded"
+      return 0
+    fi
   fi
   warmup_json_emit ready "" "warmed"
 }

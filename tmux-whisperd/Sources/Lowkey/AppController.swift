@@ -325,6 +325,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
     let original = NSWorkspace.shared.frontmostApplication
     let marker = TakeMarker.create(directory: markerDirectory, takeId: UUID().uuidString.lowercased(), phase: .recording)
+    if marker == nil {
+      // Recording matters more: without the marker an upgrade could restart
+      // the daemon mid-take, which costs a slower (CLI) take, not the take.
+      Log.write("markers: could not publish a take marker in \(markerDirectory); recording anyway")
+    }
     do {
       let engineMs = try recorder.start()
       let startedAt = monotonicMs()
