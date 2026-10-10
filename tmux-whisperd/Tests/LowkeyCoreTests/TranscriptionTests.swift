@@ -376,6 +376,26 @@ struct PendingRecordsTests {
   }
 }
 
+struct RecoveredTakesTests {
+  @Test func savesListsAndReloadsTakes() throws {
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory() + "lk-recovered-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = RecoveredTakes(directory: dir)
+    let samples: [Float] = [0, 0.5, -0.5, 0.25]
+    let now = Date()
+    let second = try store.save(samples: samples, takeId: "b-2", at: now)
+    let first = try store.save(samples: [0.1], takeId: "a-1", at: now.addingTimeInterval(-5))
+    #expect(store.all() == [first, second])
+    #expect(RecoveredTakes.takeId(of: second) == "b-2")
+    let attrs = try FileManager.default.attributesOfItem(atPath: second.path)
+    #expect((attrs[.posixPermissions] as? Int) == 0o600)
+    // Round-trips through the same 16-bit quantization the pipeline uses.
+    #expect(WAVEncoder.pcm16(try RecoveredTakes.samples(at: second)) == WAVEncoder.pcm16(samples))
+    store.remove(first)
+    #expect(store.all() == [second])
+  }
+}
+
 struct TakeRecordTests {
   @Test func encodesTheInlineRecordPayload() throws {
     var record = TakeRecord(takeId: "t1", status: "ok", delivered: true)
