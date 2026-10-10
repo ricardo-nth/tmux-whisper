@@ -361,7 +361,7 @@ tmux-whisper bench-matrix 1
 
 ## Lowkey (experimental native app)
 
-Lowkey is the native macOS menu-bar front-end for inline dictation. It runs beside the CLI/Raycast setup, so you can compare the two. It handles the hotkey, microphone, sounds and paste natively, and uses the installed `tmux-whisper` for transcription and cleanup, so the text matches inline dictation exactly.
+Lowkey is the native macOS menu-bar front-end for inline dictation. It runs beside the CLI/Raycast setup, so you can compare the two. It handles the hotkey, microphone, sounds and paste natively. It sends each take straight to the Parakeet daemon (`tmux-whisperd`) and cleans the text up in Swift with the same rules as the CLI (vocab, modes, British spelling, tail rescue), so the text matches inline dictation exactly without starting the CLI. History, bench and usage are still written by the installed `tmux-whisper` (`inline record`), in the background after the text is pasted. Takes fall back to `tmux-whisper inline process` when LLM post-processing or silence trim is on, the CLI runs in a non-C locale, or the daemon can't be reached.
 
 ```bash
 tools/make-signing-identity.sh   # once: local code-signing identity (keeps permissions across rebuilds)
@@ -374,9 +374,11 @@ On first launch, allow Microphone, and Accessibility (for pasting) in System Set
 ```toml
 [app]
 hotkey = "ctrl+option+space"   # e.g. "cmd+shift+d", "f13"
+native_pipeline = true         # false: always use `tmux-whisper inline process`
+verify_pipeline = true         # also run the CLI cleanup in the background and log any difference
 ```
 
-Then choose **Reload Settings** from the menu. Timings and errors are in `~/Library/Logs/Lowkey/app.log`.
+Then choose **Reload Settings** from the menu. Timings, errors and `verify:` results are in `~/Library/Logs/Lowkey/app.log`.
 
 ## Repo Layout
 

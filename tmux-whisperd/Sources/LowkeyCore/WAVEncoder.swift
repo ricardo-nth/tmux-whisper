@@ -4,11 +4,23 @@ import Foundation
 /// CLI's transcription pipeline expects from its own ffmpeg capture.
 public enum WAVEncoder {
   public static func encode(samples: [Float], sampleRate: Int = 16_000) -> Data {
+    encode(pcm: pcm16(samples), sampleRate: sampleRate)
+  }
+
+  /// Float32 (-1...1) → 16-bit PCM, as written to the WAV.
+  public static func pcm16(_ samples: [Float]) -> [Int16] {
+    samples.map { sample in
+      let clamped = max(-1, min(1, sample.isFinite ? sample : 0))
+      return Int16((clamped * 32767).rounded())
+    }
+  }
+
+  public static func encode(pcm: [Int16], sampleRate: Int = 16_000) -> Data {
     let channels = 1
     let bitsPerSample = 16
     let byteRate = sampleRate * channels * bitsPerSample / 8
     let blockAlign = channels * bitsPerSample / 8
-    let dataSize = samples.count * blockAlign
+    let dataSize = pcm.count * blockAlign
 
     var data = Data(capacity: 44 + dataSize)
     data.append(contentsOf: Array("RIFF".utf8))
@@ -25,14 +37,10 @@ public enum WAVEncoder {
     data.append(contentsOf: Array("data".utf8))
     data.appendLE(UInt32(dataSize))
 
-    var pcm = [Int16](repeating: 0, count: samples.count)
-    for (index, sample) in samples.enumerated() {
-      let clamped = max(-1, min(1, sample.isFinite ? sample : 0))
-      pcm[index] = Int16((clamped * 32767).rounded())
-    }
     pcm.withUnsafeBufferPointer { buffer in
       // WAV is little-endian, like every Apple Silicon/Intel Mac.
-      data.append(UnsafeBufferPointer(start: UnsafeRawPointer(buffer.baseAddress!)
+      guard let base = buffer.baseAddress else { return }
+      data.append(UnsafeBufferPointer(start: UnsafeRawPointer(base)
         .assumingMemoryBound(to: UInt8.self), count: buffer.count * 2))
     }
     return data

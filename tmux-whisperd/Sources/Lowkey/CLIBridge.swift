@@ -62,7 +62,31 @@ struct CLIBridge {
     }
   }
 
-  private func run(_ arguments: [String], timeout: Double) throws -> Data {
+  /// Persists a native take (history, bench, usage) with the CLI's writers.
+  func record(_ take: TakeRecord) throws -> RecordResult {
+    let data = try run(["inline", "record", "--json"], timeout: 30, input: try JSONEncoder().encode(take))
+    do {
+      return try JSONDecoder().decode(RecordResult.self, from: data)
+    } catch {
+      throw BridgeError.badOutput(String(decoding: data.prefix(200), as: UTF8.self))
+    }
+  }
+
+  /// Text-only cleanup of a raw transcript, for the shadow compare.
+  func cleanup(transcript: String, app: String?) throws -> CleanupResult {
+    var args = ["inline", "cleanup", "--json"]
+    if let app, !app.isEmpty {
+      args += ["--app", app]
+    }
+    let data = try run(args, timeout: 30, input: Data(transcript.utf8))
+    do {
+      return try JSONDecoder().decode(CleanupResult.self, from: data)
+    } catch {
+      throw BridgeError.badOutput(String(decoding: data.prefix(200), as: UTF8.self))
+    }
+  }
+
+  private func run(_ arguments: [String], timeout: Double, input: Data? = nil) throws -> Data {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
     process.arguments = [binary.path] + arguments
@@ -85,7 +109,19 @@ struct CLIBridge {
     let errHandle = try FileHandle(forWritingTo: errURL)
     process.standardOutput = outHandle
     process.standardError = errHandle
-    process.standardInput = FileHandle.nullDevice
+    var inURL: URL?
+    if let input {
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent("lowkey-cli-\(UUID().uuidString).in")
+      guard FileManager.default.createFile(atPath: url.path, contents: input, attributes: [.posixPermissions: 0o600]),
+            let handle = FileHandle(forReadingAtPath: url.path) else {
+        throw BridgeError.failed("cannot stage input for tmux-whisper")
+      }
+      inURL = url
+      process.standardInput = handle
+    } else {
+      process.standardInput = FileHandle.nullDevice
+    }
+    defer { if let inURL { try? FileManager.default.removeItem(at: inURL) } }
 
     let finished = DispatchSemaphore(value: 0)
     process.terminationHandler = { _ in finished.signal() }

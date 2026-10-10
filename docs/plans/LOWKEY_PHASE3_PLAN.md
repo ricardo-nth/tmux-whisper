@@ -113,6 +113,18 @@ These must stay byte-compatible with the CLI's files and locking:
   - Compare against the same settings snapshot the native run used; fall back when `cleanup` is absent (older CLI) or `requiresCLI`.
 - Fallback to the phase 2 `inline process` path for LLM post-processing, silence trim, or any native error.
 
+**3b status (2026-10-09): implemented, in rollout.**
+- `LowkeyCore/Transcription/`: `DaemonClient` (blocking Unix-socket client, deadline-based timeouts, one reconnect on an unreachable socket), `AudioPrep` (tail pad, 1 s minimum, ffprobe-style duration, tail window), `TranscriptMerge` (port of `merge_transcript_chunks`, Python's universal newlines and Unicode `strip()`), `NativeTranscriber`, `TranscriptionSettings`, `TakeRecord`, `ProcessingMarker`.
+- Request timeout: 30 s + 2 × audio length, capped by `DICTATE_SWIFT_PARAKEET_TIMEOUT_SECONDS`. A timeout fails the take (the CLI would wait on the same daemon again); an unreachable daemon or daemon error falls back to `inline process`, which also starts the daemon.
+- `[debug] keep_logs` is supported natively: the padded WAV is handed to `inline record`, which writes the same `inline-debug` archive (without record/transcribe logs, which the native path has none of).
+- Proof: unit/differential tests plus the opt-in live test (`LOWKEY_LIVE_PARITY_DIR`, see `Tests/LowkeyCoreTests/LiveParityTests.swift`), 12/12 byte-identical against the real daemon and the user's config.
+- Settings freshness: each recording start fetches `app-config` in the background and the take uses that snapshot (autosend, paste target, send mode, cleanup, transcription, the native switch), so CLI setting changes apply without Reload Settings, as they did when `inline process` read them per take. If the fetch fails or is not ready within 5 s of stop, the take uses the CLI path.
+- Durable persistence: each take's record is spooled to `~/Library/Application Support/Lowkey/pending/` before `inline record` runs and removed once the CLI has taken it. Quit waits up to 20 s for the take in progress and the queue; anything left (quit timeout, crash, failing CLI) replays at the next launch, and `inline record` keeps a ledger of take IDs (`.cache/recorded-takes`) so a replay never counts usage twice. Partial acknowledgements (usage or history not saved) are logged, not retried.
+- Bench: appends and trims share one lock (wait up to 3 s). Residual: a writer that still can't get the lock appends unlocked, and that row can be lost if a stuck lock holder later finishes a trim. Trims hold the lock for milliseconds, so this needs a writer stuck for seconds.
+- Accepted small gaps: when the per-take settings fetch fails, the CLI fallback gets an app name chosen with the cached paste target; a vocab/mode file edited between a take and its verify run can log a false `verify:` mismatch.
+- Timing fields keep their names but measure the native path: `transcribe_ms` covers WAV prep and socket requests, `clean_ms` the whole TextPipeline (the CLI's covered only the first pass), `paste_ms`/`total_ms` include real delivery.
+- Still to measure in real use before v0.10.0: stop → delivered overhead beyond ASR and configured delays (< 100 ms median over 20 dictations) and ≥ 2 days of zero `verify:` mismatches.
+
 **3c — Model in the app and socket ownership (only after 3b is stable)**
 - In-process ASREngine shared with a UnixSocketServer the app hosts.
 - Takeover:

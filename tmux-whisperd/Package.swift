@@ -63,7 +63,9 @@ let package = Package(
     ),
     .testTarget(
       name: "LowkeyCoreTests",
-      dependencies: ["LowkeyCore"],
+      // TmuxWhisperKit only to check DaemonClient against the real server
+      // and protocol types.
+      dependencies: ["LowkeyCore", "TmuxWhisperKit"],
       path: "Tests/LowkeyCoreTests"
     ),
   ]

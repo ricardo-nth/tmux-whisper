@@ -107,6 +107,7 @@ struct CleanupParityTests {
       case "british": actual = TextCleanup.normalizeBritishSpelling(item.input, enabled: arg0)
       case "paragraphs": actual = TextCleanup.autoParagraphs(item.input, mode: arg0, minWords: arg1)
       case "vocab": actual = VocabCorrector(configDir: Self.configPath(arg1), mode: arg0).apply(item.input)
+      case "merge": actual = TranscriptMerge.mergeTailRescue(full: item.input, tail: arg0)
       default:
         Issue.record("\(item.id): unknown stage \(item.fn)")
         continue

@@ -189,6 +189,8 @@ out = {
   "CFG_UI_KEYBIND_TMUX": str(get("ui.keybinds.tmux", "F12")),
   "CFG_UI_KEYBIND_INLINE": str(get("ui.keybinds.inline", "F11")),
   "CFG_APP_HOTKEY": str(get("app.hotkey", "ctrl+option+space")),
+  "CFG_APP_NATIVE_PIPELINE": "1" if b(get("app.native_pipeline", True), True) else "0",
+  "CFG_APP_VERIFY_PIPELINE": "1" if b(get("app.verify_pipeline", True), True) else "0",
   "CFG_CLEAN_REPEATS_LEVEL": str(get("clean.repeats_level", "1")),
 }
 
