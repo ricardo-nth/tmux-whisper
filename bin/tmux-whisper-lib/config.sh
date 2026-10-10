@@ -110,42 +110,104 @@ config_ensure() {
 config_load() {
   need python3
   config_ensure
-  eval "$(
+  local cfg_shell=""
+  # A loader that fails or prints nothing must not leave the defaults in
+  # place silently (autosend defaults to on): fall back to safe settings.
+  if cfg_shell="$(
     python3 - "$DICTATE_CONFIG_FILE" <<'PYEOF'
-import os, shlex, sys, tomllib
+import fcntl, os, shlex, sys, time, tomllib
 
 path = os.path.expanduser(sys.argv[1])
-# Last config that parsed, kept beside it. A half-saved or mistyped file
-# falls back to it instead of to the defaults (which would, for example,
-# turn autosend back on mid-edit).
+# Last config that loaded and validated, kept beside it. A half-saved,
+# empty or mistyped file falls back to it instead of to the defaults
+# (which would, for example, turn autosend back on mid-edit).
 last_good = os.path.join(os.path.dirname(path), "." + os.path.basename(path) + ".last-good")
-parse_error = ""
-config_source = "file"
-try:
-  with open(path, "rb") as f:
+BOOL_KEYS = (
+  "audio.silence_trim", "audio.sounds.enabled", "audio.sounds.start_enabled", "audio.sounds.stop_enabled",
+  "audio.sounds.process_enabled", "audio.sounds.error_enabled", "audio.sounds.cancel_enabled",
+  "postprocess.enabled", "inline.autosend", "inline.process_sound", "tmux.autosend", "tmux.postprocess",
+  "tmux.process_sound", "debug.keep_logs", "integrations.swiftbar.enabled", "app.native_pipeline",
+  "app.verify_pipeline",
+)
+
+class InvalidConfig(ValueError):
+  pass
+
+def lookup(data, dotted):
+  cur = data
+  for part in dotted.split("."):
+    if not isinstance(cur, dict) or part not in cur:
+      return None
+    cur = cur[part]
+  return cur
+
+def read_config(p):
+  with open(p, "rb") as f:
     raw = f.read()
-  cfg = tomllib.loads(raw.decode("utf-8")) or {}
+  text = raw.decode("utf-8")
+  if not text.strip():
+    raise InvalidConfig("the file is empty")
+  data = tomllib.loads(text) or {}
+  for key in BOOL_KEYS:
+    value = lookup(data, key)
+    if value is not None and not isinstance(value, bool):
+      raise InvalidConfig(f"{key} must be true or false, not {value!r}")
+  return raw, data
+
+def publish(raw):
+  # Skip quickly when the copy is current; otherwise publish under a lock,
+  # and only if config.toml still holds what was read, so a slow reader
+  # never replaces a newer copy with older settings.
   try:
     with open(last_good, "rb") as f:
-      unchanged = f.read() == raw
+      if f.read() == raw:
+        return
   except OSError:
-    unchanged = False
-  if not unchanged:
+    pass
+  try:
+    lock_fd = os.open(last_good + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+  except OSError:
+    return
+  try:
+    deadline = time.monotonic() + 1.0
+    while True:
+      try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        break
+      except BlockingIOError:
+        if time.monotonic() >= deadline:
+          return
+        time.sleep(0.02)
+    with open(path, "rb") as f:
+      if f.read() != raw:
+        return
+    tmp = f"{last_good}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-      tmp = f"{last_good}.{os.getpid()}.tmp"
-      fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
       with os.fdopen(fd, "wb") as f:
         f.write(raw)
       os.replace(tmp, last_good)
     except OSError:
-      pass
-except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
-  parse_error = str(exc).replace("\n", " ")
+      try:
+        os.unlink(tmp)
+      except OSError:
+        pass
+  except OSError:
+    pass
+  finally:
+    os.close(lock_fd)
+
+parse_error = ""
+config_source = "file"
+try:
+  raw, cfg = read_config(path)
+  publish(raw)
+except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, InvalidConfig) as exc:
+  parse_error = str(exc).replace("\n", " ") or type(exc).__name__
   try:
-    with open(last_good, "rb") as f:
-      cfg = tomllib.loads(f.read().decode("utf-8")) or {}
+    _, cfg = read_config(last_good)
     config_source = "last_good"
-  except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+  except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, InvalidConfig):
     cfg = {}
     config_source = "defaults"
 
@@ -163,6 +225,7 @@ def b(v, default=False):
   return bool(v)
 
 out = {
+  "CFG_CONFIG_LOADED": "1",
   "CFG_CONFIG_PARSE_ERROR": parse_error,
   "CFG_CONFIG_SOURCE": config_source,
   "CFG_META_CONFIG_VERSION": str(get("meta.config_version", "")) if isinstance(get("meta.config_version", ""), int) else "",
@@ -250,10 +313,23 @@ if isinstance(budget_profiles, dict):
   out["CFG_POSTPROCESS_BUDGET_PROFILE_MAX_TOKENS_OVERRIDES"] = ";".join(sorted(budget_max_parts))
   out["CFG_POSTPROCESS_BUDGET_PROFILE_CHUNK_WORDS_OVERRIDES"] = ";".join(sorted(budget_chunk_parts))
 
+# No trustworthy settings (invalid file and no valid copy): never send.
+if parse_error and config_source == "defaults":
+  out["CFG_INLINE_AUTOSEND"] = "0"
+  out["CFG_TMUX_AUTOSEND"] = "0"
+
 for k, v in out.items():
   print(f"{k}={shlex.quote(v)}")
 PYEOF
-  )"
+  )" && [[ "$cfg_shell" == *"CFG_CONFIG_LOADED=1"* ]]; then
+    eval "$cfg_shell"
+  else
+    printf 'tmux-whisper: could not load %s; using safe defaults (no autosend)\n' "$DICTATE_CONFIG_FILE" >&2
+    CFG_CONFIG_PARSE_ERROR="the config loader failed"
+    CFG_CONFIG_SOURCE="defaults"
+    CFG_INLINE_AUTOSEND="0"
+    CFG_TMUX_AUTOSEND="0"
+  fi
 }
 
 config_schema_status() {

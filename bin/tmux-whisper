@@ -1251,9 +1251,19 @@ for s in ordered_sections:
     parts.append(f"{k} = {fmt(tables[s][k])}")
   parts.append("")
 
-os.makedirs(os.path.dirname(path), exist_ok=True)
-with open(path, "w", encoding="utf-8") as f:
+# Write atomically next to the real file (keeps a symlinked config intact),
+# so no reader ever sees a half-written or empty config.
+target = os.path.realpath(path)
+os.makedirs(os.path.dirname(target), exist_ok=True)
+tmp = f"{target}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
   f.write("\n".join(parts))
+try:
+  os.chmod(tmp, os.stat(target).st_mode & 0o7777)
+except OSError:
+  pass
+os.replace(tmp, target)
 PYEOF
   )"
   rc=$?
@@ -1929,8 +1939,16 @@ if changed and not dry_run:
     backup_path = f"{path}.bak.{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     with open(path, "rb") as src, open(backup_path, "wb") as dst:
       dst.write(src.read())
-  with open(path, "w", encoding="utf-8") as f:
+  target = os.path.realpath(path)
+  tmp = f"{target}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
+  fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+  with os.fdopen(fd, "w", encoding="utf-8") as f:
     f.write(render_toml(merged))
+  try:
+    os.chmod(tmp, os.stat(target).st_mode & 0o7777)
+  except OSError:
+    pass
+  os.replace(tmp, target)
 elif not changed:
   action = "noop"
 

@@ -13,3 +13,7 @@ tmux-whisperd/.build/
 # Editor/OS
 .vscode/
 .idea/
+
+# tmux-whisper keeps a last valid config copy beside config.toml
+.config.toml.last-good
+.config.toml.last-good.lock

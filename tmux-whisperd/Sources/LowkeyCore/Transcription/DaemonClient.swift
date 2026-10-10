@@ -106,8 +106,8 @@ public struct DaemonClient: Sendable {
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
     // Set before connecting: once the daemon has answered and closed (fast
     // replies such as errors), macOS rejects setsockopt with EINVAL.
-    try setTimeout(fd, SO_SNDTIMEO, seconds: timeout)
-    try setTimeout(fd, SO_RCVTIMEO, seconds: timeout)
+    try setTimeout(fd, SO_SNDTIMEO, seconds: timeout, tolerateClosed: false)
+    try setTimeout(fd, SO_RCVTIMEO, seconds: timeout, tolerateClosed: false)
 
     var address = sockaddr_un()
     address.sun_family = sa_family_t(AF_UNIX)
@@ -171,14 +171,14 @@ public struct DaemonClient: Sendable {
     }
   }
 
-  /// Shortens a socket timeout to the time left. EINVAL means the peer has
-  /// already closed; its reply (if any) is buffered and recv returns at once,
-  /// so the earlier, longer timeout is fine.
-  private func setTimeout(_ fd: Int32, _ option: Int32, seconds: TimeInterval) throws {
+  /// Sets a socket timeout. For later updates (shortening it to the time
+  /// left), EINVAL means the peer has already closed: its reply is buffered
+  /// and recv returns at once, so the initial timeout still bounds the wait.
+  private func setTimeout(_ fd: Int32, _ option: Int32, seconds: TimeInterval, tolerateClosed: Bool = true) throws {
     var value = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - floor(seconds)) * 1_000_000))
     if value.tv_sec == 0 && value.tv_usec == 0 { value.tv_usec = 1000 }
     guard setsockopt(fd, SOL_SOCKET, option, &value, socklen_t(MemoryLayout<timeval>.size)) == 0 else {
-      if errno == EINVAL { return }
+      if errno == EINVAL && tolerateClosed { return }
       throw ClientError.protocolError("setsockopt: \(String(cString: strerror(errno)))")
     }
   }
