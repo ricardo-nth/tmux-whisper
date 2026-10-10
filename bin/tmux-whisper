@@ -1257,13 +1257,20 @@ target = os.path.realpath(path)
 os.makedirs(os.path.dirname(target), exist_ok=True)
 tmp = f"{target}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
 fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(fd, "w", encoding="utf-8") as f:
-  f.write("\n".join(parts))
 try:
-  os.chmod(tmp, os.stat(target).st_mode & 0o7777)
-except OSError:
-  pass
-os.replace(tmp, target)
+  with os.fdopen(fd, "w", encoding="utf-8") as f:
+    f.write("\n".join(parts))
+  try:
+    os.chmod(tmp, os.stat(target).st_mode & 0o7777)
+  except OSError:
+    pass
+  os.replace(tmp, target)
+except BaseException:
+  try:
+    os.unlink(tmp)
+  except OSError:
+    pass
+  raise
 PYEOF
   )"
   rc=$?
@@ -1942,13 +1949,20 @@ if changed and not dry_run:
   target = os.path.realpath(path)
   tmp = f"{target}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
   fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-  with os.fdopen(fd, "w", encoding="utf-8") as f:
-    f.write(render_toml(merged))
   try:
-    os.chmod(tmp, os.stat(target).st_mode & 0o7777)
-  except OSError:
-    pass
-  os.replace(tmp, target)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+      f.write(render_toml(merged))
+    try:
+      os.chmod(tmp, os.stat(target).st_mode & 0o7777)
+    except OSError:
+      pass
+    os.replace(tmp, target)
+  except BaseException:
+    try:
+      os.unlink(tmp)
+    except OSError:
+      pass
+    raise
 elif not changed:
   action = "noop"
 
