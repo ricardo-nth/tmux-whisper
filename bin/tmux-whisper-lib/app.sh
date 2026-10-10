@@ -341,7 +341,8 @@ PYEOF
 # Persistence for Lowkey's native path, run after delivery: the same bench
 # row, usage ledger entry and history file `inline process` writes, from the
 # CLI's own writers so formats and locking stay single-sourced. Usage is only
-# counted for a delivered take. Payload: take_id, status, delivered,
+# counted for a delivered take; status "recovered" (a take saved at quit and
+# transcribed without pasting) gets history but no usage. Payload: take_id, status, delivered,
 # raw_text, text, mode, app, record_ms, transcribe_ms, clean_ms, paste_ms,
 # total_ms, startup_ms, started_at_ms, delivered_at_ms, capture_wav_ms,
 # capture_wav_bytes, startup_source, and wav_path (the padded WAV, only with
@@ -431,7 +432,7 @@ print(json.dumps({"ok": True, "take_id": os.environ["APPREC_TAKE_ID"], "duplicat
     "${REC_STARTUP_MS:-0}" "0" "0" "0" "$REC_STARTUP_SOURCE"
 
   case "$REC_STATUS" in
-    ok|no_speech) signal_just_processed ;;
+    ok|no_speech|recovered) signal_just_processed ;;
     *)
       touch "$ERROR_FLAG" 2>/dev/null || true
       swiftbar_refresh
@@ -454,7 +455,8 @@ print(json.dumps({"ok": True, "take_id": os.environ["APPREC_TAKE_ID"], "duplicat
       "$record_ms" "$transcribe_ms" "$clean_ms" "0" "$paste_ms" "$total_ms" "$REC_TAKE_ID"
   fi
 
-  if [[ "$REC_STATUS" == "ok" && "$REC_DELIVERED" == "1" ]]; then
+  # A take recovered at quit was never pasted: history, but no usage.
+  if [[ ( "$REC_STATUS" == "ok" && "$REC_DELIVERED" == "1" ) || "$REC_STATUS" == "recovered" ]]; then
     local history_app="${REC_APP:-current}"
     save_history "$REC_RAW" "$REC_TEXT" "$mode" "$history_app" "$record_ms" "$transcribe_ms" "$clean_ms" "0" "$paste_ms" "$total_ms" \
       && history_saved="1"

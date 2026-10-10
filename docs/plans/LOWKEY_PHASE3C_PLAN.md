@@ -29,7 +29,7 @@ Revisit in-process ownership only if **warm, uncontended** measurements (item 4)
 
 ### 2b. Quit and rebuild never discard a recording (done early, 2026-10-10)
 Observed 2026-10-10: `tools/build-lowkey-app.sh` quit Lowkey mid-recording and the take (~57 s) was lost. Quit only drained processing and persistence, not an in-progress capture.
-- `applicationShouldTerminate` with a take recording: stop the take, process, deliver and persist it, then quit, within the existing deadline. Spooled persistence covers the tail.
+- `applicationShouldTerminate` with a take recording: save its audio to `Application Support/Lowkey/recovered/` first, then transcribe it into history (status `recovered`, no usage) and onto the clipboard, never pasting or sending (the frontmost app at quit time is not the intended target). Leftovers are transcribed into history at the next launch.
 - `tools/build-lowkey-app.sh` waits for the app to exit (up to 60 s) instead of replacing it after 0.5 s, then relaunches it. Once item 2's markers exist, it can also wait before asking the app to quit.
 
 ### 3. Truthful readiness and bounded supervision

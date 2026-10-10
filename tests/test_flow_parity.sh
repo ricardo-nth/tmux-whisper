@@ -1801,6 +1801,20 @@ PYEOF
   ls "$DICTATE_CONFIG_DIR/history/inline-debug/"*t-keep.meta >/dev/null 2>&1 || fail "inline_record_keep_logs_archive_meta"
   pass "inline_record_keep_logs_archive_meta"
 
+  # A take recovered at quit (never pasted): history, no usage.
+  local usage_before
+  usage_before="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["delivered_dictations"]["count"])' "$DICTATE_CONFIG_DIR/usage.json")"
+  printf '%s' '{"take_id":"t-recovered","status":"recovered","delivered":false,"raw_text":"saved at quit","text":"Saved at quit","mode":"code"}' \
+    | "$DICTATE_BIN" inline record --json >"$CASE_DIR/record-recovered.json"
+  assert_file_contains "inline_record_recovered_no_usage" "$CASE_DIR/record-recovered.json" '"usage_recorded": false'
+  assert_file_contains "inline_record_recovered_history" "$CASE_DIR/record-recovered.json" '"history_saved": true'
+  [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["delivered_dictations"]["count"])' "$DICTATE_CONFIG_DIR/usage.json")" == "$usage_before" ]] \
+    || fail "inline_record_recovered_usage_unchanged"
+  pass "inline_record_recovered_usage_unchanged"
+  grep -rq '"processed": "Saved at quit"' "$DICTATE_CONFIG_DIR/history/" || fail "inline_record_recovered_history_file"
+  pass "inline_record_recovered_history_file"
+  assert_contains "inline_record_recovered_bench" "$(tail -n 1 "$DICTATE_CONFIG_DIR/history/bench.tsv")" $'\trecovered\t'
+
   # Concurrent writers on a bench at its row limit: every new row survives
   # the trims (appends and trims share one lock).
   local i

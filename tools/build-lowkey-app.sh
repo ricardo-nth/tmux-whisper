@@ -90,7 +90,20 @@ if [[ "$INSTALL" == "1" || "$OUT" != "$HOME/Applications/$APP_NAME.app" ]]; then
     # Quit a running copy so the new build takes over. Lowkey finishes a take
     # in progress (transcribe, paste, record) before it exits, so wait for the
     # process to go rather than replacing the bundle underneath it.
-    running_pid() { pgrep -f "^$OUT/Contents/MacOS/$APP_NAME" | head -n 1; }
+    # Match the running executable by its exact, resolved path (not a regex,
+    # so relative --out paths and special characters can't cause a miss).
+    out_abs="$(cd "$(dirname "$OUT")" && pwd -P)/$(basename "$OUT")"
+    exe="$out_abs/Contents/MacOS/$APP_NAME"
+    running_pid() {
+      local pid command
+      while read -r pid command; do
+        if [[ "$command" == "$exe" || "$command" == "$exe "* ]]; then
+          printf '%s\n' "$pid"
+          return 0
+        fi
+      done < <(ps -axo pid=,command=)
+      return 0
+    }
     if [[ -n "$(running_pid)" ]]; then
       was_running=1
       osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true

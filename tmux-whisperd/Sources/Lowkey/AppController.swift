@@ -50,6 +50,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
   private let hotkeyLine = NSMenuItem(title: "Hotkey: –", action: nil, keyEquivalent: "")
   private let configLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+  private let recoveredLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
   private let cancelItem = NSMenuItem(title: "Cancel Recording", action: #selector(cancelRecording), keyEquivalent: "")
 
   private let recorder = AudioRecorder()
@@ -67,6 +68,8 @@ final class AppController: NSObject, NSApplicationDelegate {
   private let persistQueue = DispatchQueue(label: "lowkey.persist", qos: .utility)
   private let verifyQueue = DispatchQueue(label: "lowkey.verify", qos: .utility)
   private let pending = PendingRecords.standard
+  private let recovered = RecoveredTakes.standard
+  private var recoveredLeftovers = false
   private let settingsQueue = DispatchQueue(label: "lowkey.settings", qos: .userInitiated, attributes: .concurrent)
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -91,17 +94,17 @@ final class AppController: NSObject, NSApplicationDelegate {
     replayPendingRecords(cli: cli)
   }
 
-  /// Quit never discards a dictation: a take still recording is stopped and
-  /// processed (transcribed, pasted, recorded) like a normal stop, then the
-  /// app waits for queued processing and persistence. Records still queued
-  /// after 30 s stay spooled and are replayed at next launch.
+  /// Quit never discards a dictation. A take still recording is saved to
+  /// disk at once, then transcribed into history and onto the clipboard
+  /// (never pasted or sent: the app in front at quit time, e.g. the terminal
+  /// running a rebuild, is not where it was meant to go). Queued takes and
+  /// persistence get up to 30 s; whatever doesn't finish is recovered at the
+  /// next launch (saved audio, spooled records).
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard !quitting else { return .terminateLater }
     quitting = true
     if take != nil {
-      Log.write("quit: finishing the recording in progress before quitting")
-      // Enqueues processing on `work` ahead of the drain below.
-      stopRecording()
+      saveRecordingForQuit()
     }
     let replied = DispatchSemaphore(value: 1)
     let reply = {
@@ -112,10 +115,109 @@ final class AppController: NSObject, NSApplicationDelegate {
       persistQueue.async { reply() }
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
-      Log.write("quit: pending work did not finish within 30s; quitting (spooled takes replay at next launch)")
+      Log.write("quit: pending work did not finish within 30s; quitting (saved audio and spooled takes are recovered at next launch)")
       reply()
     }
     return .terminateLater
+  }
+
+  /// Stops the take in progress for Quit: writes its audio to the recovery
+  /// folder first, then queues a transcription that only copies the text.
+  private func saveRecordingForQuit() {
+    guard let take else { return }
+    let samples = recorder.stop()
+    self.take = nil
+    let takeId = UUID().uuidString.lowercased()
+    guard !samples.isEmpty else { return }
+    do {
+      let url = try recovered.save(samples: samples, takeId: takeId)
+      Log.write("quit: saved the recording in progress (\(samples.count / AudioPrep.sampleRate)s) to \(url.lastPathComponent)")
+      let config = self.config
+      work.async { [weak self] in
+        self?.recover(url: url, samples: samples, takeId: takeId, startedEpochMs: take.startedEpochMs,
+                      startupMs: take.startupMs, app: take.originalApp?.localizedName, config: config, copy: true)
+      }
+    } catch {
+      Log.write("quit: could not save the recording in progress: \(error.localizedDescription)")
+    }
+  }
+
+  /// Transcribes a saved take into history (status "recovered": no usage,
+  /// nothing pasted) and optionally onto the clipboard, then deletes the
+  /// audio. Leaves the audio for the next launch if it can't transcribe.
+  private func recover(url: URL, samples: [Float], takeId: String, startedEpochMs: Int?, startupMs: Int,
+                       app: String?, config: AppConfig?, copy: Bool) {
+    guard let cli, let config, config.nativePipelineBlocker == nil,
+          let transcription = config.transcription, let cleanup = config.cleanup,
+          let modelPath = transcription.modelPath else {
+      Log.write("recover: \(url.lastPathComponent) kept for later (native pipeline unavailable)")
+      return
+    }
+    let client = DaemonClient(socketPath: transcription.socketPath)
+    let timeout = min(transcription.maxTimeout, 30 + 2 * Double(samples.count) / Double(AudioPrep.sampleRate))
+    do {
+      let transcribed = try NativeTranscriber(settings: transcription).transcribe(samples: samples) { wav, flow in
+        try client.transcribe(wav: wav, language: transcription.language, flow: flow, modelPath: modelPath,
+                              modelVersion: transcription.modelVersion, timeout: timeout)
+      }
+      var record = TakeRecord(takeId: takeId, status: "recovered", delivered: false)
+      record.app = app
+      record.model = transcription.modelLabel
+      record.recordMs = samples.count * 1000 / AudioPrep.sampleRate
+      record.startupMs = startupMs
+      record.startedAtMs = startedEpochMs
+      record.captureWavMs = AudioPrep.ffprobeDurationMs(sampleCount: samples.count)
+      record.captureWavBytes = 44 + 2 * samples.count
+      switch TextPipeline(settings: cleanup).process(transcript: transcribed.transcript, app: app) {
+      case .text(let raw, let text, let mode):
+        record.rawText = raw
+        record.text = text
+        record.mode = mode
+        if copy {
+          DispatchQueue.main.sync {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+          }
+        }
+        Log.write("recover: \(url.lastPathComponent) transcribed (\(text.count) chars)" + (copy ? ", copied to the clipboard" : ""))
+      case .noSpeech:
+        record.status = "no_speech"
+        Log.write("recover: \(url.lastPathComponent) had no speech")
+      case .needsCLI:
+        Log.write("recover: \(url.lastPathComponent) kept for later (settings need the CLI)")
+        return
+      }
+      persist(record, cli: cli)
+      recovered.remove(url)
+    } catch {
+      Log.write("recover: \(url.lastPathComponent) kept for later: \(error.localizedDescription)")
+    }
+  }
+
+  /// Takes saved at a previous quit that didn't finish: transcribe them into
+  /// history (no clipboard: it may hold something newer) and say so.
+  private func recoverLeftoverTakes(config: AppConfig) {
+    let leftovers = recovered.all()
+    guard !leftovers.isEmpty else { return }
+    work.async { [weak self] in
+      guard let self else { return }
+      for url in leftovers {
+        guard let samples = try? RecoveredTakes.samples(at: url) else {
+          Log.write("recover: \(url.lastPathComponent) is unreadable; leaving it in place")
+          continue
+        }
+        self.recover(url: url, samples: samples, takeId: RecoveredTakes.takeId(of: url), startedEpochMs: nil,
+                     startupMs: 0, app: nil, config: config, copy: false)
+      }
+      let remaining = self.recovered.all().count
+      let done = leftovers.count - remaining
+      if done > 0 {
+        DispatchQueue.main.async {
+          self.recoveredLine.title = "Recovered \(done) dictation\(done == 1 ? "" : "s") from the last quit (tmux-whisper history)"
+          self.recoveredLine.isHidden = false
+        }
+      }
+    }
   }
 
   // MARK: - Recording
@@ -516,6 +618,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     self.config = config
     sounds.load(from: config)
     showConfigStatus(config)
+    if !recoveredLeftovers {
+      recoveredLeftovers = true
+      recoverLeftoverTakes(config: config)
+    }
     do {
       let spec = try HotkeySpec.parse(config.hotkey)
       try hotkey.register(spec)
@@ -553,10 +659,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     hotkeyLine.isEnabled = false
     configLine.isEnabled = false
     configLine.isHidden = true
+    recoveredLine.isEnabled = false
+    recoveredLine.isHidden = true
     cancelItem.target = self
     menu.addItem(statusLine)
     menu.addItem(hotkeyLine)
     menu.addItem(configLine)
+    menu.addItem(recoveredLine)
     menu.addItem(.separator())
     menu.addItem(cancelItem)
     let reload = NSMenuItem(title: "Reload Settings", action: #selector(reloadSettings), keyEquivalent: "r")
