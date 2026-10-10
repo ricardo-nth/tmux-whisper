@@ -1675,6 +1675,11 @@ PYEOF
   cleanup_stub_daemons
   wait_for_absent "$socket" 60 || rm -f "$socket"
 
+  # A socket dir that doesn't exist yet (fresh install, custom path).
+  out="$(DICTATE_SWIFT_PARAKEET_SOCKET_PATH="$TMP_ROOT/fresh/d.sock" "$DICTATE_BIN" warmup --json)"
+  assert_equals "lifecycle_fresh_socket_dir" "$(json_field "$out" state)" "ready"
+  cleanup_stub_daemons
+
   out="$(DICTATE_TMUX_WHISPERD_BIN="$CASE_DIR/missing-daemon" "$DICTATE_BIN" warmup --json)"
   assert_equals "lifecycle_missing_binary_unavailable" "$(json_field "$out" state)" "unavailable"
   assert_equals "lifecycle_missing_binary_reason" "$(json_field "$out" reason)" "no_daemon_binary"

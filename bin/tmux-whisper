@@ -2736,6 +2736,7 @@ tmux_whisperd_lifecycle_lock() {
 lifecycle_lock_acquire() {
   local lockfile="$1" wait_seconds="${2:-20}"
   [[ "$wait_seconds" =~ ^[0-9]+$ ]] || wait_seconds=20
+  mkdir -p "$(dirname "$lockfile")" 2>/dev/null || return 1
   : >>"$lockfile" 2>/dev/null || return 1
   { exec 8>>"$lockfile"; } 2>/dev/null || return 1
   if python3 - "$wait_seconds" <<'PYEOF'
@@ -2804,10 +2805,9 @@ ensure_swift_parakeet_daemon() {
 # lock held.
 launch_swift_parakeet_daemon_locked() {
   local socket_path="$1" binary="$2"
-  local launched_hash="" launched_pid meta tmp_meta waited=0 max_wait
+  local launched_hash="" launched_pid meta tmp_meta max_wait deadline
   max_wait="${DICTATE_DAEMON_START_WAIT_SECONDS:-20}"
   [[ "$max_wait" =~ ^[0-9]+$ ]] || max_wait=20
-  max_wait=$((max_wait * 10))
 
   # Someone else may have started one while we waited for the lock.
   swift_parakeet_ping "$socket_path" && return 0
@@ -2833,9 +2833,11 @@ launch_swift_parakeet_daemon_locked() {
   fi
 
   # Wait for as long as the daemon is alive and starting, holding the lock:
-  # releasing it early would let another caller launch a second one.
+  # releasing it early would let another caller launch a second one. Short
+  # pings keep the wait bounded by elapsed time.
+  deadline=$((SECONDS + max_wait))
   while :; do
-    if swift_parakeet_ping "$socket_path"; then
+    if DICTATE_SWIFT_PARAKEET_PING_TIMEOUT_SECONDS=1 swift_parakeet_ping "$socket_path"; then
       # Record which build is serving this socket so upgrades can replace
       # it, but only once our daemon is the one answering (daemons without
       # a pid in their ping count as ours while they're alive).
@@ -2850,15 +2852,14 @@ launch_swift_parakeet_daemon_locked() {
     fi
     # Exited (e.g. it found another daemon serving): stop waiting.
     kill -0 "$launched_pid" 2>/dev/null || { swift_parakeet_ping "$socket_path"; return $?; }
-    (( waited >= max_wait )) && break
+    (( SECONDS >= deadline )) && break
     sleep 0.1
-    waited=$((waited + 1))
   done
 
   # Never answered: stop it before the lock is released, so it can't come
   # up later beside a daemon someone else starts (SIGTERM releases its
   # socket, if it got that far).
-  log_transcribe_event "swift_parakeet: daemon $launched_pid did not answer within $((max_wait / 10))s; stopping it"
+  log_transcribe_event "swift_parakeet: daemon $launched_pid did not answer within ${max_wait}s; stopping it"
   kill -TERM "$launched_pid" 2>/dev/null || true
   for _ in {1..20}; do
     kill -0 "$launched_pid" 2>/dev/null || break
