@@ -103,6 +103,25 @@ struct TranscriptionSettingsTests {
     #expect(config.nativePipelineBlocker == "LLM post-processing is on")
   }
 
+  @Test func invalidConfigNeverSendsWithFallbackDefaults() throws {
+    func config(_ status: String) throws -> AppConfig {
+      let json = #"""
+      {"schema_version":1,"cli_version":"0.10.0-dev","hotkey":"ctrl+option+space","sounds":{},
+       "inline":{"autosend":true,"send_mode":"enter","paste_target":"current","process_sound":true,"activate_delay_ms":90,"send_delay_ms":35},
+       "config":STATUS}
+      """#.replacingOccurrences(of: "STATUS", with: status)
+      return try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+    }
+    let valid = try config(#"{"error":null,"source":"file"}"#)
+    #expect(!valid.usingFallbackDefaults && valid.delivery.autosend)
+    let lastGood = try config(#"{"error":"Invalid value (at line 3)","source":"last_good"}"#)
+    #expect(!lastGood.usingFallbackDefaults && lastGood.delivery.autosend)
+    let defaults = try config(#"{"error":"Invalid value (at line 3)","source":"defaults"}"#)
+    #expect(defaults.usingFallbackDefaults)
+    #expect(defaults.delivery.autosend == false)
+    #expect(defaults.delivery.sendMode == "enter" && defaults.delivery.sendDelayMs == 35)
+  }
+
   @Test func olderCLIsKeepTheCLIPath() throws {
     let json = #"""
     {"schema_version":1,"cli_version":"0.9.0","hotkey":"ctrl+option+space","sounds":{},
@@ -275,6 +294,31 @@ struct DaemonClientTests {
                               modelPath: "/m", modelVersion: nil, timeout: 5)
       }
     }
+  }
+
+  /// Fast replies (errors, pings) can arrive and close before the client
+  /// shortens its receive timeout; that must not look like a protocol error.
+  @Test func fastRepliesAreNeverProtocolErrors() async throws {
+    let path = socketPath()
+    let server = UnixSocketServer(socketPath: path, handler: FakeDaemon())
+    try server.start()
+    defer { server.stop() }
+    let client = DaemonClient(socketPath: path)
+    let outcomes = try await offPool { () -> [String] in
+      (0..<200).map { _ in
+        do {
+          _ = try client.transcribe(wav: URL(fileURLWithPath: "/tmp/x.wav"), language: "en", flow: "fail",
+                                    modelPath: "/m", modelVersion: nil, timeout: 5)
+          return "ok"
+        } catch DaemonClient.ClientError.daemon {
+          return "daemon"
+        } catch {
+          return "\(error)"
+        }
+      }
+    }
+    #expect(outcomes.allSatisfy { $0 == "daemon" }, "\(Set(outcomes))")
+    #expect(try await offPool { (0..<200).allSatisfy { _ in client.ping(timeout: 5) != nil } })
   }
 
   @Test func reportsAnUnreachableDaemonAfterOneRetry() {

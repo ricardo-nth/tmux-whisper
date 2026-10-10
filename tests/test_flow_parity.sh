@@ -1828,6 +1828,83 @@ PYEOF
   unset DICTATE_ERROR_FLAG
 }
 
+# A malformed config.toml (e.g. half-saved mid-edit) falls back to the last
+# valid copy, not to the defaults, which would turn autosend back on.
+run_config_last_good_round() {
+  setup_case "config-last-good"
+  # Earlier rounds export inline overrides; this round tests config.toml itself.
+  unset DICTATE_AUTOSEND DICTATE_INLINE_SEND_MODE
+  export DICTATE_TEST_SWIFT_TEXT="config fallback transcript"
+  export DICTATE_TEST_FFPROBE_DURATION_MS=3000
+  printf '%s\n' "app take" >"$CASE_DIR/take.wav"
+  local out
+  printf '[meta]\nconfig_version = 1\n\n[inline]\nautosend = false\nsend_mode = "cmd_enter"\n' >"$DICTATE_CONFIG_FILE"
+
+  out="$("$DICTATE_BIN" app-config --json)"
+  assert_contains "config_valid_status" "$out" '"config": {"error": null, "source": "file"}'
+  assert_contains "config_valid_autosend_off" "$out" '"autosend": false'
+  [[ -f "$(dirname "$DICTATE_CONFIG_FILE")/.config.toml.last-good" ]] || fail "config_last_good_saved"
+  pass "config_last_good_saved"
+
+  printf '[meta]\nconfig_version = 1\n\n[inline]\nautosend = fal' >"$DICTATE_CONFIG_FILE"
+  out="$("$DICTATE_BIN" app-config --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+c = json.load(sys.stdin)
+assert c["config"]["error"] and c["config"]["source"] == "last_good", c["config"]
+assert c["inline"]["autosend"] is False and c["inline"]["send_mode"] == "cmd_enter", c["inline"]
+' || { echo "$out" >&2; fail "config_invalid_uses_last_good"; }
+  pass "config_invalid_uses_last_good"
+
+  out="$("$DICTATE_BIN" inline process "$CASE_DIR/take.wav" --app Safari --json)"
+  assert_contains "config_invalid_inline_process_last_good" "$out" '"autosend": false'
+  out="$("$DICTATE_BIN" doctor 2>&1 || true)"
+  assert_contains "config_invalid_doctor_says_last_good" "$out" "the last valid copy of config.toml"
+
+  # Snapshots that parse but aren't trustworthy are invalid too, and never
+  # replace the copy: an empty file (e.g. mid-write) and a non-boolean switch.
+  local copy
+  copy="$(dirname "$DICTATE_CONFIG_FILE")/.config.toml.last-good"
+  : >"$DICTATE_CONFIG_FILE"
+  out="$("$DICTATE_BIN" app-config --json)"
+  assert_contains "config_empty_uses_last_good" "$out" '"source": "last_good"'
+  assert_contains "config_empty_keeps_autosend_off" "$out" '"autosend": false'
+  printf '[inline]\nautosend = "false"\n' >"$DICTATE_CONFIG_FILE"
+  out="$("$DICTATE_BIN" app-config --json)"
+  assert_contains "config_string_bool_rejected" "$out" 'inline.autosend must be true or false'
+  assert_contains "config_string_bool_keeps_autosend_off" "$out" '"autosend": false'
+  assert_file_contains "config_copy_not_replaced" "$copy" 'autosend = false'
+
+  # An unreadable file recovers from the copy too.
+  printf '[inline]\nautosend = true\n' >"$DICTATE_CONFIG_FILE"
+  chmod 000 "$DICTATE_CONFIG_FILE"
+  out="$("$DICTATE_BIN" app-config --json 2>/dev/null || true)"
+  chmod 600 "$DICTATE_CONFIG_FILE"
+  assert_contains "config_unreadable_uses_last_good" "$out" '"source": "last_good"'
+  assert_contains "config_unreadable_keeps_autosend_off" "$out" '"autosend": false'
+
+  # No trustworthy settings at all: defaults, but never sending, in every flow.
+  rm -f "$copy"
+  printf '[inline\nautosend = fal' >"$DICTATE_CONFIG_FILE"
+  out="$("$DICTATE_BIN" app-config --json)"
+  assert_contains "config_invalid_no_copy_reports_defaults" "$out" '"source": "defaults"'
+  assert_contains "config_invalid_no_copy_inline_autosend_off" "$out" '"autosend": false'
+  out="$("$DICTATE_BIN" debug 2>&1 || true)"
+  assert_contains "config_invalid_no_copy_tmux_autosend_off" "$out" "tmux.autosend=0"
+  [[ ! -e "$copy" ]] || fail "config_invalid_never_creates_copy"
+  pass "config_invalid_never_creates_copy"
+
+  # config_set writes atomically through a symlinked config.toml.
+  local real="$CASE_DIR/dotfiles-config.toml"
+  printf '[meta]\nconfig_version = 1\n\n[inline]\nautosend = true\n' >"$real"
+  ln -sf "$real" "$DICTATE_CONFIG_FILE"
+  "$DICTATE_BIN" autosend off >/dev/null
+  [[ -L "$DICTATE_CONFIG_FILE" ]] || fail "config_set_keeps_symlink"
+  pass "config_set_keeps_symlink"
+  assert_file_contains "config_set_updates_target" "$real" 'autosend = false'
+  unset DICTATE_TEST_SWIFT_TEXT DICTATE_TEST_FFPROBE_DURATION_MS
+}
+
 run_app_backend_failure_round() {
   setup_case "app-backend-failure"
   export DICTATE_TEST_SWIFT_DAEMON_FAIL=1
@@ -1884,6 +1961,7 @@ run_transcribe_file_write_race_round
 run_daemon_build_and_refresh_round
 run_app_backend_round
 run_app_backend_failure_round
+run_config_last_good_round
 run_inline_record_round
 run_cleanup_stage_failure_round
 run_finder_quick_action_round

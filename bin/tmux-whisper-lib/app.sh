@@ -152,6 +152,8 @@ app_config_json() {
     APPCFG_CLEANUP_JSON="$(app_cleanup_settings_json)" \
     APPCFG_TRANSCRIPTION_JSON="$(app_transcription_settings_json)" \
     APPCFG_NATIVE_PIPELINE="${DICTATE_APP_NATIVE_PIPELINE:-${CFG_APP_NATIVE_PIPELINE:-1}}" \
+    APPCFG_CONFIG_ERROR="${CFG_CONFIG_PARSE_ERROR:-}" \
+    APPCFG_CONFIG_SOURCE="${CFG_CONFIG_SOURCE:-file}" \
     APPCFG_VERIFY_PIPELINE="${DICTATE_APP_VERIFY_PIPELINE:-${CFG_APP_VERIFY_PIPELINE:-1}}" \
     python3 - <<'PYEOF'
 import json, os
@@ -177,6 +179,9 @@ print(json.dumps({
     },
     "cleanup": json.loads(e["APPCFG_CLEANUP_JSON"]),
     "transcription": json.loads(e["APPCFG_TRANSCRIPTION_JSON"]),
+    # config.toml failed to parse: settings come from the last valid copy
+    # ("last_good") or, if there is none, the defaults.
+    "config": {"error": e["APPCFG_CONFIG_ERROR"] or None, "source": e["APPCFG_CONFIG_SOURCE"]},
     "pipeline": {
         "native": e["APPCFG_NATIVE_PIPELINE"].lower() in ("1", "true", "yes", "on"),
         "verify": e["APPCFG_VERIFY_PIPELINE"].lower() in ("1", "true", "yes", "on"),

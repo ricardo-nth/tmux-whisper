@@ -37,6 +37,30 @@ public struct AppConfig: Decodable, Equatable, Sendable {
   public let transcription: TranscriptionSettings?
   /// `[app] native_pipeline` / `verify_pipeline` (0.10+).
   public let pipeline: Pipeline?
+  /// Whether config.toml parsed (0.10+).
+  public let config: ConfigStatus?
+
+  public struct ConfigStatus: Decodable, Equatable, Sendable {
+    /// The TOML parse error, if config.toml is invalid.
+    public let error: String?
+    /// "file", or when invalid: "last_good" (last valid copy) or "defaults".
+    public let source: String
+  }
+
+  /// config.toml is invalid and there was no valid copy to fall back to, so
+  /// the settings are the built-in defaults rather than the user's.
+  public var usingFallbackDefaults: Bool {
+    guard let config, config.error != nil else { return false }
+    return config.source != "last_good"
+  }
+
+  /// Delivery settings made safe: with fallback defaults, never press a send
+  /// key the user may have turned off (autosend defaults to on).
+  public func safeDelivery(_ delivery: Delivery) -> Delivery {
+    guard usingFallbackDefaults, delivery.autosend else { return delivery }
+    return Delivery(autosend: false, sendMode: delivery.sendMode, pasteTarget: delivery.pasteTarget,
+                    activateDelayMs: delivery.activateDelayMs, sendDelayMs: delivery.sendDelayMs)
+  }
 
   public struct Pipeline: Decodable, Equatable, Sendable {
     public let native: Bool
@@ -52,12 +76,14 @@ public struct AppConfig: Decodable, Equatable, Sendable {
     case cleanup
     case transcription
     case pipeline
+    case config
   }
 
-  /// The delivery settings as `inline process` reports them.
+  /// The delivery settings as `inline process` reports them (made safe when
+  /// config.toml is invalid with no last valid copy).
   public var delivery: Delivery {
-    Delivery(autosend: inline.autosend, sendMode: inline.sendMode, pasteTarget: inline.pasteTarget,
-             activateDelayMs: inline.activateDelayMs, sendDelayMs: inline.sendDelayMs)
+    safeDelivery(Delivery(autosend: inline.autosend, sendMode: inline.sendMode, pasteTarget: inline.pasteTarget,
+                          activateDelayMs: inline.activateDelayMs, sendDelayMs: inline.sendDelayMs))
   }
 
   /// Why a take must go through `inline process` instead of the native
