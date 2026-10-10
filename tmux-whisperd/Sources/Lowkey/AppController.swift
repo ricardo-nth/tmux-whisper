@@ -58,6 +58,8 @@ final class AppController: NSObject, NSApplicationDelegate {
   private var cli: CLIBridge?
   private var config: AppConfig?
   private var take: Take?
+  /// Set once Quit has begun: the hotkey no longer starts new takes.
+  private var quitting = false
   private var processing = 0
   private var phase: Phase = .ready { didSet { refreshStatus() } }
   private let work = DispatchQueue(label: "lowkey.work", qos: .userInitiated)
@@ -89,9 +91,18 @@ final class AppController: NSObject, NSApplicationDelegate {
     replayPendingRecords(cli: cli)
   }
 
-  /// Quit waits for the take in progress and its queued persistence. Records
-  /// still queued after 20 s stay spooled and are replayed at next launch.
+  /// Quit never discards a dictation: a take still recording is stopped and
+  /// processed (transcribed, pasted, recorded) like a normal stop, then the
+  /// app waits for queued processing and persistence. Records still queued
+  /// after 30 s stay spooled and are replayed at next launch.
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard !quitting else { return .terminateLater }
+    quitting = true
+    if take != nil {
+      Log.write("quit: finishing the recording in progress before quitting")
+      // Enqueues processing on `work` ahead of the drain below.
+      stopRecording()
+    }
     let replied = DispatchSemaphore(value: 1)
     let reply = {
       guard replied.wait(timeout: .now()) == .success else { return }
@@ -100,8 +111,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     work.async { [persistQueue] in
       persistQueue.async { reply() }
     }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
-      Log.write("quit: pending work did not finish within 20s; quitting (spooled takes replay at next launch)")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+      Log.write("quit: pending work did not finish within 30s; quitting (spooled takes replay at next launch)")
       reply()
     }
     return .terminateLater
@@ -112,6 +123,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   private func toggle() {
     let hotkeyAt = monotonicMs()
     if take == nil {
+      guard !quitting else { return }
       startRecording(hotkeyAt: hotkeyAt)
     } else {
       stopRecording()
