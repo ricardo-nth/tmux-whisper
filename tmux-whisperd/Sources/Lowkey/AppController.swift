@@ -49,6 +49,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem!
   private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
   private let hotkeyLine = NSMenuItem(title: "Hotkey: –", action: nil, keyEquivalent: "")
+  private let configLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
   private let cancelItem = NSMenuItem(title: "Cancel Recording", action: #selector(cancelRecording), keyEquivalent: "")
 
   private let recorder = AudioRecorder()
@@ -213,7 +214,8 @@ final class AppController: NSObject, NSApplicationDelegate {
       } else {
         Log.write("pipeline: CLI path (\(problem ?? "settings unavailable"))")
       }
-      self.processWithCLI(samples: samples, take: take, recordMs: recordMs, appName: appName, cli: cli, stopAt: stopAt)
+      self.processWithCLI(samples: samples, take: take, recordMs: recordMs, appName: appName, cli: cli,
+                          stopAt: stopAt, config: config)
     }
   }
 
@@ -225,6 +227,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       return
     }
     let pipelineChanged = fresh.nativePipelineBlocker != config?.nativePipelineBlocker
+    if fresh.config != config?.config { showConfigStatus(fresh) }
     config = fresh
     sounds.load(from: fresh)
     if pipelineChanged {
@@ -420,7 +423,8 @@ final class AppController: NSObject, NSApplicationDelegate {
 
   /// Phase 2 path: `tmux-whisper inline process` transcribes, cleans up and
   /// records; the app delivers.
-  private func processWithCLI(samples: [Float], take: Take, recordMs: Int, appName: String?, cli: CLIBridge, stopAt: Double) {
+  private func processWithCLI(samples: [Float], take: Take, recordMs: Int, appName: String?, cli: CLIBridge,
+                              stopAt: Double, config: AppConfig?) {
     let wav = FileManager.default.temporaryDirectory.appendingPathComponent("lowkey-\(UUID().uuidString).wav")
     defer { try? FileManager.default.removeItem(at: wav) }
     let startedAt = monotonicMs()
@@ -441,7 +445,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         return
       }
-      let steps = DeliveryPlan.steps(text: result.text, delivery: result.delivery, hasOriginalApp: take.originalApp != nil)
+      // An invalid config.toml with no valid copy means default settings
+      // (autosend on): paste without sending. Unknown settings count as that.
+      let delivery = config.map { $0.safeDelivery(result.delivery) }
+        ?? Delivery(autosend: false, sendMode: result.delivery.sendMode, pasteTarget: result.delivery.pasteTarget,
+                    activateDelayMs: result.delivery.activateDelayMs, sendDelayMs: result.delivery.sendDelayMs)
+      let steps = DeliveryPlan.steps(text: result.text, delivery: delivery, hasOriginalApp: take.originalApp != nil)
       try Deliverer.perform(steps, originalApp: take.originalApp)
       Log.write(String(format: "done(cli): stop→processed %.0fms (queue %.0f), deliver %.0fms, transcribe %dms, mode=%@, chars=%d",
                        processedAt - stopAt, startedAt - stopAt, monotonicMs() - processedAt,
@@ -494,6 +503,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   private func apply(_ config: AppConfig) {
     self.config = config
     sounds.load(from: config)
+    showConfigStatus(config)
     do {
       let spec = try HotkeySpec.parse(config.hotkey)
       try hotkey.register(spec)
@@ -508,6 +518,20 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// Warns in the menu (and log) while config.toml doesn't parse.
+  private func showConfigStatus(_ config: AppConfig) {
+    guard let status = config.config, let error = status.error else {
+      configLine.isHidden = true
+      return
+    }
+    let using = status.source == "last_good"
+      ? "using the last valid settings"
+      : "using defaults, paste without sending"
+    configLine.title = "⚠︎ config.toml invalid: \(using)"
+    configLine.isHidden = false
+    Log.write("settings: config.toml invalid (\(error)); \(using)")
+  }
+
   // MARK: - Menu
 
   private func buildMenu() {
@@ -515,9 +539,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     let menu = NSMenu()
     statusLine.isEnabled = false
     hotkeyLine.isEnabled = false
+    configLine.isEnabled = false
+    configLine.isHidden = true
     cancelItem.target = self
     menu.addItem(statusLine)
     menu.addItem(hotkeyLine)
+    menu.addItem(configLine)
     menu.addItem(.separator())
     menu.addItem(cancelItem)
     let reload = NSMenuItem(title: "Reload Settings", action: #selector(reloadSettings), keyEquivalent: "r")

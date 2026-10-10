@@ -430,6 +430,7 @@ PYEOF
   echo "  clean.repeats_level=${CFG_CLEAN_REPEATS_LEVEL:-1}"
   echo "  meta.config_version=${cfg_schema_version} (expected v${DICTATE_CONFIG_SCHEMA_VERSION}, status=${cfg_schema_status})"
   [[ -n "$cfg_parse_error" ]] && echo "  meta.config_parse_error=${cfg_parse_error}"
+  [[ -n "$cfg_parse_error" ]] && echo "  meta.config_source=${CFG_CONFIG_SOURCE:-defaults} (settings in use)"
   echo "  backend=swift_parakeet"
   echo "  swift_parakeet.model_path=${CFG_SWIFT_PARAKEET_MODEL_PATH:-}"
   echo "  swift_parakeet.model_version=${CFG_SWIFT_PARAKEET_MODEL_VERSION:-}"
@@ -1300,6 +1301,7 @@ doctor() {
       issues=$((issues + 1))
       echo "  - hint: config TOML is invalid. Preview repair with tmux-whisper config repair --dry-run, then apply with tmux-whisper config repair."
       [[ -n "$cfg_parse_error" ]] && echo "  - parse error: $cfg_parse_error"
+      [[ -n "$cfg_parse_error" ]] && echo "  - using: $( [[ "${CFG_CONFIG_SOURCE:-}" == "last_good" ]] && echo "the last valid copy of config.toml" || echo "built-in defaults" )"
       add_suggestion "Preview config repair: tmux-whisper config repair --dry-run"
       add_suggestion "Repair config in place: tmux-whisper config repair"
       ;;
@@ -2432,6 +2434,7 @@ PYEOF
   echo "  backend: $backend_requested"
   echo "  config.schema: ${cfg_schema_version} (status=${cfg_schema_status})"
   [[ -n "$cfg_parse_error" ]] && echo "  config.parse_error: $cfg_parse_error"
+  [[ -n "$cfg_parse_error" ]] && echo "  config.source: ${CFG_CONFIG_SOURCE:-defaults}"
   echo "  mode.inline: $(mode_display_name "$mode_inline") ($mode_inline_source)"
   echo "  mode.tmux: $(mode_display_name "$mode_tmux")"
   echo "  swift_parakeet.model: ${swift_model_path:-<missing>} (${swift_model_version})"

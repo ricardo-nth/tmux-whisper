@@ -1828,6 +1828,45 @@ PYEOF
   unset DICTATE_ERROR_FLAG
 }
 
+# A malformed config.toml (e.g. half-saved mid-edit) falls back to the last
+# valid copy, not to the defaults, which would turn autosend back on.
+run_config_last_good_round() {
+  setup_case "config-last-good"
+  # Earlier rounds export inline overrides; this round tests config.toml itself.
+  unset DICTATE_AUTOSEND DICTATE_INLINE_SEND_MODE
+  export DICTATE_TEST_SWIFT_TEXT="config fallback transcript"
+  export DICTATE_TEST_FFPROBE_DURATION_MS=3000
+  printf '%s\n' "app take" >"$CASE_DIR/take.wav"
+  local out
+  printf '[meta]\nconfig_version = 1\n\n[inline]\nautosend = false\nsend_mode = "cmd_enter"\n' >"$DICTATE_CONFIG_FILE"
+
+  out="$("$DICTATE_BIN" app-config --json)"
+  assert_contains "config_valid_status" "$out" '"config": {"error": null, "source": "file"}'
+  assert_contains "config_valid_autosend_off" "$out" '"autosend": false'
+  [[ -f "$(dirname "$DICTATE_CONFIG_FILE")/.config.toml.last-good" ]] || fail "config_last_good_saved"
+  pass "config_last_good_saved"
+
+  printf '[meta]\nconfig_version = 1\n\n[inline]\nautosend = fal' >"$DICTATE_CONFIG_FILE"
+  out="$("$DICTATE_BIN" app-config --json)"
+  printf '%s' "$out" | python3 -c '
+import json, sys
+c = json.load(sys.stdin)
+assert c["config"]["error"] and c["config"]["source"] == "last_good", c["config"]
+assert c["inline"]["autosend"] is False and c["inline"]["send_mode"] == "cmd_enter", c["inline"]
+' || { echo "$out" >&2; fail "config_invalid_uses_last_good"; }
+  pass "config_invalid_uses_last_good"
+
+  out="$("$DICTATE_BIN" inline process "$CASE_DIR/take.wav" --app Safari --json)"
+  assert_contains "config_invalid_inline_process_last_good" "$out" '"autosend": false'
+  out="$("$DICTATE_BIN" doctor 2>&1 || true)"
+  assert_contains "config_invalid_doctor_says_last_good" "$out" "the last valid copy of config.toml"
+
+  rm -f "$(dirname "$DICTATE_CONFIG_FILE")/.config.toml.last-good"
+  out="$("$DICTATE_BIN" app-config --json)"
+  assert_contains "config_invalid_no_copy_reports_defaults" "$out" '"source": "defaults"'
+  unset DICTATE_TEST_SWIFT_TEXT DICTATE_TEST_FFPROBE_DURATION_MS
+}
+
 run_app_backend_failure_round() {
   setup_case "app-backend-failure"
   export DICTATE_TEST_SWIFT_DAEMON_FAIL=1
@@ -1884,6 +1923,7 @@ run_transcribe_file_write_race_round
 run_daemon_build_and_refresh_round
 run_app_backend_round
 run_app_backend_failure_round
+run_config_last_good_round
 run_inline_record_round
 run_cleanup_stage_failure_round
 run_finder_quick_action_round

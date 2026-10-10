@@ -115,13 +115,39 @@ config_load() {
 import os, shlex, sys, tomllib
 
 path = os.path.expanduser(sys.argv[1])
+# Last config that parsed, kept beside it. A half-saved or mistyped file
+# falls back to it instead of to the defaults (which would, for example,
+# turn autosend back on mid-edit).
+last_good = os.path.join(os.path.dirname(path), "." + os.path.basename(path) + ".last-good")
 parse_error = ""
+config_source = "file"
 try:
   with open(path, "rb") as f:
-    cfg = tomllib.load(f) or {}
-except tomllib.TOMLDecodeError as exc:
-  cfg = {}
+    raw = f.read()
+  cfg = tomllib.loads(raw.decode("utf-8")) or {}
+  try:
+    with open(last_good, "rb") as f:
+      unchanged = f.read() == raw
+  except OSError:
+    unchanged = False
+  if not unchanged:
+    try:
+      tmp = f"{last_good}.{os.getpid()}.tmp"
+      fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+      with os.fdopen(fd, "wb") as f:
+        f.write(raw)
+      os.replace(tmp, last_good)
+    except OSError:
+      pass
+except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
   parse_error = str(exc).replace("\n", " ")
+  try:
+    with open(last_good, "rb") as f:
+      cfg = tomllib.loads(f.read().decode("utf-8")) or {}
+    config_source = "last_good"
+  except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+    cfg = {}
+    config_source = "defaults"
 
 def get(path, default=None):
   cur = cfg
@@ -138,6 +164,7 @@ def b(v, default=False):
 
 out = {
   "CFG_CONFIG_PARSE_ERROR": parse_error,
+  "CFG_CONFIG_SOURCE": config_source,
   "CFG_META_CONFIG_VERSION": str(get("meta.config_version", "")) if isinstance(get("meta.config_version", ""), int) else "",
   "CFG_AUDIO_SOURCE": str(get("audio.source", "auto")),
   "CFG_AUDIO_DEVICE_NAME": str(get("audio.device_name", "")),

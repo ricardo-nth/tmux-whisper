@@ -38,7 +38,8 @@ Revisit in-process ownership only if **warm, uncontended** measurements (item 4)
 - A reachable daemon whose ASR stalls answers ping but times out the take. On a native timeout: no automatic retry; keep the take's padded WAV privately (0600, app temp, removed after 1 hour or on discard); show "Transcription timed out" with **Retry** / **Discard** in the menu; log daemon generation and whether ping still answers.
 - Retry goes through the native path once the daemon is ready, else through `inline process`.
 
-### 5. Never adopt a broken config
+### 5. Never adopt a broken config (done early, 2026-10-10)
+Shipped ahead of 3c: the CLI falls back to the last valid `config.toml` copy, `app-config` reports `config.error`/`source`, and Lowkey warns and won't send with fallback defaults. Still for 3c-1: apply hotkey changes only when idle, and restore the old binding if registration fails.
 `config_load` turns malformed TOML into defaults (e.g. `autosend = true`). With 3b's per-take fetch, a half-saved `config.toml` can make the next take press Enter.
 - `app-config` exposes `config_error` (from `CFG_CONFIG_PARSE_ERROR`). Lowkey rejects such snapshots: it keeps the last valid config, logs it, and shows it in the menu.
 - Hotkey changes are applied only when no take is recording. Register the new binding before releasing the old one, and restore the old one if registration fails.
