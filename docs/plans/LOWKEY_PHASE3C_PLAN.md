@@ -27,6 +27,11 @@ Revisit in-process ownership only if **warm, uncontended** measurements (item 4)
 - Residual race (accepted): idle check → SIGTERM can still interleave with a hotkey press. The daemon drains accepted work and the app falls back, so the cost is one slow take, not a lost one.
 - Tests: cancel, failed engine start, crash (dead pid), rapid consecutive takes, upgrade during recording, upgrade immediately after stop.
 
+### 2b. Quit and rebuild never discard a recording
+Observed 2026-10-10: `tools/build-lowkey-app.sh` quit Lowkey mid-recording and the take (~57 s) was lost. Quit only drained processing and persistence, not an in-progress capture.
+- `applicationShouldTerminate` with a take recording: stop the take, process, deliver and persist it, then quit, within the existing deadline. Spooled persistence covers the tail.
+- `tools/build-lowkey-app.sh` waits (with a message) while a live Lowkey take marker exists, before asking the app to quit.
+
 ### 3. Truthful readiness and bounded supervision
 - **Daemon:** ping gains additive fields `model_loaded` (path + version) and `generation` (per-process UUID). A warmup response confirms the loaded model. Older daemons omit them and count as "unknown".
 - **CLI:** a `tmux-whisper warmup --json` variant that reports `ready | warming | unavailable` truthfully, unlike `--best-effort`, which exits 0 even when nothing was preloaded.
