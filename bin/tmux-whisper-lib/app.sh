@@ -462,7 +462,9 @@ print(json.dumps({"ok": True, "take_id": os.environ["APPREC_TAKE_ID"], "duplicat
       && history_saved="1"
   fi
 
-  if [[ -n "$REC_TAKE_ID" ]]; then
+  # Mark the take recorded so a replay never counts usage twice. A recovered
+  # take (no usage) whose history failed stays unmarked so a replay retries it.
+  if [[ -n "$REC_TAKE_ID" && ( "$REC_STATUS" != "recovered" || "$history_saved" == "1" ) ]]; then
     mkdir -p "$AUDIO_CACHE_DIR" 2>/dev/null || true
     printf '%s\n' "$REC_TAKE_ID" >>"$ledger" 2>/dev/null || true
     if [[ "$(wc -l <"$ledger" 2>/dev/null | tr -d ' ')" -gt 1000 ]]; then

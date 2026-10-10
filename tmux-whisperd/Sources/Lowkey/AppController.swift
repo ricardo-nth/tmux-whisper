@@ -69,7 +69,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   private let verifyQueue = DispatchQueue(label: "lowkey.verify", qos: .utility)
   private let pending = PendingRecords.standard
   private let recovered = RecoveredTakes.standard
-  private var recoveredLeftovers = false
+  private var recoveryRunning = false
   private let settingsQueue = DispatchQueue(label: "lowkey.settings", qos: .userInitiated, attributes: .concurrent)
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -102,10 +102,25 @@ final class AppController: NSObject, NSApplicationDelegate {
   /// next launch (saved audio, spooled records).
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard !quitting else { return .terminateLater }
-    quitting = true
-    if take != nil {
-      saveRecordingForQuit()
+    if take != nil || unsaved != nil {
+      guard saveRecordingForQuit() else {
+        // Couldn't write the audio: stay open rather than lose the take.
+        // A second Quit after another failure discards it.
+        if unsavedQuitAttempts >= 2 {
+          Log.write("quit: discarding the unsaved recording after repeated save failures")
+          unsaved = nil
+        } else {
+          fail("couldn't save the recording in progress; quit again to retry (a second failure discards it)")
+          return .terminateCancel
+        }
+        return terminateAfterDraining()
+      }
     }
+    return terminateAfterDraining()
+  }
+
+  private func terminateAfterDraining() -> NSApplication.TerminateReply {
+    quitting = true
     let replied = DispatchSemaphore(value: 1)
     let reply = {
       guard replied.wait(timeout: .now()) == .success else { return }
@@ -121,24 +136,44 @@ final class AppController: NSObject, NSApplicationDelegate {
     return .terminateLater
   }
 
-  /// Stops the take in progress for Quit: writes its audio to the recovery
-  /// folder first, then queues a transcription that only copies the text.
-  private func saveRecordingForQuit() {
-    guard let take else { return }
-    let samples = recorder.stop()
-    self.take = nil
-    let takeId = UUID().uuidString.lowercased()
-    guard !samples.isEmpty else { return }
+  /// A take stopped for Quit whose audio couldn't be written yet.
+  private struct UnsavedTake {
+    let samples: [Float]
+    let takeId: String
+    let startedEpochMs: Int
+    let startupMs: Int
+    let app: String?
+  }
+  private var unsaved: UnsavedTake?
+  private var unsavedQuitAttempts = 0
+
+  /// Stops the take in progress for Quit and writes its audio to the
+  /// recovery folder before anything else, then queues a transcription that
+  /// only copies the text. Returns false if the audio couldn't be written.
+  private func saveRecordingForQuit() -> Bool {
+    if let take {
+      let samples = recorder.stop()
+      self.take = nil
+      guard !samples.isEmpty else { return true }
+      unsaved = UnsavedTake(samples: samples, takeId: UUID().uuidString.lowercased(), startedEpochMs: take.startedEpochMs,
+                            startupMs: take.startupMs, app: take.originalApp?.localizedName)
+    }
+    guard let pendingTake = unsaved else { return true }
+    unsavedQuitAttempts += 1
     do {
-      let url = try recovered.save(samples: samples, takeId: takeId)
-      Log.write("quit: saved the recording in progress (\(samples.count / AudioPrep.sampleRate)s) to \(url.lastPathComponent)")
+      let url = try recovered.save(samples: pendingTake.samples, takeId: pendingTake.takeId)
+      unsaved = nil
+      Log.write("quit: saved the recording in progress (\(pendingTake.samples.count / AudioPrep.sampleRate)s) to \(url.lastPathComponent)")
       let config = self.config
       work.async { [weak self] in
-        self?.recover(url: url, samples: samples, takeId: takeId, startedEpochMs: take.startedEpochMs,
-                      startupMs: take.startupMs, app: take.originalApp?.localizedName, config: config, copy: true)
+        self?.recover(url: url, samples: pendingTake.samples, takeId: pendingTake.takeId,
+                      startedEpochMs: pendingTake.startedEpochMs, startupMs: pendingTake.startupMs,
+                      app: pendingTake.app, config: config, copy: true)
       }
+      return true
     } catch {
       Log.write("quit: could not save the recording in progress: \(error.localizedDescription)")
+      return false
     }
   }
 
@@ -187,8 +222,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         Log.write("recover: \(url.lastPathComponent) kept for later (settings need the CLI)")
         return
       }
-      persist(record, cli: cli)
-      recovered.remove(url)
+      if persist(record, cli: cli) {
+        recovered.remove(url)
+      } else {
+        Log.write("recover: \(url.lastPathComponent) kept: its record could not be spooled")
+      }
     } catch {
       Log.write("recover: \(url.lastPathComponent) kept for later: \(error.localizedDescription)")
     }
@@ -198,7 +236,14 @@ final class AppController: NSObject, NSApplicationDelegate {
   /// history (no clipboard: it may hold something newer) and say so.
   private func recoverLeftoverTakes(config: AppConfig) {
     let leftovers = recovered.all()
-    guard !leftovers.isEmpty else { return }
+    guard !leftovers.isEmpty, !recoveryRunning else { return }
+    guard config.nativePipelineBlocker == nil else {
+      // Can't transcribe natively with these settings: say so, and retry
+      // whenever usable settings arrive.
+      showRecoveredLine("Saved dictations waiting (\(leftovers.count)): Show in Finder", action: true)
+      return
+    }
+    recoveryRunning = true
     work.async { [weak self] in
       guard let self else { return }
       for url in leftovers {
@@ -211,13 +256,28 @@ final class AppController: NSObject, NSApplicationDelegate {
       }
       let remaining = self.recovered.all().count
       let done = leftovers.count - remaining
-      if done > 0 {
-        DispatchQueue.main.async {
-          self.recoveredLine.title = "Recovered \(done) dictation\(done == 1 ? "" : "s") from the last quit (tmux-whisper history)"
-          self.recoveredLine.isHidden = false
+      DispatchQueue.main.async {
+        self.recoveryRunning = false
+        if remaining > 0 {
+          self.showRecoveredLine("Saved dictations waiting (\(remaining)): Show in Finder", action: true)
+        } else if done > 0 {
+          self.showRecoveredLine(
+            "Recovered \(done) dictation\(done == 1 ? "" : "s") from the last quit (tmux-whisper history)", action: false)
         }
       }
     }
+  }
+
+  private func showRecoveredLine(_ title: String, action: Bool) {
+    recoveredLine.title = title
+    recoveredLine.isEnabled = action
+    recoveredLine.action = action ? #selector(showRecoveredFolder) : nil
+    recoveredLine.target = action ? self : nil
+    recoveredLine.isHidden = false
+  }
+
+  @objc private func showRecoveredFolder() {
+    NSWorkspace.shared.activateFileViewerSelecting(recovered.all())
   }
 
   // MARK: - Recording
@@ -342,6 +402,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
     let pipelineChanged = fresh.nativePipelineBlocker != config?.nativePipelineBlocker
     if fresh.config != config?.config { showConfigStatus(fresh) }
+    recoverLeftoverTakes(config: fresh)
     config = fresh
     sounds.load(from: fresh)
     if pipelineChanged {
@@ -469,7 +530,10 @@ final class AppController: NSObject, NSApplicationDelegate {
   }
 
   /// History, bench and usage, one take at a time, after delivery.
-  private func persist(_ record: TakeRecord, cli: CLIBridge) {
+  /// Returns whether the record is durably spooled (so the caller may drop
+  /// any other copy, e.g. a recovered take's audio).
+  @discardableResult
+  private func persist(_ record: TakeRecord, cli: CLIBridge) -> Bool {
     // Spooled first, so a quit that can't wait or a crash replays it later.
     let spooled: URL?
     do {
@@ -483,6 +547,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         pending.remove(spooled)
       }
     }
+    return spooled != nil
   }
 
   /// Runs `inline record`; true once the CLI has taken the record (even if
@@ -493,6 +558,11 @@ final class AppController: NSObject, NSApplicationDelegate {
       let wantsUsage = record.status == "ok" && record.delivered
       if wantsUsage && !(result.usageRecorded && result.historySaved) {
         Log.write("persist: take \(record.takeId) partly recorded (usage \(result.usageRecorded), history \(result.historySaved))")
+      }
+      // A recovered take exists only in history: keep it spooled until saved.
+      if record.status == "recovered" && !result.historySaved {
+        Log.write("persist: recovered take \(record.takeId) not in history yet (kept for the next launch)")
+        return false
       }
       return true
     } catch {
@@ -618,10 +688,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     self.config = config
     sounds.load(from: config)
     showConfigStatus(config)
-    if !recoveredLeftovers {
-      recoveredLeftovers = true
-      recoverLeftoverTakes(config: config)
-    }
+    recoverLeftoverTakes(config: config)
     do {
       let spec = try HotkeySpec.parse(config.hotkey)
       try hotkey.register(spec)
