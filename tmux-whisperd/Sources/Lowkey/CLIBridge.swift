@@ -90,11 +90,8 @@ struct CLIBridge {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
     process.arguments = [binary.path] + arguments
-    var environment = ProcessInfo.processInfo.environment
-    // Apps launched from Finder get a minimal PATH; the CLI needs Homebrew tools.
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    environment["PATH"] = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-    process.environment = environment
+    process.environment = CLIEnvironment.forCLI(
+      base: ProcessInfo.processInfo.environment, home: FileManager.default.homeDirectoryForCurrentUser.path)
 
     // Temp files, not pipes: a child left running can't block us on a full pipe.
     let outURL = FileManager.default.temporaryDirectory.appendingPathComponent("lowkey-cli-\(UUID().uuidString).out")
