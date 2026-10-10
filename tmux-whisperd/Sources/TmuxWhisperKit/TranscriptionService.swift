@@ -10,6 +10,11 @@ public protocol DaemonRequestHandling: Sendable {
 public actor TranscriptionService: DaemonRequestHandling {
   private let engine: ASREngine
   private var activeRequests = 0
+  /// Identifies this daemon process in pings.
+  public nonisolated let generation = UUID().uuidString.lowercased()
+  /// Model of the last successful warmup or transcription: the engine keeps
+  /// it loaded until a request names another one.
+  private var loadedModel: DaemonResponse.LoadedModel?
 
   public init(engine: ASREngine = ASREngine()) {
     self.engine = engine
@@ -23,7 +28,10 @@ public actor TranscriptionService: DaemonRequestHandling {
         durationMs: 0,
         message: "ok",
         version: DaemonInfo.daemonVersion,
-        activeRequests: activeRequests
+        activeRequests: activeRequests,
+        pid: Int(getpid()),
+        generation: generation,
+        modelLoaded: loadedModel
       )
     }
 
@@ -38,12 +46,15 @@ public actor TranscriptionService: DaemonRequestHandling {
       case .warmup:
         let (modelURL, modelVersion) = try resolveModelRequest(request)
         let result = try await engine.warmup(modelURL: modelURL, modelVersion: modelVersion)
+        let loaded = DaemonResponse.LoadedModel(path: request.modelPath ?? modelURL.path, version: modelVersion)
+        loadedModel = loaded
         return DaemonResponse(
           id: request.id,
           ok: true,
           model: result.model,
           durationMs: result.durationMs,
-          message: "warmed"
+          message: "warmed",
+          modelLoaded: loaded
         )
 
       case .transcribe:
@@ -57,6 +68,7 @@ public actor TranscriptionService: DaemonRequestHandling {
 
         let (modelURL, modelVersion) = try resolveModelRequest(request)
         let result = try await engine.transcribe(audioURL: wavURL, modelURL: modelURL, modelVersion: modelVersion)
+        loadedModel = DaemonResponse.LoadedModel(path: request.modelPath ?? modelURL.path, version: modelVersion)
         return DaemonResponse(
           id: request.id,
           ok: true,
