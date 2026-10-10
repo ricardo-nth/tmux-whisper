@@ -102,21 +102,24 @@ final class AppController: NSObject, NSApplicationDelegate {
   /// next launch (saved audio, spooled records).
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard !quitting else { return .terminateLater }
-    if take != nil || unsaved != nil {
+    if take != nil || !unsaved.isEmpty {
       guard saveRecordingForQuit() else {
-        // Couldn't write the audio: stay open rather than lose the take.
-        // A second Quit after another failure discards it.
-        if unsavedQuitAttempts >= 2 {
-          Log.write("quit: discarding the unsaved recording after repeated save failures")
-          unsaved = nil
-        } else {
-          fail("couldn't save the recording in progress; quit again to retry (a second failure discards it)")
-          return .terminateCancel
-        }
-        return terminateAfterDraining()
+        // Couldn't write the audio: stay open rather than lose a take. Only
+        // the explicit "Discard … and quit" menu item gives it up.
+        discardItem.title = "Discard \(unsaved.count) unsaved recording\(unsaved.count == 1 ? "" : "s") and quit"
+        discardItem.isHidden = false
+        fail("couldn't save \(unsaved.count) recording\(unsaved.count == 1 ? "" : "s") for quitting; Quit retries")
+        return .terminateCancel
       }
     }
     return terminateAfterDraining()
+  }
+
+  @objc private func discardUnsavedAndQuit() {
+    Log.write("quit: discarding \(unsaved.count) unsaved recording(s) at the user's request")
+    unsaved.removeAll()
+    discardItem.isHidden = true
+    NSApp.terminate(nil)
   }
 
   private func terminateAfterDraining() -> NSApplication.TerminateReply {
@@ -144,37 +147,45 @@ final class AppController: NSObject, NSApplicationDelegate {
     let startupMs: Int
     let app: String?
   }
-  private var unsaved: UnsavedTake?
-  private var unsavedQuitAttempts = 0
+  /// Every take stopped for Quit whose audio couldn't be written yet.
+  private var unsaved: [UnsavedTake] = []
+  private let discardItem = NSMenuItem(title: "", action: #selector(discardUnsavedAndQuit), keyEquivalent: "")
 
-  /// Stops the take in progress for Quit and writes its audio to the
-  /// recovery folder before anything else, then queues a transcription that
-  /// only copies the text. Returns false if the audio couldn't be written.
+  /// Stops the take in progress for Quit and writes its audio (and any
+  /// earlier unsaved takes) to the recovery folder before anything else,
+  /// then queues transcriptions that only copy the text. Returns false if
+  /// any audio couldn't be written; those takes stay in `unsaved`.
   private func saveRecordingForQuit() -> Bool {
     if let take {
       let samples = recorder.stop()
       self.take = nil
-      guard !samples.isEmpty else { return true }
-      unsaved = UnsavedTake(samples: samples, takeId: UUID().uuidString.lowercased(), startedEpochMs: take.startedEpochMs,
-                            startupMs: take.startupMs, app: take.originalApp?.localizedName)
-    }
-    guard let pendingTake = unsaved else { return true }
-    unsavedQuitAttempts += 1
-    do {
-      let url = try recovered.save(samples: pendingTake.samples, takeId: pendingTake.takeId)
-      unsaved = nil
-      Log.write("quit: saved the recording in progress (\(pendingTake.samples.count / AudioPrep.sampleRate)s) to \(url.lastPathComponent)")
-      let config = self.config
-      work.async { [weak self] in
-        self?.recover(url: url, samples: pendingTake.samples, takeId: pendingTake.takeId,
-                      startedEpochMs: pendingTake.startedEpochMs, startupMs: pendingTake.startupMs,
-                      app: pendingTake.app, config: config, copy: true)
+      if !samples.isEmpty {
+        unsaved.append(UnsavedTake(samples: samples, takeId: UUID().uuidString.lowercased(),
+                                   startedEpochMs: take.startedEpochMs, startupMs: take.startupMs,
+                                   app: take.originalApp?.localizedName))
       }
-      return true
-    } catch {
-      Log.write("quit: could not save the recording in progress: \(error.localizedDescription)")
-      return false
     }
+    let config = self.config
+    var stillUnsaved: [UnsavedTake] = []
+    for pendingTake in unsaved {
+      do {
+        let url = try recovered.save(samples: pendingTake.samples, takeId: pendingTake.takeId)
+        Log.write("quit: saved a recording (\(pendingTake.samples.count / AudioPrep.sampleRate)s) to \(url.lastPathComponent)")
+        // Only the newest take goes onto the clipboard.
+        let copy = pendingTake.takeId == unsaved.last?.takeId
+        work.async { [weak self] in
+          self?.recover(url: url, samples: pendingTake.samples, takeId: pendingTake.takeId,
+                        startedEpochMs: pendingTake.startedEpochMs, startupMs: pendingTake.startupMs,
+                        app: pendingTake.app, config: config, copy: copy)
+        }
+      } catch {
+        Log.write("quit: could not save a recording: \(error.localizedDescription)")
+        stillUnsaved.append(pendingTake)
+      }
+    }
+    unsaved = stillUnsaved
+    if unsaved.isEmpty { discardItem.isHidden = true }
+    return unsaved.isEmpty
   }
 
   /// Transcribes a saved take into history (status "recovered": no usage,
@@ -733,6 +744,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     menu.addItem(hotkeyLine)
     menu.addItem(configLine)
     menu.addItem(recoveredLine)
+    discardItem.target = self
+    discardItem.isHidden = true
+    menu.addItem(discardItem)
     menu.addItem(.separator())
     menu.addItem(cancelItem)
     let reload = NSMenuItem(title: "Reload Settings", action: #selector(reloadSettings), keyEquivalent: "r")
