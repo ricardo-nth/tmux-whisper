@@ -122,6 +122,11 @@ if [[ "$INSTALL" == "1" || "$OUT" != "$HOME/Applications/$APP_NAME.app" ]]; then
   fi
   ditto "$stage" "$OUT"
   echo "Installed: $OUT"
+  # Register with Launch Services and Spotlight, so "Lowkey" shows up in
+  # Spotlight/Launchpad even from ~/Applications (Finder's Applications
+  # sidebar item is /Applications).
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$OUT" >/dev/null 2>&1 || true
+  mdimport "$OUT" >/dev/null 2>&1 || true
   if [[ "$was_running" == "1" ]]; then
     open "$OUT"
     echo "Relaunched $APP_NAME."

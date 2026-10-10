@@ -141,3 +141,15 @@ struct DeliveryPlanTests {
     #expect(steps == [.setClipboard("x"), .shortcut(character: "v", command: true, control: false)])
   }
 }
+
+struct CLIEnvironmentTests {
+  @Test func dropsLocaleAndSetsPath() {
+    let env = CLIEnvironment.forCLI(
+      base: ["LANG": "C.UTF-8", "LC_ALL": "en_US.UTF-8", "LC_CTYPE": "UTF-8", "HOME": "/Users/x",
+             "PATH": "/usr/bin", "DICTATE_CLEAN": "1", "LOWKEY_CLI": "/x"],
+      home: "/Users/x")
+    #expect(env["LANG"] == nil && env["LC_ALL"] == nil && env["LC_CTYPE"] == nil)
+    #expect(env["HOME"] == "/Users/x" && env["DICTATE_CLEAN"] == "1" && env["LOWKEY_CLI"] == "/x")
+    #expect(env["PATH"]?.hasPrefix("/Users/x/.local/bin:/opt/homebrew/bin:") == true)
+  }
+}
